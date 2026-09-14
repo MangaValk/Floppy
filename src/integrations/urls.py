@@ -198,6 +198,11 @@ urlpatterns = [
         name="import_lastfm_history",
     ),
     path("import/lastfm/poll", views.poll_lastfm_manual, name="poll_lastfm_manual"),
+    path("sync/mal/connect", views.mal_oauth, name="mal_oauth"),
+    path("sync/mal/callback", views.mal_callback, name="mal_callback"),
+    path("sync/mal/disconnect", views.mal_disconnect, name="mal_disconnect"),
+    path("sync/mal/toggle", views.mal_toggle, name="mal_toggle"),
+    path("sync/mal/full", views.mal_full_sync, name="mal_full_sync"),
     path("import/koito/connect", views.koito_connect, name="koito_connect"),
     path("import/koito/disconnect", views.koito_disconnect, name="koito_disconnect"),
     path(

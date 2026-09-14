@@ -670,10 +670,10 @@ def api_request(
 
     Args:
         provider: Provider identifier for error messages
-        method: HTTP method ("GET" or "POST")
+        method: HTTP method ("GET", "POST" or "PATCH")
         url: Request URL
         params: Query params for GET, JSON body for POST
-        data: Raw data for POST
+        data: Raw data for POST/PATCH (e.g. form-encoded body)
         headers: Request headers
         response_format: "json" (default) or "xml" for XML parsing
 
@@ -707,6 +707,9 @@ def api_request(
             request_kwargs["data"] = data
             request_kwargs["json"] = params
             request_func = session.post
+        elif method == "PATCH":
+            request_kwargs["data"] = data
+            request_func = session.patch
 
         response = request_func(**request_kwargs)
         response.raise_for_status()

@@ -525,6 +525,47 @@ class LastFMAccount(models.Model):
         self.history_import_last_error_message = ""
 
 
+class MALAccount(models.Model):
+    """Store a user's MyAnimeList OAuth connection, used to push watch status.
+
+    Send-only: Floppy pushes status/progress/score changes to MyAnimeList and
+    never pulls changes back from it (that's the separate MAL import).
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mal_account",
+    )
+    mal_username = models.CharField(max_length=255, blank=True, default="")
+    access_token = models.TextField()
+    refresh_token = models.TextField()
+    token_expires_at = models.DateTimeField()
+    sync_enabled = models.BooleanField(default=True)
+    connection_broken = models.BooleanField(
+        default=False,
+        help_text="True once MyAnimeList rejects the refresh token, until reconnected",
+    )
+    last_error_message = models.TextField(blank=True, default="")
+    last_failed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Meta options for MALAccount."""
+
+        verbose_name = "MyAnimeList account"
+
+    def __str__(self):
+        """Return a readable representation of the connection."""
+        return f"{self.user}'s MyAnimeList connection"
+
+    @property
+    def is_connected(self):
+        """Return True when we have a token stored and the connection isn't broken."""
+        return bool(self.access_token) and not self.connection_broken
+
+
 class KoitoAccount(models.Model):
     """Store Koito connection settings and sync state for a user.
 

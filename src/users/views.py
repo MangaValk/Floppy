@@ -49,7 +49,7 @@ from app.models import (
 from app.providers import credentials, tmdb
 from app.services import metadata_resolution
 from app.templatetags import app_tags
-from integrations import exports, plex, stremio_catalog, tasks
+from integrations import exports, mal_sync, plex, stremio_catalog, tasks
 from integrations.imports import trakt as trakt_imports
 from integrations.models import (
     DEFAULT_INTEGRATION_SCOPES,
@@ -257,6 +257,7 @@ def _get_import_data_user(user):
         "pocketcasts_account",
         "lastfm_account",
         "koito_account",
+        "mal_account",
     ).prefetch_related(
         "radarr_instances",
         "sonarr_instances",
@@ -1540,6 +1541,9 @@ def import_data(request):
     # Get Last.fm account
     lastfm_account = getattr(user, "lastfm_account", None)
 
+    # Get MyAnimeList sync account
+    mal_account = getattr(user, "mal_account", None)
+
     # Get Koito account
     koito_account = getattr(user, "koito_account", None)
     koito_history_status_label = "Not started"
@@ -1634,6 +1638,8 @@ def import_data(request):
         "pocketcasts_account": pocketcasts_account,
         "gpodder_account": gpodder_account,
         "lastfm_account": lastfm_account,
+        "mal_account": mal_account,
+        "mal_sync_configured": mal_sync.is_sync_configured(user),
         "koito_account": koito_account,
         "radarr_instances": radarr_instances,
         "sonarr_instances": sonarr_instances,

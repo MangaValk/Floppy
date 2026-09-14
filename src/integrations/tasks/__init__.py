@@ -39,6 +39,12 @@ from integrations.tasks._lastfm import (
     poll_all_lastfm_scrobbles,
     poll_lastfm_for_user,
 )
+from integrations.tasks._mal_sync import (
+    MAL_FULL_SYNC_TASK_NAME,
+    MAL_SYNC_TASK_NAME,
+    bulk_sync_mal_status,
+    sync_mal_status,
+)
 from integrations.tasks._media_imports import (
     _queue_post_import_collection_update,
     _run_arr_import,
@@ -148,6 +154,8 @@ __all__ = [
     "KOITO_POLL_TASK_NAME",
     "LASTFM_PARTIAL_SYNC_ERROR",
     "LEGACY_GOODREADS_IMPORT_TASK_NAMES",
+    "MAL_FULL_SYNC_TASK_NAME",
+    "MAL_SYNC_TASK_NAME",
     "WEBHOOK_PROCESSORS",
     "_aggregate_tv_show_collection_metadata",
     "_coerce_uploaded_file",
@@ -160,6 +168,7 @@ __all__ = [
     "_run_incremental_koito_sync",
     "_run_incremental_lastfm_sync",
     "_webhook_history_user",
+    "bulk_sync_mal_status",
     "compact_integration_event_receipts",
     "compact_watch_state_changes",
     "deliver_watched_state",
@@ -222,6 +231,7 @@ __all__ = [
     "reconcile_watched_state",
     "refresh_plex_sections",
     "sweep_watched_state_deliveries",
+    "sync_mal_status",
     "sync_plex_watchlist",
     "update_collection_metadata_from_plex",
     "update_collection_metadata_from_plex_webhook",

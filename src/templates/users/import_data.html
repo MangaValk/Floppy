@@ -566,7 +566,10 @@
                 x-show="sourceSupports(['anime_manga'])"
                 x-transition.opacity.duration.150ms
                 class="bg-[var(--color-surface-strong)] hover:bg-[var(--color-surface-border)] transition-colors rounded-lg p-4 text-left cursor-pointer flex flex-col gap-2">
-          <div class="flex items-center justify-between">{% source_display "myanimelist" %}</div>
+          <div class="flex items-center justify-between">
+            {% source_display "myanimelist" %}
+            {% if mal_account and mal_account.is_connected %}<span class="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30" title="Sync connected">{% include "app/icons/checkmark.svg" with classes="w-3 h-3" %}</span>{% endif %}
+          </div>
           <p class="text-xs text-[var(--color-text-muted)] line-clamp-2">{% translate "Import anime and manga from MyAnimeList." %}</p>
         </button>
 
@@ -2376,6 +2379,76 @@
               </button>
             </div>
           </form>
+
+          <div class="mt-4 pt-4 border-t border-[var(--color-surface-border)] space-y-3">
+            <div class="flex items-center justify-between">
+              <p class="text-sm text-[var(--color-text-muted)]">{% translate "Sync watch status back to MyAnimeList" %}</p>
+              {% if mal_account and mal_account.is_connected %}
+                <span class="px-2 py-1 text-xs rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">{% translate "Connected" %}</span>
+              {% else %}
+                <span class="px-2 py-1 text-xs rounded bg-gray-500/20 text-[var(--color-text-secondary)] border border-gray-600/50">{% translate "Disconnected" %}</span>
+              {% endif %}
+            </div>
+
+            {% if mal_account and mal_account.is_connected %}
+              <p class="text-xs text-[var(--color-text-muted)]">
+                {% blocktranslate with mal_username=mal_account.mal_username|default:"MyAnimeList user" %}Connected as {{ mal_username }}. Status, progress and score changes on MAL-tracked anime and manga sync automatically.{% endblocktranslate %}
+              </p>
+
+              {% if mal_account.connection_broken and mal_account.last_error_message %}
+                <div class="text-xs text-[var(--color-warning-text)] bg-amber-500/10 border border-amber-400/30 rounded p-2">
+                  <strong>{% translate "Error:" %}</strong> {{ mal_account.last_error_message }}
+                </div>
+              {% endif %}
+
+              <form method="post" action="{% url 'mal_toggle' %}" class="flex items-center justify-between">
+                {% csrf_token %}
+                <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+                  <input type="checkbox"
+                         name="enabled"
+                         value="true"
+                         {% if mal_account.sync_enabled %}checked{% endif %}
+                         onchange="this.form.requestSubmit()"
+                         class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+                  {% translate "Sync enabled" %}
+                </label>
+              </form>
+
+              <div class="flex gap-2">
+                <form method="post" action="{% url 'mal_full_sync' %}" class="flex-1">
+                  {% csrf_token %}
+                  <button type="submit"
+                          class="w-full px-3 py-2 text-sm rounded-md transition-colors cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700">
+                    {% translate "Sync All Now" %}
+                  </button>
+                </form>
+                <form method="post" action="{% url 'mal_disconnect' %}" class="flex-1">
+                  {% csrf_token %}
+                  <button type="submit"
+                          class="w-full px-3 py-2 text-sm rounded-md transition-colors cursor-pointer bg-red-600 text-white hover:bg-red-700">
+                    {% translate "Disconnect" %}
+                  </button>
+                </form>
+              </div>
+              <p class="text-xs text-[var(--color-text-muted)]">{% blocktranslate %}"Sync All Now" pushes every MAL-tracked entry's current status - useful right after connecting, or after restoring a backup.{% endblocktranslate %}</p>
+            {% elif mal_sync_configured %}
+              <p class="text-xs text-[var(--color-text-muted)]">{% translate "Connect your MyAnimeList account to start syncing your watch status back." %}</p>
+              <form method="post" action="{% url 'mal_oauth' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <button type="submit"
+                        class="w-full px-4 py-2 text-sm rounded-md transition-colors cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700">
+                  {% translate "Connect MyAnimeList" %}
+                </button>
+              </form>
+            {% else %}
+              <p class="text-xs text-[var(--color-text-muted)]">
+                {% blocktranslate %}Add your own MyAnimeList Client ID and Client secret under{% endblocktranslate %}
+                <a href="{% url 'metadata_settings' %}" class="text-[var(--color-link)] hover:underline">{% translate "Settings > Metadata" %}</a>
+                {% translate "to enable syncing." %}
+              </p>
+            {% endif %}
+          </div>
         </div>
           </div>
         </div>

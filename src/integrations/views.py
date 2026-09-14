@@ -49,6 +49,7 @@ from integrations import (
     gpodder_api,
     koito_api,
     lastfm_api,
+    mal_sync,
     pocketcasts_api,
     psn_api,
     stremio_catalog,
@@ -1309,6 +1310,128 @@ def import_anilist_private(request):
             token=enc_token,
         )
     return _integration_redirect(request, connected_slug="anilist", next_url=return_to)
+
+
+@require_POST
+def mal_oauth(request):
+    """Initiate the MyAnimeList OAuth2 flow used for status syncing."""
+    if not mal_sync.is_sync_configured(request.user):
+        messages.error(
+            request,
+            "MyAnimeList sync isn't configured. Add your own MyAnimeList "
+            "Client ID and Client secret under Settings > Metadata first.",
+        )
+        return _integration_redirect(request)
+
+    redirect_uri = app_helpers.build_absolute_app_url(request, reverse("mal_callback"))
+    if not app_helpers.supports_oauth_redirect(redirect_uri):
+        # Unlike Trakt (#681), MyAnimeList has no device-code alternative, so
+        # an HTTP-only instance simply can't complete this flow.
+        messages.error(
+            request,
+            "MyAnimeList sync needs an HTTPS-accessible callback URL. This "
+            "instance is served over plain HTTP, and MyAnimeList doesn't "
+            "offer a device-code alternative the way Trakt does.",
+        )
+        return _integration_redirect(request)
+
+    code_verifier = mal_sync.generate_code_verifier()
+    state = {
+        "code_verifier": code_verifier,
+        "redirect_uri": redirect_uri,
+        "return_to": request.POST.get("next"),
+    }
+    state_token = secrets.token_urlsafe(32)
+    request.session[state_token] = state
+
+    url = mal_sync.AUTHORIZE_URL
+    mal_client_id = mal_sync.client_id(request.user)
+    return redirect(
+        f"{url}?response_type=code&client_id={mal_client_id}"
+        f"&redirect_uri={redirect_uri}&state={state_token}"
+        f"&code_challenge={code_verifier}&code_challenge_method=plain",
+    )
+
+
+@require_GET
+def mal_callback(request):
+    """Handle the MyAnimeList OAuth2 callback and store the connection."""
+    state_data = _consume_oauth_state(request, "MyAnimeList")
+    if state_data is None:
+        return _integration_redirect(request)
+
+    return_to = state_data.get("return_to")
+    code = request.GET.get("code")
+    if not code:
+        messages.error(request, "MyAnimeList authorization failed.")
+        return _integration_redirect(request, next_url=return_to)
+
+    try:
+        mal_sync.connect_account(
+            user=request.user,
+            code=code,
+            code_verifier=state_data["code_verifier"],
+            redirect_uri=state_data["redirect_uri"],
+        )
+    except mal_sync.MALAuthError as error:
+        messages.error(request, str(error))
+        return _integration_redirect(request, next_url=return_to)
+    except services.ProviderAPIError:
+        messages.error(
+            request,
+            "Couldn't reach MyAnimeList to finish connecting. Please try again.",
+        )
+        return _integration_redirect(request, next_url=return_to)
+
+    messages.success(
+        request,
+        "Connected to MyAnimeList. Status, progress and score changes on "
+        "MAL-tracked anime and manga will now sync automatically.",
+    )
+    return _integration_redirect(request, connected_slug="mal", next_url=return_to)
+
+
+@require_POST
+def mal_disconnect(request):
+    """Disconnect the user's MyAnimeList account."""
+    from integrations.models import MALAccount
+
+    MALAccount.objects.filter(user=request.user).delete()
+    messages.success(request, "Disconnected from MyAnimeList.")
+    return _integration_redirect(request)
+
+
+@require_POST
+def mal_toggle(request):
+    """Pause or resume pushing status updates to MyAnimeList."""
+    from integrations.models import MALAccount
+
+    updated = MALAccount.objects.filter(user=request.user).update(
+        sync_enabled=request.POST.get("enabled") == "true",
+    )
+    if not updated:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    return _integration_redirect(request)
+
+
+@require_POST
+def mal_full_sync(request):
+    """Trigger a one-off full sync of every MAL-backed anime/manga entry."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    elif mal_account.connection_broken:
+        messages.error(request, "Reconnect your MyAnimeList account first.")
+    elif not mal_account.sync_enabled:
+        messages.error(request, "Turn sync back on before running a full sync.")
+    else:
+        tasks.bulk_sync_mal_status.delay(user_id=request.user.pk)
+        messages.success(
+            request,
+            "Full sync to MyAnimeList started in the background. This can "
+            "take a while for large libraries.",
+        )
+    return _integration_redirect(request)
 
 
 @require_POST
