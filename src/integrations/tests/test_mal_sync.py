@@ -458,6 +458,99 @@ class PushStatus(TestCase):
             mal_sync.get_valid_access_token(self.account)
 
 
+class PreviewFullSync(TestCase):
+    """Test the read-only diff used before a full MAL sync."""
+
+    def setUp(self):
+        self.user = _make_user()
+        self.account = make_mal_account(self.user)
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            self.anime = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="42",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value,
+                    title="Changed Anime",
+                ),
+                status=Status.PAUSED.value,
+                progress=5,
+                score=Decimal("7.6"),
+            )
+            self.manga = Manga.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="99",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.MANGA.value,
+                    title="Unchanged Manga",
+                ),
+                status=Status.PLANNING.value,
+                progress=0,
+            )
+
+    @patch("integrations.mal_sync.services.api_request")
+    def test_returns_only_fields_that_would_change(self, mock_request):
+        mock_request.side_effect = [
+            {
+                "data": [
+                    {
+                        "node": {"id": 42},
+                        "list_status": {
+                            "status": "watching",
+                            "num_episodes_watched": 5,
+                            "score": 7,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+            {
+                "data": [
+                    {
+                        "node": {"id": 99},
+                        "list_status": {
+                            "status": "plan_to_read",
+                            "num_chapters_read": 0,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+        ]
+
+        preview = mal_sync.preview_full_sync(self.user, self.account)
+
+        self.assertEqual(
+            preview,
+            [
+                {
+                    "title": "Changed Anime",
+                    "media_type": "Anime",
+                    "mal_id": "42",
+                    "not_on_list": False,
+                    "changes": [
+                        {"field": "Status", "from": "watching", "to": "on_hold"},
+                        {"field": "Score", "from": 7, "to": 8},
+                    ],
+                }
+            ],
+        )
+
+    @patch("integrations.mal_sync.services.api_request")
+    def test_marks_entries_missing_from_mal(self, mock_request):
+        mock_request.side_effect = [
+            {"data": [], "paging": {}},
+            {"data": [], "paging": {}},
+        ]
+
+        preview = mal_sync.preview_full_sync(self.user, self.account)
+
+        self.assertEqual(len(preview), 2)
+        self.assertTrue(all(entry["not_on_list"] for entry in preview))
+
+
 class SyncMALStatusTask(TestCase):
     """Test the Celery task that drives a single push to MyAnimeList."""
 
@@ -682,9 +775,40 @@ class MALFullSyncView(TestCase):
         """A working connection queues the background task for this user."""
         make_mal_account(self.user)
         with patch("integrations.tasks.bulk_sync_mal_status.delay") as mock_delay:
-            response = self.client.post(reverse("mal_full_sync"), follow=True)
+            response = self.client.post(
+                reverse("mal_full_sync"), {"confirmed": "true"}, follow=True
+            )
         mock_delay.assert_called_once_with(user_id=self.user.pk)
         self.assertContains(response, "started in the background")
+
+    def test_full_sync_requires_preview_confirmation(self):
+        make_mal_account(self.user)
+        with patch("integrations.tasks.bulk_sync_mal_status.delay") as mock_delay:
+            response = self.client.post(reverse("mal_full_sync"), follow=True)
+        mock_delay.assert_not_called()
+        self.assertContains(response, "Review the MyAnimeList changes")
+
+    @patch("integrations.mal_sync.preview_full_sync")
+    def test_preview_returns_changes_without_queuing_sync(self, mock_preview):
+        make_mal_account(self.user)
+        mock_preview.return_value = [
+            {
+                "title": "Changed Anime",
+                "media_type": "Anime",
+                "mal_id": "42",
+                "not_on_list": False,
+                "changes": [
+                    {"field": "Status", "from": "watching", "to": "completed"}
+                ],
+            }
+        ]
+
+        with patch("integrations.tasks.bulk_sync_mal_status.delay") as mock_delay:
+            response = self.client.get(reverse("mal_full_sync_preview"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 1)
+        mock_delay.assert_not_called()
 
 
 class MultiUserIsolation(TestCase):

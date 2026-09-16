@@ -1424,6 +1424,8 @@ def mal_full_sync(request):
         messages.error(request, "Reconnect your MyAnimeList account first.")
     elif not mal_account.sync_enabled:
         messages.error(request, "Turn sync back on before running a full sync.")
+    elif request.POST.get("confirmed") != "true":
+        messages.error(request, "Review the MyAnimeList changes before syncing.")
     else:
         tasks.bulk_sync_mal_status.delay(user_id=request.user.pk)
         messages.success(
@@ -1432,6 +1434,36 @@ def mal_full_sync(request):
             "take a while for large libraries.",
         )
     return _integration_redirect(request)
+
+
+@require_GET
+def mal_full_sync_preview(request):
+    """Return the changes a full MAL sync would make without writing them."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        return JsonResponse(
+            {"error": "Connect a MyAnimeList account first."}, status=400
+        )
+    if mal_account.connection_broken:
+        return JsonResponse(
+            {"error": "Reconnect your MyAnimeList account first."}, status=400
+        )
+    if not mal_account.sync_enabled:
+        return JsonResponse(
+            {"error": "Turn sync back on before running a full sync."}, status=400
+        )
+
+    try:
+        changes = mal_sync.preview_full_sync(request.user, mal_account)
+    except mal_sync.MALAuthError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    except services.ProviderAPIError:
+        return JsonResponse(
+            {"error": "Couldn't load your MyAnimeList list. Please try again."},
+            status=502,
+        )
+
+    return JsonResponse({"changes": changes, "count": len(changes)})
 
 
 @require_POST

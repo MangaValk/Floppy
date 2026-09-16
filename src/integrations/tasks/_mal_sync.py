@@ -12,7 +12,6 @@ from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from app.models.choices import Sources
 from app.providers import services
 from integrations import mal_sync
 from integrations.models import MALAccount
@@ -108,9 +107,6 @@ def bulk_sync_mal_status(user_id):
     right after connecting an account with an existing library, or after a
     bulk import/restore, since those bypass save() and never queue a sync.
     """
-    Anime = apps.get_model(app_label="app", model_name="anime")  # noqa: N806
-    Manga = apps.get_model(app_label="app", model_name="manga")  # noqa: N806
-
     try:
         user = get_user_model().objects.select_related("mal_account").get(pk=user_id)
     except get_user_model().DoesNotExist:
@@ -124,18 +120,7 @@ def bulk_sync_mal_status(user_id):
     if not mal_account.sync_enabled or mal_account.connection_broken:
         return
 
-    entries = [
-        *Anime.all_objects.filter(
-            user=user,
-            item__source=Sources.MAL.value,
-            status__isnull=False,
-        ),
-        *Manga.objects.filter(
-            user=user,
-            item__source=Sources.MAL.value,
-            status__isnull=False,
-        ),
-    ]
+    entries = mal_sync.full_sync_entries(user)
 
     synced = 0
     failed = 0

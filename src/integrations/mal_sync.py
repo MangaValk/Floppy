@@ -16,6 +16,7 @@ import secrets
 from datetime import timedelta
 
 import requests
+from django.apps import apps
 from django.utils import timezone
 
 from app.models.choices import MediaTypes, Sources, Status
@@ -194,13 +195,8 @@ def connect_account(user, code, code_verifier, redirect_uri):
     return mal_account
 
 
-def push_status(media, mal_account):
-    """Push a MAL-backed Anime/Manga entry's status, progress and score to MAL.
-
-    Args:
-        media: A saved Anime or Manga instance whose item.source is MAL.
-        mal_account: The user's MALAccount to push through.
-    """
+def status_payload(media):
+    """Return the exact fields that Floppy will push for a media entry."""
     media_type = media.item.media_type
     is_anime = media_type == MediaTypes.ANIME.value
     status_map = ANIME_STATUS_TO_MAL if is_anime else MANGA_STATUS_TO_MAL
@@ -210,9 +206,123 @@ def push_status(media, mal_account):
         "status": status_map[media.status],
         progress_field: media.progress,
     }
-    # MAL only accepts whole-number scores; Floppy allows one decimal place.
     if media.score is not None:
         data["score"] = round(media.score)
+    return data
+
+
+def full_sync_entries(user):
+    """Return every MAL-backed anime/manga entry eligible for a full sync."""
+    Anime = apps.get_model(app_label="app", model_name="anime")  # noqa: N806
+    Manga = apps.get_model(app_label="app", model_name="manga")  # noqa: N806
+    filters = {
+        "user": user,
+        "item__source": Sources.MAL.value,
+        "status__isnull": False,
+    }
+    return [
+        *Anime.all_objects.filter(**filters).select_related("item"),
+        *Manga.objects.filter(**filters).select_related("item"),
+    ]
+
+
+def _fetch_list_statuses(media_type, mal_account):
+    """Return MAL list statuses keyed by media ID for one media type."""
+    access_token = get_valid_access_token(mal_account)
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {"fields": "list_status", "limit": 1000}
+    url = f"{API_BASE_URL}/users/@me/{media_type}list"
+    statuses = {}
+
+    while url:
+        try:
+            response = services.api_request(
+                Sources.MAL.value,
+                "GET",
+                url,
+                params=params,
+                headers=headers,
+            )
+        except requests.exceptions.HTTPError as error:
+            status_code = getattr(error.response, "status_code", None)
+            if status_code in {
+                requests.codes.unauthorized,
+                requests.codes.forbidden,
+            }:
+                msg = "MyAnimeList rejected the request. Please reconnect your account."
+                raise MALAuthError(msg) from error
+            raise services.ProviderAPIError(Sources.MAL.value, error) from error
+
+        for entry in response.get("data", []):
+            statuses[str(entry["node"]["id"])] = entry.get("list_status", {})
+        url = response.get("paging", {}).get("next")
+        params = None
+
+    return statuses
+
+
+def preview_full_sync(user, mal_account):
+    """Return field-level changes a full sync would make without writing to MAL."""
+    remote_statuses = {
+        media_type: _fetch_list_statuses(media_type, mal_account)
+        for media_type in (MediaTypes.ANIME.value, MediaTypes.MANGA.value)
+    }
+    progress_fields = {
+        MediaTypes.ANIME.value: ("num_watched_episodes", "num_episodes_watched"),
+        MediaTypes.MANGA.value: ("num_chapters_read", "num_chapters_read"),
+    }
+    field_labels = {
+        "status": "Status",
+        "num_watched_episodes": "Episodes watched",
+        "num_chapters_read": "Chapters read",
+        "score": "Score",
+    }
+    preview = []
+
+    for media in full_sync_entries(user):
+        media_type = media.item.media_type
+        desired = status_payload(media)
+        current = remote_statuses[media_type].get(str(media.item.media_id))
+        changes = []
+        for field, new_value in desired.items():
+            remote_field = (
+                progress_fields[media_type][1]
+                if field == progress_fields[media_type][0]
+                else field
+            )
+            old_value = current.get(remote_field) if current is not None else None
+            if old_value != new_value:
+                changes.append(
+                    {
+                        "field": field_labels[field],
+                        "from": old_value,
+                        "to": new_value,
+                    }
+                )
+
+        if changes:
+            preview.append(
+                {
+                    "title": media.item.title,
+                    "media_type": media_type.title(),
+                    "mal_id": str(media.item.media_id),
+                    "not_on_list": current is None,
+                    "changes": changes,
+                }
+            )
+
+    return preview
+
+
+def push_status(media, mal_account):
+    """Push a MAL-backed Anime/Manga entry's status, progress and score to MAL.
+
+    Args:
+        media: A saved Anime or Manga instance whose item.source is MAL.
+        mal_account: The user's MALAccount to push through.
+    """
+    media_type = media.item.media_type
+    data = status_payload(media)
 
     access_token = get_valid_access_token(mal_account)
     headers = {"Authorization": f"Bearer {access_token}"}
