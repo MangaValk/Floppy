@@ -704,6 +704,19 @@ class BulkSyncMALStatusTask(TestCase):
             tasks.bulk_sync_mal_status(user_id=self.user.pk)
         mock_push.assert_not_called()
 
+    def test_queued_sync_fails_cleanly_when_sync_was_disabled(self):
+        account = make_mal_account(self.user, sync_enabled=False)
+        account.full_sync_status = "queued"
+        account.save(update_fields=["full_sync_status"])
+
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        mock_push.assert_not_called()
+        account.refresh_from_db()
+        self.assertEqual(account.full_sync_status, "failed")
+        self.assertIn("disabled", account.full_sync_results[0]["reason"])
+
     def test_pushes_only_mal_backed_entries(self):
         """Every MAL-sourced anime/manga is pushed; the TMDB one is skipped."""
         make_mal_account(self.user)
@@ -712,6 +725,16 @@ class BulkSyncMALStatusTask(TestCase):
 
         pushed = {call.args[0] for call in mock_push.call_args_list}
         self.assertEqual(pushed, {self.anime, self.manga})
+        account = MALAccount.objects.get(user=self.user)
+        self.assertEqual(account.full_sync_status, "completed")
+        self.assertEqual(account.full_sync_total, 2)
+        self.assertEqual(account.full_sync_processed, 2)
+        self.assertEqual(account.full_sync_succeeded, 2)
+        self.assertEqual(account.full_sync_failed, 0)
+        self.assertEqual(
+            {result["title"] for result in account.full_sync_results},
+            {"Anime One", "Manga One"},
+        )
 
     def test_skips_media_with_no_status(self):
         """Statusless imported media is omitted from a full sync."""
@@ -735,6 +758,9 @@ class BulkSyncMALStatusTask(TestCase):
         account.refresh_from_db()
         self.assertTrue(account.connection_broken)
         self.assertFalse(account.sync_enabled)
+        self.assertEqual(account.full_sync_status, "failed")
+        self.assertEqual(account.full_sync_failed, 1)
+        self.assertEqual(account.full_sync_results[0]["reason"], "expired")
         self.assertEqual(mock_push.call_count, 1)
 
     def test_continues_and_records_failures(self):
@@ -746,6 +772,15 @@ class BulkSyncMALStatusTask(TestCase):
 
         account = MALAccount.objects.get(user=self.user)
         self.assertIn("1 of 2", account.last_error_message)
+        self.assertEqual(account.full_sync_status, "completed")
+        self.assertEqual(account.full_sync_succeeded, 1)
+        self.assertEqual(account.full_sync_failed, 1)
+        failed_result = next(
+            result
+            for result in account.full_sync_results
+            if result["outcome"] == "failed"
+        )
+        self.assertTrue(failed_result["reason"])
 
 
 class MALFullSyncView(TestCase):
@@ -780,6 +815,55 @@ class MALFullSyncView(TestCase):
             )
         mock_delay.assert_called_once_with(user_id=self.user.pk)
         self.assertContains(response, "started in the background")
+        account = MALAccount.objects.get(user=self.user)
+        self.assertEqual(account.full_sync_status, "queued")
+        self.assertEqual(account.full_sync_results, [])
+
+    def test_active_sync_is_not_queued_twice(self):
+        account = make_mal_account(self.user)
+        account.full_sync_status = "running"
+        account.save(update_fields=["full_sync_status"])
+
+        with patch("integrations.tasks.bulk_sync_mal_status.delay") as mock_delay:
+            response = self.client.post(
+                reverse("mal_full_sync"), {"confirmed": "true"}, follow=True
+            )
+
+        mock_delay.assert_not_called()
+        self.assertContains(response, "already in progress")
+
+    def test_status_returns_latest_persisted_progress(self):
+        account = make_mal_account(self.user)
+        account.full_sync_status = "running"
+        account.full_sync_total = 4
+        account.full_sync_processed = 2
+        account.full_sync_succeeded = 1
+        account.full_sync_failed = 1
+        account.full_sync_results = [
+            {
+                "title": "Failed Anime",
+                "media_type": "Anime",
+                "mal_id": "42",
+                "outcome": "failed",
+                "reason": "Not found",
+            }
+        ]
+        account.save()
+
+        response = self.client.get(reverse("mal_full_sync_status"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["processed"], 2)
+        self.assertTrue(response.json()["is_active"])
+        self.assertEqual(response.json()["results"][0]["reason"], "Not found")
+
+    def test_status_does_not_expose_another_users_sync(self):
+        other_user = _make_user(username="other")
+        make_mal_account(other_user)
+
+        response = self.client.get(reverse("mal_full_sync_status"))
+
+        self.assertEqual(response.status_code, 404)
 
     def test_full_sync_requires_preview_confirmation(self):
         make_mal_account(self.user)

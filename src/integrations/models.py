@@ -525,6 +525,16 @@ class LastFMAccount(models.Model):
         self.history_import_last_error_message = ""
 
 
+class MALFullSyncStatus(models.TextChoices):
+    """Lifecycle of a manual full sync to MyAnimeList."""
+
+    IDLE = "idle", "Not started"
+    QUEUED = "queued", "Queued"
+    RUNNING = "running", "Running"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
 class MALAccount(models.Model):
     """Store a user's MyAnimeList OAuth connection, used to push watch status.
 
@@ -548,6 +558,18 @@ class MALAccount(models.Model):
     )
     last_error_message = models.TextField(blank=True, default="")
     last_failed_at = models.DateTimeField(null=True, blank=True)
+    full_sync_status = models.CharField(
+        max_length=16,
+        choices=MALFullSyncStatus,
+        default=MALFullSyncStatus.IDLE,
+    )
+    full_sync_total = models.PositiveIntegerField(default=0)
+    full_sync_processed = models.PositiveIntegerField(default=0)
+    full_sync_succeeded = models.PositiveIntegerField(default=0)
+    full_sync_failed = models.PositiveIntegerField(default=0)
+    full_sync_results = models.JSONField(default=list, blank=True)
+    full_sync_started_at = models.DateTimeField(null=True, blank=True)
+    full_sync_completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -564,6 +586,14 @@ class MALAccount(models.Model):
     def is_connected(self):
         """Return True when we have a token stored and the connection isn't broken."""
         return bool(self.access_token) and not self.connection_broken
+
+    @property
+    def full_sync_is_active(self):
+        """Return True while a manual full sync is queued or running."""
+        return self.full_sync_status in {
+            MALFullSyncStatus.QUEUED,
+            MALFullSyncStatus.RUNNING,
+        }
 
 
 class KoitoAccount(models.Model):

@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from app.providers import services
 from integrations import mal_sync
-from integrations.models import MALAccount
+from integrations.models import MALAccount, MALFullSyncStatus
 
 logger = logging.getLogger(__name__)
 
@@ -118,18 +118,89 @@ def bulk_sync_mal_status(user_id):
         return
 
     if not mal_account.sync_enabled or mal_account.connection_broken:
+        mal_account.full_sync_status = MALFullSyncStatus.FAILED
+        mal_account.full_sync_results = [
+            {
+                "title": "MyAnimeList connection",
+                "media_type": "Account",
+                "mal_id": "",
+                "outcome": "failed",
+                "reason": "Sync was disabled or the account needs to be reconnected.",
+            }
+        ]
+        mal_account.full_sync_failed = 1
+        mal_account.full_sync_completed_at = timezone.now()
+        mal_account.save(
+            update_fields=[
+                "full_sync_status",
+                "full_sync_results",
+                "full_sync_failed",
+                "full_sync_completed_at",
+                "updated_at",
+            ]
+        )
         return
 
     entries = mal_sync.full_sync_entries(user)
+    mal_account.full_sync_status = MALFullSyncStatus.RUNNING
+    mal_account.full_sync_total = len(entries)
+    mal_account.full_sync_processed = 0
+    mal_account.full_sync_succeeded = 0
+    mal_account.full_sync_failed = 0
+    mal_account.full_sync_results = []
+    mal_account.full_sync_started_at = timezone.now()
+    mal_account.full_sync_completed_at = None
+    mal_account.save(
+        update_fields=[
+            "full_sync_status",
+            "full_sync_total",
+            "full_sync_processed",
+            "full_sync_succeeded",
+            "full_sync_failed",
+            "full_sync_results",
+            "full_sync_started_at",
+            "full_sync_completed_at",
+            "updated_at",
+        ]
+    )
 
     synced = 0
     failed = 0
+    results = []
     for media in entries:
+        result = {
+            "title": media.item.title,
+            "media_type": media._meta.verbose_name.title(),
+            "mal_id": str(media.item.media_id),
+        }
         try:
             mal_sync.push_status(media, mal_account)
             synced += 1
+            result["outcome"] = "succeeded"
+            result["reason"] = ""
         except mal_sync.MALAuthError as error:
+            failed += 1
+            result["outcome"] = "failed"
+            result["reason"] = str(error)[:500]
+            results.append(result)
             _mark_connection_broken(mal_account, error)
+            mal_account.full_sync_status = MALFullSyncStatus.FAILED
+            mal_account.full_sync_processed = synced + failed
+            mal_account.full_sync_succeeded = synced
+            mal_account.full_sync_failed = failed
+            mal_account.full_sync_results = results
+            mal_account.full_sync_completed_at = timezone.now()
+            mal_account.save(
+                update_fields=[
+                    "full_sync_status",
+                    "full_sync_processed",
+                    "full_sync_succeeded",
+                    "full_sync_failed",
+                    "full_sync_results",
+                    "full_sync_completed_at",
+                    "updated_at",
+                ]
+            )
             return
         except services.ProviderAPIError as error:
             logger.warning(
@@ -139,6 +210,8 @@ def bulk_sync_mal_status(user_id):
                 error,
             )
             failed += 1
+            result["outcome"] = "failed"
+            result["reason"] = str(error)[:500]
         except Exception:
             logger.exception(
                 "Full MyAnimeList sync: unexpected failure pushing %s (MAL ID %s)",
@@ -146,6 +219,23 @@ def bulk_sync_mal_status(user_id):
                 media.item.media_id,
             )
             failed += 1
+            result["outcome"] = "failed"
+            result["reason"] = "Unexpected error; check the server logs."
+
+        results.append(result)
+        mal_account.full_sync_processed = synced + failed
+        mal_account.full_sync_succeeded = synced
+        mal_account.full_sync_failed = failed
+        mal_account.full_sync_results = results
+        mal_account.save(
+            update_fields=[
+                "full_sync_processed",
+                "full_sync_succeeded",
+                "full_sync_failed",
+                "full_sync_results",
+                "updated_at",
+            ]
+        )
 
     logger.info(
         "Full MyAnimeList sync for %s: %s updated, %s failed (%s total)",
@@ -154,6 +244,8 @@ def bulk_sync_mal_status(user_id):
         failed,
         len(entries),
     )
+    mal_account.full_sync_status = MALFullSyncStatus.COMPLETED
+    mal_account.full_sync_completed_at = timezone.now()
     if failed:
         # A per-item failure (e.g. one deleted MAL entry) isn't a broken
         # connection - leave sync_enabled/connection_broken alone, just
@@ -163,6 +255,15 @@ def bulk_sync_mal_status(user_id):
             "update on MyAnimeList - check server logs for details."
         )[:500]
         mal_account.last_failed_at = timezone.now()
-        mal_account.save(
-            update_fields=["last_error_message", "last_failed_at", "updated_at"]
-        )
+    else:
+        mal_account.last_error_message = ""
+        mal_account.last_failed_at = None
+    mal_account.save(
+        update_fields=[
+            "full_sync_status",
+            "full_sync_completed_at",
+            "last_error_message",
+            "last_failed_at",
+            "updated_at",
+        ]
+    )

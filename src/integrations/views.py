@@ -1424,9 +1424,34 @@ def mal_full_sync(request):
         messages.error(request, "Reconnect your MyAnimeList account first.")
     elif not mal_account.sync_enabled:
         messages.error(request, "Turn sync back on before running a full sync.")
+    elif mal_account.full_sync_is_active:
+        messages.info(request, "A full MyAnimeList sync is already in progress.")
     elif request.POST.get("confirmed") != "true":
         messages.error(request, "Review the MyAnimeList changes before syncing.")
     else:
+        from integrations.models import MALFullSyncStatus
+
+        mal_account.full_sync_status = MALFullSyncStatus.QUEUED
+        mal_account.full_sync_total = 0
+        mal_account.full_sync_processed = 0
+        mal_account.full_sync_succeeded = 0
+        mal_account.full_sync_failed = 0
+        mal_account.full_sync_results = []
+        mal_account.full_sync_started_at = None
+        mal_account.full_sync_completed_at = None
+        mal_account.save(
+            update_fields=[
+                "full_sync_status",
+                "full_sync_total",
+                "full_sync_processed",
+                "full_sync_succeeded",
+                "full_sync_failed",
+                "full_sync_results",
+                "full_sync_started_at",
+                "full_sync_completed_at",
+                "updated_at",
+            ]
+        )
         tasks.bulk_sync_mal_status.delay(user_id=request.user.pk)
         messages.success(
             request,
@@ -1434,6 +1459,29 @@ def mal_full_sync(request):
             "take a while for large libraries.",
         )
     return _integration_redirect(request)
+
+
+@require_GET
+def mal_full_sync_status(request):
+    """Return durable progress and outcomes for the latest manual MAL sync."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        return JsonResponse({"error": "Connect a MyAnimeList account first."}, status=404)
+
+    return JsonResponse(
+        {
+            "status": mal_account.full_sync_status,
+            "status_label": mal_account.get_full_sync_status_display(),
+            "is_active": mal_account.full_sync_is_active,
+            "total": mal_account.full_sync_total,
+            "processed": mal_account.full_sync_processed,
+            "succeeded": mal_account.full_sync_succeeded,
+            "failed": mal_account.full_sync_failed,
+            "results": mal_account.full_sync_results,
+            "started_at": mal_account.full_sync_started_at,
+            "completed_at": mal_account.full_sync_completed_at,
+        }
+    )
 
 
 @require_GET
