@@ -1487,6 +1487,7 @@ else:
         "integrations.tasks._jellyfin_pull",
         "integrations.tasks._koito",
         "integrations.tasks._lastfm",
+        "integrations.tasks._mal_sync",
         "integrations.tasks._media_imports",
         "integrations.tasks._plex_collection",
         "integrations.tasks._plex_sections",
