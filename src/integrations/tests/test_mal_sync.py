@@ -503,6 +503,16 @@ class SyncMALStatusTask(TestCase):
             tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
         mock_push.assert_called_once_with(self.anime, account)
 
+    def test_noop_when_media_has_no_status(self):
+        """Statusless imported media has no MAL list status to push."""
+        make_mal_account(self.user)
+        Anime.objects.filter(pk=self.anime.pk).update(status=None)
+
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
+
+        mock_push.assert_not_called()
+
     def test_finds_anime_migrated_to_episode_tracking(self):
         """all_objects (not the default manager) still finds a migrated row."""
         make_mal_account(self.user)
@@ -609,6 +619,16 @@ class BulkSyncMALStatusTask(TestCase):
 
         pushed = {call.args[0] for call in mock_push.call_args_list}
         self.assertEqual(pushed, {self.anime, self.manga})
+
+    def test_skips_media_with_no_status(self):
+        """Statusless imported media is omitted from a full sync."""
+        make_mal_account(self.user)
+        Anime.objects.filter(pk=self.anime.pk).update(status=None)
+
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        mock_push.assert_called_once_with(self.manga, self.user.mal_account)
 
     def test_stops_and_breaks_connection_on_auth_error(self):
         """An auth failure partway through stops the batch and disables sync."""

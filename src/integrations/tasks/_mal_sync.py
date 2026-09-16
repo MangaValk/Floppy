@@ -81,6 +81,9 @@ def sync_mal_status(media_type, media_id):
     if not mal_account.sync_enabled or mal_account.connection_broken:
         return
 
+    if media.status is None:
+        return
+
     try:
         mal_sync.push_status(media, mal_account)
     except mal_sync.MALAuthError as error:
@@ -122,8 +125,16 @@ def bulk_sync_mal_status(user_id):
         return
 
     entries = [
-        *Anime.all_objects.filter(user=user, item__source=Sources.MAL.value),
-        *Manga.objects.filter(user=user, item__source=Sources.MAL.value),
+        *Anime.all_objects.filter(
+            user=user,
+            item__source=Sources.MAL.value,
+            status__isnull=False,
+        ),
+        *Manga.objects.filter(
+            user=user,
+            item__source=Sources.MAL.value,
+            status__isnull=False,
+        ),
     ]
 
     synced = 0
@@ -141,6 +152,13 @@ def bulk_sync_mal_status(user_id):
                 media.item.title,
                 media.item.media_id,
                 error,
+            )
+            failed += 1
+        except Exception:
+            logger.exception(
+                "Full MyAnimeList sync: unexpected failure pushing %s (MAL ID %s)",
+                media.item.title,
+                media.item.media_id,
             )
             failed += 1
 
