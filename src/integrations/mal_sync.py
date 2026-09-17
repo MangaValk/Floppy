@@ -49,9 +49,25 @@ MANGA_STATUS_TO_MAL = {
     Status.DROPPED.value: "dropped",
 }
 
+# The field MAL accepts on a write differs from the field it reports back on a
+# read (e.g. "num_watched_episodes" in, "num_episodes_watched" out).
+PROGRESS_RESPONSE_FIELDS = {
+    MediaTypes.ANIME.value: ("num_watched_episodes", "num_episodes_watched"),
+    MediaTypes.MANGA.value: ("num_chapters_read", "num_chapters_read"),
+}
+
 
 class MALAuthError(Exception):
     """Raised when MyAnimeList rejects an OAuth request or credentials are missing."""
+
+
+class MALSyncMismatchError(Exception):
+    """Raised when MAL returns success but its response shows the change wasn't applied.
+
+    Seen for some new list adds (HTTP 200, but the item never shows up on the
+    user's MAL list) - MAL doesn't surface a clean error for this, so the only
+    way to detect it is to check the echoed list_status against what was sent.
+    """
 
 
 def client_id(user):
@@ -267,10 +283,6 @@ def preview_full_sync(user, mal_account):
         media_type: _fetch_list_statuses(media_type, mal_account)
         for media_type in (MediaTypes.ANIME.value, MediaTypes.MANGA.value)
     }
-    progress_fields = {
-        MediaTypes.ANIME.value: ("num_watched_episodes", "num_episodes_watched"),
-        MediaTypes.MANGA.value: ("num_chapters_read", "num_chapters_read"),
-    }
     field_labels = {
         "status": "Status",
         "num_watched_episodes": "Episodes watched",
@@ -286,8 +298,8 @@ def preview_full_sync(user, mal_account):
         changes = []
         for field, new_value in desired.items():
             remote_field = (
-                progress_fields[media_type][1]
-                if field == progress_fields[media_type][0]
+                PROGRESS_RESPONSE_FIELDS[media_type][1]
+                if field == PROGRESS_RESPONSE_FIELDS[media_type][0]
                 else field
             )
             old_value = current.get(remote_field) if current is not None else None
@@ -329,7 +341,7 @@ def push_status(media, mal_account):
     url = f"{API_BASE_URL}/{media_type}/{media.item.media_id}/my_list_status"
 
     try:
-        services.api_request(
+        response = services.api_request(
             Sources.MAL.value,
             "PUT",
             url,
@@ -342,6 +354,20 @@ def push_status(media, mal_account):
             msg = "MyAnimeList rejected the request. Please reconnect your account."
             raise MALAuthError(msg) from error
         raise services.ProviderAPIError(Sources.MAL.value, error) from error
+
+    sent_field, response_field = PROGRESS_RESPONSE_FIELDS[media_type]
+    mismatches = [
+        field
+        for field, value in data.items()
+        if response.get(response_field if field == sent_field else field) != value
+    ]
+    if mismatches:
+        msg = (
+            f"MyAnimeList accepted the update for {media.item.title} (MAL ID "
+            f"{media.item.media_id}) but its response shows it wasn't applied "
+            f"({', '.join(mismatches)})."
+        )
+        raise MALSyncMismatchError(msg)
 
     logger.info(
         "Synced %s (MAL ID %s) to MyAnimeList for user %s",

@@ -87,6 +87,10 @@ def sync_mal_status(media_type, media_id):
         mal_sync.push_status(media, mal_account)
     except mal_sync.MALAuthError as error:
         _mark_connection_broken(mal_account, error)
+    except mal_sync.MALSyncMismatchError as error:
+        # Not retryable: MAL echoed a response that doesn't match what was
+        # sent, so retrying the same payload won't change the outcome.
+        logger.warning(str(error))
     except services.ProviderAPIError as error:
         if error.status_code in {requests.codes.not_found, requests.codes.bad_request}:
             logger.warning(
@@ -202,6 +206,10 @@ def bulk_sync_mal_status(user_id):
                 ]
             )
             return
+        except mal_sync.MALSyncMismatchError as error:
+            failed += 1
+            result["outcome"] = "failed"
+            result["reason"] = str(error)[:500]
         except services.ProviderAPIError as error:
             logger.warning(
                 "Full MyAnimeList sync: failed to push %s (MAL ID %s): %s",

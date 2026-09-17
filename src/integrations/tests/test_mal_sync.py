@@ -379,7 +379,9 @@ class PushStatus(TestCase):
     @patch("requests.Session.put")
     def test_push_anime_status_and_progress(self, mock_put, *_mocks):
         """Anime pushes status + num_watched_episodes, using the anime status map."""
-        mock_put.return_value = MagicMock(json=dict)
+        mock_put.return_value = MagicMock(
+            json=lambda: {"status": "on_hold", "num_episodes_watched": 5},
+        )
         anime = Anime.objects.create(
             user=self.user,
             item=self.anime_item,
@@ -398,7 +400,9 @@ class PushStatus(TestCase):
     @patch("requests.Session.put")
     def test_push_manga_uses_chapters_and_manga_status_map(self, mock_put, *_mocks):
         """Manga pushes num_chapters_read and maps status onto MAL's manga statuses."""
-        mock_put.return_value = MagicMock(json=dict)
+        mock_put.return_value = MagicMock(
+            json=lambda: {"status": "dropped", "num_chapters_read": 64, "score": 8},
+        )
         manga = Manga.objects.create(
             user=self.user,
             item=self.manga_item,
@@ -428,7 +432,9 @@ class PushStatus(TestCase):
             "expires_in": 3600,
         }
         mock_post.return_value = refresh_response
-        mock_put.return_value = MagicMock(json=dict)
+        mock_put.return_value = MagicMock(
+            json=lambda: {"status": "on_hold", "num_episodes_watched": 0},
+        )
 
         anime = Anime.objects.create(
             user=self.user,
