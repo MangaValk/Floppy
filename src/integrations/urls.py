@@ -213,6 +213,16 @@ urlpatterns = [
         name="mal_full_sync_status",
     ),
     path("sync/mal/full", views.mal_full_sync, name="mal_full_sync"),
+    path(
+        "sync/mal/export/schedule",
+        views.mal_export_schedule_save,
+        name="mal_export_schedule_save",
+    ),
+    path(
+        "sync/mal/export/schedule/delete",
+        views.mal_export_schedule_delete,
+        name="mal_export_schedule_delete",
+    ),
     path("import/koito/connect", views.koito_connect, name="koito_connect"),
     path("import/koito/disconnect", views.koito_disconnect, name="koito_disconnect"),
     path(

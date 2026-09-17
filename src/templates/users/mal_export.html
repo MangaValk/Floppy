@@ -1,0 +1,344 @@
+{% extends "users/base.html" %}
+{% load i18n %}
+
+{% load user_tags %}
+{% load app_tags %}
+
+{% block title %}
+  {% translate "MyAnimeList Export - Floppy" %}
+{% endblock title %}
+
+{% block settings_content %}
+  <div class="space-y-6"
+       x-data="{
+         activeModal: null,
+         scheduleFrequency: 'daily',
+         scheduleTime: '03:00',
+         malSyncChanges: [],
+         malSyncPreviewLoading: false,
+         malSyncPreviewError: '',
+         malSyncConnected: {% if mal_account %}true{% else %}false{% endif %},
+         malSyncStatus: null,
+         malSyncPollTimer: null,
+         init() {
+           if (this.malSyncConnected) {
+             this.refreshMalSyncStatus();
+           }
+         },
+         async refreshMalSyncStatus() {
+           window.clearTimeout(this.malSyncPollTimer);
+           try {
+             const response = await fetch('{% url "mal_full_sync_status" %}', {
+               headers: { 'X-Requested-With': 'XMLHttpRequest' }
+             });
+             if (!response.ok) {
+               return;
+             }
+             this.malSyncStatus = await response.json();
+             if (this.malSyncStatus.is_active) {
+               this.malSyncPollTimer = window.setTimeout(
+                 () => this.refreshMalSyncStatus(),
+                 1500
+               );
+             }
+           } catch (error) {
+             this.malSyncPollTimer = window.setTimeout(
+               () => this.refreshMalSyncStatus(),
+               5000
+             );
+           }
+         },
+         malSyncProgressPercent() {
+           if (!this.malSyncStatus || !this.malSyncStatus.total) {
+             return 0;
+           }
+           return Math.round(
+             (this.malSyncStatus.processed / this.malSyncStatus.total) * 100
+           );
+         },
+         async previewMalSync() {
+           this.malSyncPreviewLoading = true;
+           this.malSyncPreviewError = '';
+           this.malSyncChanges = [];
+           this.activeModal = 'mal-sync-preview';
+           try {
+             const response = await fetch('{% url "mal_full_sync_preview" %}', {
+               headers: { 'X-Requested-With': 'XMLHttpRequest' }
+             });
+             const data = await response.json();
+             if (!response.ok) {
+               throw new Error(data.error || gettext('Could not preview MyAnimeList changes.'));
+             }
+             this.malSyncChanges = data.changes || [];
+           } catch (error) {
+             this.malSyncPreviewError = error.message || gettext('Could not preview MyAnimeList changes.');
+           } finally {
+             this.malSyncPreviewLoading = false;
+           }
+         },
+         formatMalValue(value) {
+           if (value === null || value === undefined) {
+             return gettext('Not set');
+           }
+           return String(value).replaceAll('_', ' ');
+         },
+       }">
+
+    {# Connection #}
+    <div class="bg-[var(--color-surface)] rounded-lg p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center">
+          {% include "app/icons/export.svg" with classes="w-6 h-6 text-[var(--color-link)] mr-3" %}
+          <h2 class="text-xl font-semibold">{% translate "MyAnimeList Export" %}</h2>
+        </div>
+        {% if mal_account and mal_account.is_connected %}
+          <span class="px-2 py-1 text-xs rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">{% translate "Connected" %}</span>
+        {% else %}
+          <span class="px-2 py-1 text-xs rounded bg-gray-500/20 text-[var(--color-text-secondary)] border border-gray-600/50">{% translate "Disconnected" %}</span>
+        {% endif %}
+      </div>
+      <p class="text-[var(--color-text-muted)] mb-5 text-sm">
+        {% translate "Push watch status, progress and score changes on MAL-tracked anime and manga back to MyAnimeList. This is separate from importing anime and manga from MyAnimeList, which is managed on the Import Data page." %}
+      </p>
+
+      {% if mal_account and mal_account.is_connected %}
+        <p class="text-xs text-[var(--color-text-muted)] mb-3">
+          {% blocktranslate with mal_username=mal_account.mal_username|default:"MyAnimeList user" %}Connected as {{ mal_username }}. Status, progress and score changes on MAL-tracked anime and manga sync automatically.{% endblocktranslate %}
+        </p>
+
+        {% if mal_account.connection_broken and mal_account.last_error_message %}
+          <div class="text-xs text-[var(--color-warning-text)] bg-amber-500/10 border border-amber-400/30 rounded p-2 mb-3">
+            <strong>{% translate "Error:" %}</strong> {{ mal_account.last_error_message }}
+          </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'mal_toggle' %}" class="flex items-center justify-between mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="enabled"
+                   value="true"
+                   {% if mal_account.sync_enabled %}checked{% endif %}
+                   onchange="this.form.requestSubmit()"
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Sync enabled" %}
+          </label>
+        </form>
+
+        <div class="flex gap-2 mb-2">
+          <div class="flex-1">
+            <button type="button"
+                    @click="previewMalSync()"
+                    class="w-full px-3 py-2 text-sm rounded-md transition-colors cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700">
+              {% translate "Sync All Now" %}
+            </button>
+          </div>
+          <form method="post" action="{% url 'mal_disconnect' %}" class="flex-1">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <button type="submit"
+                    class="w-full px-3 py-2 text-sm rounded-md transition-colors cursor-pointer bg-red-600 text-white hover:bg-red-700">
+              {% translate "Disconnect" %}
+            </button>
+          </form>
+        </div>
+        <p class="text-xs text-[var(--color-text-muted)]">{% blocktranslate %}"Sync All Now" pushes every MAL-tracked entry's current status - useful right after connecting, or after restoring a backup.{% endblocktranslate %}</p>
+
+        <div x-show="malSyncStatus && malSyncStatus.status !== 'idle'"
+             x-cloak
+             class="border border-[var(--color-surface-border)] rounded-md p-3 space-y-3 mt-4">
+          <div class="flex items-center justify-between gap-3 text-sm">
+            <strong class="text-[var(--color-text)]">{% translate "Full sync status" %}</strong>
+            <span class="text-xs text-[var(--color-text-secondary)]" x-text="malSyncStatus?.status_label"></span>
+          </div>
+          <div x-show="malSyncStatus?.is_active" class="space-y-1">
+            <div class="h-2 overflow-hidden rounded bg-[var(--color-surface)]" role="progressbar"
+                 :aria-valuenow="malSyncStatus?.processed || 0"
+                 aria-valuemin="0"
+                 :aria-valuemax="malSyncStatus?.total || 0">
+              <div class="h-full bg-indigo-500 transition-[width] duration-300"
+                   :style="`width: ${malSyncProgressPercent()}%`"></div>
+            </div>
+            <p class="text-xs text-[var(--color-text-muted)]"
+               x-text="malSyncStatus?.total ? `${malSyncStatus.processed} / ${malSyncStatus.total}` : gettext('Preparing sync...')"></p>
+          </div>
+          <p class="text-xs text-[var(--color-text-secondary)]"
+             x-show="malSyncStatus?.processed"
+             x-text="interpolate(gettext('%s succeeded, %s failed'), [malSyncStatus?.succeeded || 0, malSyncStatus?.failed || 0])"></p>
+          <div x-show="malSyncStatus?.results?.length" class="max-h-64 overflow-y-auto space-y-2">
+            <template x-for="entry in malSyncStatus?.results || []" :key="entry.media_type + '-' + entry.mal_id">
+              <div class="flex items-start gap-2 text-xs">
+                <span class="mt-0.5"
+                      :class="entry.outcome === 'succeeded' ? 'text-emerald-300' : 'text-red-300'"
+                      x-text="entry.outcome === 'succeeded' ? '\u2713' : '\u2717'"></span>
+                <div class="min-w-0">
+                  <p class="text-[var(--color-text)] break-words" x-text="entry.title"></p>
+                  <p class="text-red-300 break-words" x-show="entry.reason" x-text="entry.reason"></p>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      {% elif mal_sync_configured %}
+        <p class="text-xs text-[var(--color-text-muted)] mb-3">{% translate "Connect your MyAnimeList account to start syncing your watch status back." %}</p>
+        <form method="post" action="{% url 'mal_oauth' %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <button type="submit"
+                  class="w-full px-4 py-2 text-sm rounded-md transition-colors cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700">
+            {% translate "Connect MyAnimeList" %}
+          </button>
+        </form>
+      {% else %}
+        <p class="text-xs text-[var(--color-text-muted)]">
+          {% blocktranslate %}Add your own MyAnimeList Client ID and Client secret under{% endblocktranslate %}
+          <a href="{% url 'metadata_settings' %}" class="text-[var(--color-link)] hover:underline">{% translate "Settings > Metadata" %}</a>
+          {% translate "to enable syncing." %}
+        </p>
+      {% endif %}
+    </div>
+
+    {% if mal_account and mal_account.is_connected %}
+      {# Schedule #}
+      <div class="bg-[var(--color-surface)] rounded-lg p-6">
+        <div class="flex items-center mb-4">
+          {% include "app/icons/repeat.svg" with classes="w-6 h-6 text-[var(--color-link)] mr-3" %}
+          <h2 class="text-xl font-semibold">{% translate "Scheduled Export" %}</h2>
+        </div>
+        <p class="text-[var(--color-text-muted)] mb-5 text-sm">
+          {% translate "In addition to the automatic per-item sync, run a full sync of every MAL-tracked entry on a recurring schedule - useful as a periodic safety net." %}
+        </p>
+
+        <form method="post" action="{% url 'mal_export_schedule_save' %}">
+          {% csrf_token %}
+          <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-[var(--color-text-muted)] mb-2">{% translate "Frequency" %}</label>
+              <select name="frequency"
+                      x-model="scheduleFrequency"
+                      class="w-full py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                <option value="daily">{% translate "Every Day" %}</option>
+                <option value="2days">{% translate "Every 2 Days" %}</option>
+                <option value="weekly">{% translate "Weekly" %}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm text-[var(--color-text-muted)] mb-2">{% translate "Time" %}</label>
+              <input x-model="scheduleTime"
+                     name="time"
+                     class="w-full py-2 px-3 bg-[var(--color-panel)] rounded-md text-[var(--color-text)] text-sm border border-gray-600 focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 scheme-dark"
+                     type="time">
+            </div>
+          </div>
+          <button type="submit"
+                  class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm cursor-pointer">
+            {% translate "Save Schedule" %}
+          </button>
+        </form>
+      </div>
+
+      {# Active schedule #}
+      <div class="bg-[var(--color-surface)] rounded-lg p-6">
+        <div class="flex items-center mb-4">
+          {% include "app/icons/repeat.svg" with classes="w-6 h-6 text-[var(--color-link)] mr-3" %}
+          <h2 class="text-xl font-semibold">{% translate "Active Schedule" %}</h2>
+        </div>
+        {% if mal_export_schedule %}
+          <div class="bg-[var(--color-surface-strong)] rounded-lg p-4">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-3">
+                {% include "app/icons/download.svg" with classes="w-5 h-5 text-[var(--color-link)]" %}
+                <span class="text-sm font-medium text-[var(--color-text-secondary)]">{% translate "Full sync to MyAnimeList" %}</span>
+                <span class="text-sm text-[var(--color-text-muted)]">{{ mal_export_schedule.frequency }}</span>
+              </div>
+              <form action="{% url 'mal_export_schedule_delete' %}" method="post">
+                {% csrf_token %}
+                <button class="text-red-400 hover:text-white p-2 rounded-md transition-all duration-200 hover:bg-red-500 cursor-pointer">
+                  {% include "app/icons/trashcan.svg" with classes="w-4 h-4" %}
+                </button>
+              </form>
+            </div>
+            <div class="text-sm text-[var(--color-text-muted)] space-y-1">
+              <div>{% translate "Last Sync:" %} {% if mal_export_schedule.last_run %}{{ mal_export_schedule.last_run|user_datetime_format:user }}{% else %}{% translate "Never" %}{% endif %}</div>
+              <div>{% blocktranslate with value1=mal_export_schedule.next_run|user_datetime_format:user %}Next Sync: {{ value1 }}{% endblocktranslate %}</div>
+            </div>
+          </div>
+        {% else %}
+          <p class="text-[var(--color-text-muted)] text-sm">{% translate "No scheduled export yet." %}</p>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {# MyAnimeList full sync preview #}
+  <div x-show="activeModal === 'mal-sync-preview'"
+       x-cloak
+       @keydown.escape.window="activeModal = null"
+       x-transition.opacity.duration.150ms
+       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+       @mousedown.self="activeModal = null">
+    <div class="modal-max-height overflow-y-auto w-full bg-[var(--color-surface-strong)] p-4 rounded-lg"
+         style="width: min(96vw, 42rem);">
+      <div class="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 class="text-lg font-semibold text-[var(--color-text)]">{% translate "Review MyAnimeList sync" %}</h2>
+          <p class="text-sm text-[var(--color-text-muted)]">{% translate "No changes have been sent yet." %}</p>
+        </div>
+        <button type="button"
+                @click="activeModal = null"
+                title="{% translate 'Close' %}"
+                class="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer p-1 rounded-md hover:bg-[var(--color-surface-hover)]">
+          {% include "app/icons/x.svg" with classes="w-4 h-4" %}
+        </button>
+      </div>
+
+      <p x-show="malSyncPreviewLoading" class="text-sm text-[var(--color-text-muted)] py-6 text-center">{% translate "Checking your MyAnimeList list..." %}</p>
+      <div x-show="malSyncPreviewError" class="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded p-3" x-text="malSyncPreviewError"></div>
+      <p x-show="!malSyncPreviewLoading && !malSyncPreviewError && !malSyncChanges.length"
+         class="text-sm text-[var(--color-text-muted)] py-6 text-center">{% translate "Everything is already up to date." %}</p>
+
+      <div x-show="!malSyncPreviewLoading && malSyncChanges.length" class="space-y-3">
+        <p class="text-sm text-[var(--color-text-secondary)]"
+           x-text="interpolate(ngettext('%s title will change', '%s titles will change', malSyncChanges.length), [malSyncChanges.length])"></p>
+        <template x-for="entry in malSyncChanges" :key="entry.media_type + '-' + entry.mal_id">
+          <div class="border border-[var(--color-surface-border)] rounded-md p-3">
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <strong class="text-sm text-[var(--color-text)]" x-text="entry.title"></strong>
+              <span class="text-xs text-[var(--color-text-muted)]" x-text="entry.media_type"></span>
+            </div>
+            <p x-show="entry.not_on_list" class="text-xs text-[var(--color-warning-text)] mb-2">{% translate "Not currently on your MyAnimeList list" %}</p>
+            <div class="space-y-1">
+              <template x-for="change in entry.changes" :key="change.field">
+                <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-xs">
+                  <span class="text-[var(--color-text-muted)]" x-text="change.field + ': ' + formatMalValue(change.from)"></span>
+                  <span aria-hidden="true" class="text-[var(--color-text-muted)]">&rarr;</span>
+                  <span class="text-[var(--color-text)]" x-text="formatMalValue(change.to)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="flex gap-2 mt-4">
+        <button type="button"
+                @click="activeModal = null"
+                class="flex-1 px-3 py-2 text-sm rounded-md border border-[var(--color-surface-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] cursor-pointer">
+          {% translate "Cancel" %}
+        </button>
+        <form method="post" action="{% url 'mal_full_sync' %}" class="flex-1">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <input type="hidden" name="confirmed" value="true">
+          <button type="submit"
+                  :disabled="malSyncPreviewLoading || malSyncPreviewError || !malSyncChanges.length"
+                  class="w-full px-3 py-2 text-sm rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            {% translate "Confirm Sync" %}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock settings_content %}

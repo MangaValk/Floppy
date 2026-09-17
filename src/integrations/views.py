@@ -1515,6 +1515,89 @@ def mal_full_sync_preview(request):
 
 
 @require_POST
+def mal_export_schedule_save(request):
+    """Create or update the user's recurring full sync to MyAnimeList."""
+    import datetime as dt
+
+    from django_celery_beat.models import CrontabSchedule, PeriodicTask
+
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None or not mal_account.is_connected:
+        messages.error(request, "Connect a MyAnimeList account first.")
+        return redirect("mal_export")
+
+    frequency = request.POST.get("frequency", "daily")
+    export_time = request.POST.get("time", "03:00")
+
+    try:
+        parsed_time = dt.datetime.strptime(export_time, "%H:%M").time()  # noqa: DTZ007  # date-only value; no timezone applies
+    except ValueError:
+        messages.error(request, "Invalid schedule time.")
+        return redirect("mal_export")
+
+    if frequency == "daily":
+        day_of_week = "*"
+    elif frequency == "2days":
+        day_of_week = "*/2"
+    elif frequency == "weekly":
+        day_of_week = "0"  # Sunday
+    else:
+        messages.error(request, "Invalid schedule frequency.")
+        return redirect("mal_export")
+
+    crontab, _ = CrontabSchedule.objects.get_or_create(
+        hour=parsed_time.hour,
+        minute=parsed_time.minute,
+        day_of_week=day_of_week,
+        timezone=timezone.get_default_timezone(),
+    )
+
+    task_name = f"Scheduled export to MyAnimeList for {request.user.username}"
+    existing_task = PeriodicTask.objects.filter(
+        _periodic_task_filter_for_user(request.user.id),
+        task=tasks.MAL_FULL_SYNC_TASK_NAME,
+    ).first()
+
+    if existing_task:
+        existing_task.name = task_name
+        existing_task.crontab = crontab
+        existing_task.kwargs = json.dumps({"user_id": request.user.id})
+        existing_task.enabled = True
+        existing_task.start_time = timezone.now()
+        existing_task.save(
+            update_fields=["name", "crontab", "kwargs", "enabled", "start_time"],
+        )
+    else:
+        PeriodicTask.objects.create(
+            name=task_name,
+            task=tasks.MAL_FULL_SYNC_TASK_NAME,
+            crontab=crontab,
+            kwargs=json.dumps({"user_id": request.user.id}),
+            start_time=timezone.now(),
+            enabled=True,
+        )
+
+    messages.success(request, "MyAnimeList export schedule saved.")
+    return redirect("mal_export")
+
+
+@require_POST
+def mal_export_schedule_delete(request):
+    """Delete the user's recurring full sync to MyAnimeList."""
+    from django_celery_beat.models import PeriodicTask
+
+    deleted, _ = PeriodicTask.objects.filter(
+        _periodic_task_filter_for_user(request.user.id),
+        task=tasks.MAL_FULL_SYNC_TASK_NAME,
+    ).delete()
+    if deleted:
+        messages.success(request, "MyAnimeList export schedule deleted.")
+    else:
+        messages.error(request, "MyAnimeList export schedule not found.")
+    return redirect("mal_export")
+
+
+@require_POST
 def import_anilist_public(request):
     """View for importing anime and manga data from AniList."""
     username = request.POST.get("user")

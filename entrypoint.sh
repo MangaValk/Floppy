@@ -138,8 +138,9 @@ if [ -z "$DB_HOST" ]; then
             integrity_pid=
             heartbeat_pid=
             # One bound, used by the command and its operator message, so the two
-            # can never drift apart.
-            integrity_timeout=600
+            # can never drift apart. Overridable for large databases whose
+            # integrity scan legitimately needs longer than the 600s default.
+            integrity_timeout=${FLOPPY_SQLITE_INTEGRITY_TIMEOUT:-600}
             trap 'kill "$integrity_pid" 2>/dev/null || :; wait "$integrity_pid" 2>/dev/null || :; kill "$heartbeat_pid" 2>/dev/null || :; wait "$heartbeat_pid" 2>/dev/null || :; exit 0' TERM INT
             timeout "$integrity_timeout" python -c 'from config.sqlite_recovery_policy import check_database_for_startup; import sys; check_database_for_startup(sys.argv[1])' "$DB_FILE" &
             integrity_pid=$!

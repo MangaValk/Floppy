@@ -62,7 +62,7 @@ from integrations.models import (
 )
 from integrations.plex_watchlist import WATCHLIST_TASK_NAME
 from users import appearance as appearance_config
-from users import cache_management
+from users import cache_management, helpers
 from users.forms import (
     AuthenticatorSetupForm,
     NotificationSettingsForm,
@@ -1837,6 +1837,40 @@ def export_data(request):
         "db_snapshot_status": _db_snapshot_status(),
     }
     return render(request, "users/export_data.html", context)
+
+
+@require_GET
+def mal_export(request):
+    """Render the MyAnimeList export (status sync) settings page."""
+    user = request.user
+    mal_account = getattr(user, "mal_account", None)
+    schedule = None
+    periodic_task = (
+        PeriodicTask.objects.filter(
+            Q(kwargs__contains=f'"user_id": {user.id},')
+            | Q(kwargs__contains=f'"user_id": {user.id}' + "}"),
+            task=tasks.MAL_FULL_SYNC_TASK_NAME,
+        )
+        .select_related("crontab")
+        .first()
+    )
+    if periodic_task:
+        schedule_info = helpers.get_export_next_run_info(periodic_task)
+        if schedule_info:
+            schedule = {
+                "task": periodic_task,
+                "last_run": periodic_task.last_run_at,
+                "next_run": schedule_info["next_run"],
+                "frequency": schedule_info["frequency"],
+            }
+
+    context = {
+        "user": user,
+        "mal_account": mal_account,
+        "mal_sync_configured": mal_sync.is_sync_configured(user),
+        "mal_export_schedule": schedule,
+    }
+    return render(request, "users/mal_export.html", context)
 
 
 @require_GET
