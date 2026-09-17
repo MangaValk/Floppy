@@ -331,7 +331,7 @@ def push_status(media, mal_account):
     try:
         services.api_request(
             Sources.MAL.value,
-            "PATCH",
+            "PUT",
             url,
             data=data,
             headers=headers,

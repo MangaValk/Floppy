@@ -443,7 +443,7 @@ session.mount(
 
 
 def resilient_request(method, url, **kwargs):
-    """GET/POST through the shared rate-limited session.
+    """Send a request through the shared rate-limited session.
 
     Falls back to a per-process limited session if Redis breaks the shared
     bucket mid-run, instead of raising RedisError. Construction-time Redis
@@ -461,6 +461,7 @@ def resilient_request(method, url, **kwargs):
     request_func = {
         "GET": session.get,
         "POST": session.post,
+        "PUT": session.put,
         "PATCH": session.patch,
     }[method]
     try:
@@ -476,6 +477,7 @@ def resilient_request(method, url, **kwargs):
         fallback_func = {
             "GET": _fallback_session.get,
             "POST": _fallback_session.post,
+            "PUT": _fallback_session.put,
             "PATCH": _fallback_session.patch,
         }[method]
         return fallback_func(url=url, **kwargs)
@@ -716,10 +718,10 @@ def api_request(
 
     Args:
         provider: Provider identifier for error messages
-        method: HTTP method ("GET", "POST" or "PATCH")
+        method: HTTP method ("GET", "POST", "PUT" or "PATCH")
         url: Request URL
         params: Query params for GET, JSON body for POST
-        data: Raw data for POST/PATCH (e.g. form-encoded body)
+        data: Raw data for POST/PUT/PATCH (e.g. form-encoded body)
         headers: Request headers
         response_format: "json" (default) or "xml" for XML parsing
 
@@ -751,7 +753,7 @@ def api_request(
         elif method == "POST":
             request_kwargs["data"] = data
             request_kwargs["json"] = params
-        elif method == "PATCH":
+        elif method in {"PUT", "PATCH"}:
             request_kwargs["data"] = data
 
         response = resilient_request(method, **request_kwargs)

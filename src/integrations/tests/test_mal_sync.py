@@ -376,10 +376,10 @@ class PushStatus(TestCase):
             title="Test Manga",
         )
 
-    @patch("requests.Session.patch")
-    def test_push_anime_status_and_progress(self, mock_patch, *_mocks):
+    @patch("requests.Session.put")
+    def test_push_anime_status_and_progress(self, mock_put, *_mocks):
         """Anime pushes status + num_watched_episodes, using the anime status map."""
-        mock_patch.return_value = MagicMock(json=dict)
+        mock_put.return_value = MagicMock(json=dict)
         anime = Anime.objects.create(
             user=self.user,
             item=self.anime_item,
@@ -389,16 +389,16 @@ class PushStatus(TestCase):
 
         mal_sync.push_status(anime, self.account)
 
-        self.assertIn("/anime/42/my_list_status", mock_patch.call_args.kwargs["url"])
-        data = mock_patch.call_args.kwargs["data"]
+        self.assertIn("/anime/42/my_list_status", mock_put.call_args.kwargs["url"])
+        data = mock_put.call_args.kwargs["data"]
         self.assertEqual(data["status"], "on_hold")
         self.assertEqual(data["num_watched_episodes"], 5)
         self.assertNotIn("score", data)
 
-    @patch("requests.Session.patch")
-    def test_push_manga_uses_chapters_and_manga_status_map(self, mock_patch, *_mocks):
+    @patch("requests.Session.put")
+    def test_push_manga_uses_chapters_and_manga_status_map(self, mock_put, *_mocks):
         """Manga pushes num_chapters_read and maps status onto MAL's manga statuses."""
-        mock_patch.return_value = MagicMock(json=dict)
+        mock_put.return_value = MagicMock(json=dict)
         manga = Manga.objects.create(
             user=self.user,
             item=self.manga_item,
@@ -409,14 +409,14 @@ class PushStatus(TestCase):
 
         mal_sync.push_status(manga, self.account)
 
-        data = mock_patch.call_args.kwargs["data"]
+        data = mock_put.call_args.kwargs["data"]
         self.assertEqual(data["status"], "dropped")
         self.assertEqual(data["num_chapters_read"], 64)
         self.assertEqual(data["score"], 8)
 
-    @patch("requests.Session.patch")
+    @patch("requests.Session.put")
     @patch("requests.Session.post")
-    def test_push_refreshes_expired_token_first(self, mock_post, mock_patch, *_mocks):
+    def test_push_refreshes_expired_token_first(self, mock_post, mock_put, *_mocks):
         """An expired access token is refreshed before pushing the update."""
         self.account.token_expires_at = timezone.now() - timedelta(minutes=5)
         self.account.save()
@@ -428,7 +428,7 @@ class PushStatus(TestCase):
             "expires_in": 3600,
         }
         mock_post.return_value = refresh_response
-        mock_patch.return_value = MagicMock(json=dict)
+        mock_put.return_value = MagicMock(json=dict)
 
         anime = Anime.objects.create(
             user=self.user,
@@ -441,7 +441,7 @@ class PushStatus(TestCase):
         self.account.refresh_from_db()
         self.assertEqual(decrypt(self.account.access_token), "refreshed-access-token")
         self.assertEqual(
-            mock_patch.call_args.kwargs["headers"]["Authorization"],
+            mock_put.call_args.kwargs["headers"]["Authorization"],
             "Bearer refreshed-access-token",
         )
 
