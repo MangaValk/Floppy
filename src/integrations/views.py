@@ -1415,6 +1415,46 @@ def mal_toggle(request):
 
 
 @require_POST
+def mal_per_item_sync_toggle(request):
+    """Pause or resume the automatic push that fires when an entry is edited.
+
+    Independent of `mal_toggle`'s overall sync_enabled: this only affects the
+    per-item push, not "Sync All Now" or the scheduled full sync.
+    """
+    from integrations.models import MALAccount
+
+    updated = MALAccount.objects.filter(user=request.user).update(
+        per_item_sync_enabled=request.POST.get("enabled") == "true",
+    )
+    if not updated:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    return _integration_redirect(request)
+
+
+@require_POST
+def mal_sync_filters_save(request):
+    """Save which statuses (and whether a rating is required) a full sync sends."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        messages.error(request, "Connect a MyAnimeList account first.")
+        return redirect("mal_export")
+
+    mal_account.sync_filter_watched = request.POST.get("watched") == "on"
+    mal_account.sync_filter_dropped = request.POST.get("dropped") == "on"
+    mal_account.sync_filter_rated_only = request.POST.get("rated_only") == "on"
+    mal_account.save(
+        update_fields=[
+            "sync_filter_watched",
+            "sync_filter_dropped",
+            "sync_filter_rated_only",
+            "updated_at",
+        ]
+    )
+    messages.success(request, "MyAnimeList sync filters saved.")
+    return redirect("mal_export")
+
+
+@require_POST
 def mal_full_sync(request):
     """Trigger a one-off full sync of every MAL-backed anime/manga entry."""
     mal_account = getattr(request.user, "mal_account", None)

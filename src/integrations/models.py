@@ -558,6 +558,22 @@ class MALAccount(models.Model):
     )
     last_error_message = models.TextField(blank=True, default="")
     last_failed_at = models.DateTimeField(null=True, blank=True)
+    per_item_sync_enabled = models.BooleanField(
+        default=True,
+        help_text="Push status/progress/score to MyAnimeList as each entry is edited",
+    )
+    sync_filter_watched = models.BooleanField(
+        default=True,
+        help_text="Include Completed/In Progress entries in a full sync to MyAnimeList",
+    )
+    sync_filter_dropped = models.BooleanField(
+        default=True,
+        help_text="Include Dropped entries in a full sync to MyAnimeList",
+    )
+    sync_filter_rated_only = models.BooleanField(
+        default=False,
+        help_text="Only include entries that have a score set in a full sync to MyAnimeList",
+    )
     full_sync_status = models.CharField(
         max_length=16,
         choices=MALFullSyncStatus,

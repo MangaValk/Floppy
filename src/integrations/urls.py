@@ -203,6 +203,16 @@ urlpatterns = [
     path("sync/mal/disconnect", views.mal_disconnect, name="mal_disconnect"),
     path("sync/mal/toggle", views.mal_toggle, name="mal_toggle"),
     path(
+        "sync/mal/toggle-per-item",
+        views.mal_per_item_sync_toggle,
+        name="mal_per_item_sync_toggle",
+    ),
+    path(
+        "sync/mal/filters",
+        views.mal_sync_filters_save,
+        name="mal_sync_filters_save",
+    ),
+    path(
         "sync/mal/full/preview",
         views.mal_full_sync_preview,
         name="mal_full_sync_preview",

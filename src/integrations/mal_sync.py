@@ -227,19 +227,35 @@ def status_payload(media):
     return data
 
 
-def full_sync_entries(user):
-    """Return every MAL-backed anime/manga entry eligible for a full sync."""
+def full_sync_entries(user, mal_account=None):
+    """Return every MAL-backed anime/manga entry eligible for a full sync.
+
+    Applies the account's sync filters (which statuses to include, and
+    whether to require a score) when a MALAccount is given. The automatic
+    per-item push in integrations.tasks._mal_sync.sync_mal_status bypasses
+    these filters and always pushes whatever a saved entry's status is.
+    """
     Anime = apps.get_model(app_label="app", model_name="anime")  # noqa: N806
     Manga = apps.get_model(app_label="app", model_name="manga")  # noqa: N806
+
+    included_statuses = set()
+    if mal_account is None or mal_account.sync_filter_watched:
+        included_statuses.update({Status.COMPLETED.value, Status.IN_PROGRESS.value})
+    if mal_account is None or mal_account.sync_filter_dropped:
+        included_statuses.add(Status.DROPPED.value)
+
     filters = {
         "user": user,
         "item__source": Sources.MAL.value,
-        "status__isnull": False,
+        "status__in": included_statuses,
     }
-    return [
+    entries = [
         *Anime.all_objects.filter(**filters).select_related("item"),
         *Manga.objects.filter(**filters).select_related("item"),
     ]
+    if mal_account is not None and mal_account.sync_filter_rated_only:
+        entries = [media for media in entries if media.score is not None]
+    return entries
 
 
 def _fetch_list_statuses(media_type, mal_account):
@@ -291,7 +307,7 @@ def preview_full_sync(user, mal_account):
     }
     preview = []
 
-    for media in full_sync_entries(user):
+    for media in full_sync_entries(user, mal_account):
         media_type = media.item.media_type
         desired = status_payload(media)
         current = remote_statuses[media_type].get(str(media.item.media_id))

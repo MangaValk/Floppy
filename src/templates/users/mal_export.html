@@ -61,6 +61,25 @@
           </label>
         </form>
 
+        <form method="post"
+              action="{% url 'mal_per_item_sync_toggle' %}"
+              class="flex items-center justify-between mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="enabled"
+                   value="true"
+                   {% if mal_account.per_item_sync_enabled %}checked{% endif %}
+                   onchange="this.form.requestSubmit()"
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Push changes automatically as I edit entries" %}
+          </label>
+        </form>
+        <p class="text-xs text-[var(--color-text-muted)] mb-3">
+          {% translate "Turning this off only stops the automatic per-item push. \"Sync All Now\" and the scheduled sync below still run." %}
+        </p>
+
         <div class="flex gap-2 mb-2">
           <div class="flex-1">
             <button type="button"
@@ -149,6 +168,48 @@
     </div>
 
     {% if mal_account and mal_account.is_connected %}
+      {# Sync filters #}
+      <div class="bg-[var(--color-surface)] rounded-lg p-6">
+        <div class="flex items-center mb-4">
+          {% include "app/icons/list.svg" with classes="w-6 h-6 text-[var(--color-link)] mr-3" %}
+          <h2 class="text-xl font-semibold">{% translate "Sync Filters" %}</h2>
+        </div>
+        <p class="text-[var(--color-text-muted)] mb-5 text-sm">
+          {% translate "Choose which entries \"Sync All Now\" and the scheduled sync send to MyAnimeList. Entries left unchecked here are skipped. This doesn't affect the automatic sync that fires when you edit an entry - that always sends its current status." %}
+        </p>
+
+        <form method="post"
+              action="{% url 'mal_sync_filters_save' %}"
+              class="space-y-3">
+          {% csrf_token %}
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="watched"
+                   {% if mal_account.sync_filter_watched %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Watched (Completed and In Progress)" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="dropped"
+                   {% if mal_account.sync_filter_dropped %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Dropped" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="rated_only"
+                   {% if mal_account.sync_filter_rated_only %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Only entries with a rating" %}
+          </label>
+          <button type="submit"
+                  class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm cursor-pointer">
+            {% translate "Save Filters" %}
+          </button>
+        </form>
+      </div>
+
       {# Schedule #}
       <div class="bg-[var(--color-surface)] rounded-lg p-6">
         <div class="flex items-center mb-4">

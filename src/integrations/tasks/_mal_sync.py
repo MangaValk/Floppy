@@ -53,7 +53,10 @@ def sync_mal_status(media_type, media_id):
     Runs after every save() of a MAL-backed Anime/Manga instance (see the
     save() overrides in app.models.media). Silently no-ops if the entry, the
     user's MAL connection, or sync itself is gone by the time this runs -
-    it's a best-effort mirror of Floppy's data, not a source of truth.
+    it's a best-effort mirror of Floppy's data, not a source of truth. Also
+    no-ops if the account has turned off per-item pushes specifically
+    (mal_account.per_item_sync_enabled), independent of the overall
+    connection and of "Sync All Now"/scheduled full syncs.
     """
     model = apps.get_model(app_label="app", model_name=media_type)
     # Anime's default manager hides rows auto-migrated to episode tracking on
@@ -78,6 +81,9 @@ def sync_mal_status(media_type, media_id):
         return
 
     if not mal_account.sync_enabled or mal_account.connection_broken:
+        return
+
+    if not mal_account.per_item_sync_enabled:
         return
 
     if media.status is None:
@@ -145,7 +151,7 @@ def bulk_sync_mal_status(user_id):
         )
         return
 
-    entries = mal_sync.full_sync_entries(user)
+    entries = mal_sync.full_sync_entries(user, mal_account)
     mal_account.full_sync_status = MALFullSyncStatus.RUNNING
     mal_account.full_sync_total = len(entries)
     mal_account.full_sync_processed = 0

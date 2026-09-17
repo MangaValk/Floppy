@@ -30,7 +30,12 @@ def _make_user(username="test", password="12345"):  # noqa: S107 (test fixture)
 
 
 def make_mal_account(
-    user, *, sync_enabled=True, connection_broken=False, expired=False
+    user,
+    *,
+    sync_enabled=True,
+    per_item_sync_enabled=True,
+    connection_broken=False,
+    expired=False,
 ):
     """Create a MALAccount for a user with encrypted placeholder tokens."""
     expires_at = timezone.now() + (
@@ -43,6 +48,7 @@ def make_mal_account(
         refresh_token=mal_sync.encrypt("old-refresh-token"),
         token_expires_at=expires_at,
         sync_enabled=sync_enabled,
+        per_item_sync_enabled=per_item_sync_enabled,
         connection_broken=connection_broken,
     )
 
@@ -353,6 +359,33 @@ class MALDisconnectToggleViews(TestCase):
         )
         self.assertContains(response, "Connect a MyAnimeList account")
 
+    def test_per_item_toggle_off_then_on(self):
+        """The per-item toggle can turn per-item pushes off and back on."""
+        self.client.post(reverse("mal_per_item_sync_toggle"), {"enabled": "false"})
+        self.account.refresh_from_db()
+        self.assertFalse(self.account.per_item_sync_enabled)
+
+        self.client.post(reverse("mal_per_item_sync_toggle"), {"enabled": "true"})
+        self.account.refresh_from_db()
+        self.assertTrue(self.account.per_item_sync_enabled)
+
+    def test_per_item_toggle_leaves_overall_sync_enabled_alone(self):
+        """The per-item toggle is independent of the overall sync_enabled flag."""
+        self.client.post(reverse("mal_per_item_sync_toggle"), {"enabled": "false"})
+        self.account.refresh_from_db()
+        self.assertFalse(self.account.per_item_sync_enabled)
+        self.assertTrue(self.account.sync_enabled)
+
+    def test_per_item_toggle_without_account_shows_error(self):
+        """Toggling with no connected account shows an error, not a crash."""
+        self.account.delete()
+        response = self.client.post(
+            reverse("mal_per_item_sync_toggle"),
+            {"enabled": "true"},
+            follow=True,
+        )
+        self.assertContains(response, "Connect a MyAnimeList account")
+
 
 @patch("integrations.mal_sync.client_id", return_value="test_client_id")
 @patch("integrations.mal_sync.client_secret", return_value="test_client_secret")
@@ -479,7 +512,9 @@ class PreviewFullSync(TestCase):
                     media_type=MediaTypes.ANIME.value,
                     title="Changed Anime",
                 ),
-                status=Status.PAUSED.value,
+                # Dropped, not Paused/Planning, so this stays covered by the
+                # default sync filters (see MALSyncFiltersTests below).
+                status=Status.DROPPED.value,
                 progress=5,
                 score=Decimal("7.6"),
             )
@@ -491,7 +526,7 @@ class PreviewFullSync(TestCase):
                     media_type=MediaTypes.MANGA.value,
                     title="Unchanged Manga",
                 ),
-                status=Status.PLANNING.value,
+                status=Status.COMPLETED.value,
                 progress=0,
             )
 
@@ -516,7 +551,7 @@ class PreviewFullSync(TestCase):
                     {
                         "node": {"id": 99},
                         "list_status": {
-                            "status": "plan_to_read",
+                            "status": "completed",
                             "num_chapters_read": 0,
                             "score": 0,
                         },
@@ -537,7 +572,7 @@ class PreviewFullSync(TestCase):
                     "mal_id": "42",
                     "not_on_list": False,
                     "changes": [
-                        {"field": "Status", "from": "watching", "to": "on_hold"},
+                        {"field": "Status", "from": "watching", "to": "dropped"},
                         {"field": "Score", "from": 7, "to": 8},
                     ],
                 }
@@ -593,6 +628,17 @@ class SyncMALStatusTask(TestCase):
         make_mal_account(self.user, sync_enabled=False)
         with patch("integrations.mal_sync.push_status") as mock_push:
             tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
+        mock_push.assert_not_called()
+
+    def test_noop_when_per_item_sync_disabled(self):
+        """Turning off per-item sync stops the per-save push only."""
+        account = make_mal_account(self.user)
+        account.per_item_sync_enabled = False
+        account.save(update_fields=["per_item_sync_enabled"])
+
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
+
         mock_push.assert_not_called()
 
     def test_calls_push_status_when_connected(self):
@@ -681,7 +727,9 @@ class BulkSyncMALStatusTask(TestCase):
                     media_type=MediaTypes.ANIME.value,
                     title="Anime One",
                 ),
-                status=Status.PLANNING.value,
+                # Covered by the default sync filters (watched); Planning
+                # and Paused are excluded by default (MALSyncFiltersTests).
+                status=Status.IN_PROGRESS.value,
             )
             self.manga = Manga.objects.create(
                 user=self.user,
@@ -691,7 +739,7 @@ class BulkSyncMALStatusTask(TestCase):
                     media_type=MediaTypes.MANGA.value,
                     title="Manga One",
                 ),
-                status=Status.PLANNING.value,
+                status=Status.IN_PROGRESS.value,
             )
             self.tmdb_anime = Anime.objects.create(
                 user=self.user,
@@ -701,7 +749,7 @@ class BulkSyncMALStatusTask(TestCase):
                     media_type=MediaTypes.ANIME.value,
                     title="TMDB-sourced Anime",
                 ),
-                status=Status.PLANNING.value,
+                status=Status.IN_PROGRESS.value,
             )
 
     def test_noop_when_no_account(self):
@@ -741,6 +789,15 @@ class BulkSyncMALStatusTask(TestCase):
             {result["title"] for result in account.full_sync_results},
             {"Anime One", "Manga One"},
         )
+
+    def test_full_sync_ignores_the_per_item_toggle(self):
+        """Turning off per-item sync doesn't stop "Sync All Now"/scheduled full syncs."""
+        make_mal_account(self.user, per_item_sync_enabled=False)
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        pushed = {call.args[0] for call in mock_push.call_args_list}
+        self.assertEqual(pushed, {self.anime, self.manga})
 
     def test_skips_media_with_no_status(self):
         """Statusless imported media is omitted from a full sync."""
@@ -787,6 +844,165 @@ class BulkSyncMALStatusTask(TestCase):
             if result["outcome"] == "failed"
         )
         self.assertTrue(failed_result["reason"])
+
+
+class FullSyncEntriesFilters(TestCase):
+    """Test the account-level status/rating filters applied to a full sync."""
+
+    def setUp(self):
+        self.user = _make_user()
+        self.account = make_mal_account(self.user)
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            self.completed = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="1",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value,
+                    title="Completed Anime",
+                ),
+                status=Status.COMPLETED.value,
+                score=Decimal(8),
+            )
+            self.in_progress = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="2",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value,
+                    title="In Progress Anime",
+                ),
+                status=Status.IN_PROGRESS.value,
+                score=Decimal(7),
+            )
+            self.dropped = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="3",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value,
+                    title="Dropped Anime",
+                ),
+                status=Status.DROPPED.value,
+                score=Decimal(6),
+            )
+            self.planning = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="4",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value,
+                    title="Planning Anime",
+                ),
+                status=Status.PLANNING.value,
+            )
+            self.paused = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="5",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value,
+                    title="Paused Anime",
+                ),
+                status=Status.PAUSED.value,
+            )
+            self.unrated_dropped = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="6",
+                    source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value,
+                    title="Unrated Dropped Anime",
+                ),
+                status=Status.DROPPED.value,
+                score=None,
+            )
+
+    def test_defaults_include_watched_and_dropped_but_not_planning_or_paused(self):
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertEqual(
+            {media.item.title for media in entries},
+            {
+                "Completed Anime",
+                "In Progress Anime",
+                "Dropped Anime",
+                "Unrated Dropped Anime",
+            },
+        )
+
+    def test_unchecking_watched_drops_completed_and_in_progress(self):
+        self.account.sync_filter_watched = False
+        self.account.save(update_fields=["sync_filter_watched"])
+
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertEqual(
+            {media.item.title for media in entries},
+            {"Dropped Anime", "Unrated Dropped Anime"},
+        )
+
+    def test_unchecking_dropped_drops_dropped_entries(self):
+        self.account.sync_filter_dropped = False
+        self.account.save(update_fields=["sync_filter_dropped"])
+
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertEqual(
+            {media.item.title for media in entries},
+            {"Completed Anime", "In Progress Anime"},
+        )
+
+    def test_rated_only_excludes_entries_without_a_score(self):
+        self.account.sync_filter_rated_only = True
+        self.account.save(update_fields=["sync_filter_rated_only"])
+
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertEqual(
+            {media.item.title for media in entries},
+            {"Completed Anime", "In Progress Anime", "Dropped Anime"},
+        )
+
+    def test_no_account_includes_watched_and_dropped_only(self):
+        """Without an account to read filters from, fall back to the defaults."""
+        entries = mal_sync.full_sync_entries(self.user)
+
+        self.assertEqual(
+            {media.item.title for media in entries},
+            {
+                "Completed Anime",
+                "In Progress Anime",
+                "Dropped Anime",
+                "Unrated Dropped Anime",
+            },
+        )
+
+
+class MALSyncFiltersView(TestCase):
+    """Test the view that saves the full-sync status/rating filters."""
+
+    def setUp(self):
+        self.user = _make_user()
+        self.client.force_login(self.user)
+
+    def test_without_account_shows_error(self):
+        response = self.client.post(reverse("mal_sync_filters_save"), follow=True)
+        self.assertContains(response, "Connect a MyAnimeList account")
+
+    def test_saves_selected_filters(self):
+        account = make_mal_account(self.user)
+        response = self.client.post(
+            reverse("mal_sync_filters_save"),
+            {"dropped": "on", "rated_only": "on"},
+            follow=True,
+        )
+
+        self.assertContains(response, "sync filters saved")
+        account.refresh_from_db()
+        self.assertFalse(account.sync_filter_watched)
+        self.assertTrue(account.sync_filter_dropped)
+        self.assertTrue(account.sync_filter_rated_only)
 
 
 class MALFullSyncView(TestCase):
