@@ -501,6 +501,19 @@ class PushStatus(TestCase):
         with self.assertRaises(mal_sync.MALAuthError):
             mal_sync.get_valid_access_token(self.account)
 
+    @patch("integrations.mal_sync._refresh_tokens")
+    def test_stale_worker_reuses_already_refreshed_tokens(self, refresh, *_mocks):
+        self.account.token_expires_at = timezone.now() - timedelta(minutes=5)
+        self.account.save(update_fields=["token_expires_at"])
+        other_worker = MALAccount.objects.get(pk=self.account.pk)
+        mal_sync._store_tokens(other_worker, {
+            "access_token": "rotated-access", "refresh_token": "rotated-refresh",
+            "expires_in": 3600,
+        })
+
+        self.assertEqual(mal_sync.get_valid_access_token(self.account), "rotated-access")
+        refresh.assert_not_called()
+
 
 class PreviewFullSync(TestCase):
     """Test the read-only diff used before a full MAL sync."""
@@ -693,6 +706,23 @@ class GroupedMALSync(TestCase):
         self.assertEqual(report["failed"], 0)
         page = self.client.get(reverse("mal_export"))
         self.assertEqual(page.context["mal_sync_initial"]["mapping_issues"], report["mapping_issues"])
+
+    def test_unsafe_mapping_is_reported_instead_of_guessed(self):
+        mappings = [
+            {"mal:42": {"1-3": "1-3"}, "mal:43": {"1-3": "1-3"}},
+            {"mal:42": {"1-3": "1-6|2"}},
+            {"mal:42": {"1-3": "1-2|-2"}},
+            {"mal:42,43": {"1-3": "1-3"}},
+            {"mal:42": {"bad-range": "1-3"}},
+        ]
+        for targets in mappings:
+            with self.subTest(targets=targets), self.settings(
+                ANIBRIDGE_MAPPING_DATA_OVERRIDE={"tmdb_show:100:s1": targets},
+            ):
+                issues = []
+                self.assertEqual(mal_sync.grouped_sync_entries(self.user, mapping_issues=issues), [])
+                self.assertEqual(issues[0]["title"], "Grouped Anime")
+                self.assertIn("S01E01", issues[0]["reason"])
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_per_item_toggle_prevents_grouped_queue(self, delay):
@@ -1001,6 +1031,19 @@ class BulkSyncMALStatusTask(TestCase):
         with patch("integrations.mal_sync.push_status") as mock_push:
             tasks.bulk_sync_mal_status(user_id=self.user.pk)
         mock_push.assert_not_called()
+
+    def test_running_sync_is_not_overwritten_by_duplicate_task(self):
+        account = make_mal_account(self.user)
+        account.full_sync_status = "running"
+        account.full_sync_processed = 10
+        account.full_sync_results = [{"title": "Already synced", "outcome": "succeeded"}]
+        account.save()
+        with patch("integrations.mal_sync.full_sync_entries") as entries:
+            tasks.bulk_sync_mal_status(self.user.pk)
+        entries.assert_not_called()
+        account.refresh_from_db()
+        self.assertEqual(account.full_sync_processed, 10)
+        self.assertEqual(account.full_sync_results[0]["title"], "Already synced")
 
     def test_queued_sync_fails_cleanly_when_sync_was_disabled(self):
         account = make_mal_account(self.user, sync_enabled=False)
@@ -1403,6 +1446,12 @@ class MALFullSyncView(TestCase):
             self.assertContains(response, "Synced Anime 64")
         status = self.client.get(reverse("mal_full_sync_status")).json()
         self.assertEqual(len(status["results"]), 65)
+
+        account.connection_broken = True
+        account.save(update_fields=["connection_broken"])
+        page = self.client.get(reverse("mal_export"))
+        self.assertContains(page, "Full sync status")
+        self.assertContains(page, 'x-for="(entry, index) in syncResults()"')
 
     def test_full_sync_requires_preview_confirmation(self):
         make_mal_account(self.user)

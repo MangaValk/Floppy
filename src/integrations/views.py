@@ -1471,27 +1471,21 @@ def mal_full_sync(request):
     else:
         from integrations.models import MALFullSyncStatus
 
-        mal_account.full_sync_status = MALFullSyncStatus.QUEUED
-        mal_account.full_sync_total = 0
-        mal_account.full_sync_processed = 0
-        mal_account.full_sync_succeeded = 0
-        mal_account.full_sync_failed = 0
-        mal_account.full_sync_results = []
-        mal_account.full_sync_started_at = None
-        mal_account.full_sync_completed_at = None
-        mal_account.save(
-            update_fields=[
-                "full_sync_status",
-                "full_sync_total",
-                "full_sync_processed",
-                "full_sync_succeeded",
-                "full_sync_failed",
-                "full_sync_results",
-                "full_sync_started_at",
-                "full_sync_completed_at",
-                "updated_at",
-            ]
+        queued = type(mal_account).objects.filter(pk=mal_account.pk).exclude(
+            full_sync_status__in=[MALFullSyncStatus.QUEUED, MALFullSyncStatus.RUNNING],
+        ).update(
+            full_sync_status=MALFullSyncStatus.QUEUED,
+            full_sync_total=0,
+            full_sync_processed=0,
+            full_sync_succeeded=0,
+            full_sync_failed=0,
+            full_sync_results=[],
+            full_sync_started_at=None,
+            full_sync_completed_at=None,
         )
+        if not queued:
+            messages.info(request, "A full MyAnimeList sync is already in progress.")
+            return _integration_redirect(request)
         tasks.bulk_sync_mal_status.delay(user_id=request.user.pk)
         messages.success(
             request,

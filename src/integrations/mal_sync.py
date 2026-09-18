@@ -159,8 +159,14 @@ def _store_tokens(mal_account, token_response):
 def get_valid_access_token(mal_account):
     """Return a usable (decrypted) access token, refreshing it first if needed."""
     if timezone.now() >= mal_account.token_expires_at - EXPIRY_LEEWAY:
-        token_response = _refresh_tokens(mal_account)
-        _store_tokens(mal_account, token_response)
+        with transaction.atomic():
+            current = MALAccount.objects.select_for_update().select_related("user").get(pk=mal_account.pk)
+            if timezone.now() >= current.token_expires_at - EXPIRY_LEEWAY:
+                token_response = _refresh_tokens(current)
+                _store_tokens(current, token_response)
+            mal_account.access_token = current.access_token
+            mal_account.refresh_token = current.refresh_token
+            mal_account.token_expires_at = current.token_expires_at
 
     return decrypt(mal_account.access_token)
 

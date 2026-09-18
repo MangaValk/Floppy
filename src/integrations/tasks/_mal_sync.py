@@ -163,6 +163,16 @@ def bulk_sync_mal_status(user_id):
         )
         return
 
+    claimed = MALAccount.objects.filter(pk=mal_account.pk).exclude(
+        full_sync_status=MALFullSyncStatus.RUNNING,
+    ).update(
+        full_sync_status=MALFullSyncStatus.RUNNING,
+        full_sync_started_at=timezone.now(),
+        full_sync_completed_at=None,
+    )
+    if not claimed:
+        return
+
     mapping_issues = []
     try:
         entries = mal_sync.full_sync_entries(user, mal_account, mapping_issues=mapping_issues)
