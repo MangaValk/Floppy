@@ -67,6 +67,17 @@ def get_mal_id_from_tvdb(
     )
 
 
+def get_mal_id_from_series(mapping_data, provider, series_id, season, episode):
+    """Resolve a TMDB/TVDB episode to its MAL cour and episode number."""
+    if provider not in {"tmdb", "tvdb"}:
+        return None, None
+    return _get_mal_mapping(
+        mapping_data,
+        f"{provider}_show:{series_id}:s{season}",
+        episode,
+    )
+
+
 def get_mal_id_from_tmdb_movie(mapping_data, tmdb_movie_id):
     """Find MAL ID from TMDB movie mapping."""
     return _get_mal_mapping(

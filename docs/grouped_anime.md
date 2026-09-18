@@ -74,6 +74,25 @@ track the same show in both libraries.
 To move existing shows between shapes, use the per-show Move action or the
 "Convert anime library shape" task, both of which ask first.
 
+## MyAnimeList Sync
+
+MAL sync projects grouped anime episode history into one update per MAL cour,
+using the AniBridge episode mappings also used by webhooks. Preview and full
+sync use current grouped progress instead of stale migrated flat Anime rows.
+Rewatches do not count as additional episodes. Unmapped episodes are skipped;
+sync does not guess a MAL title from a show name or season number.
+
+Episode watch-state changes, show/season edits, and bulk episode actions queue
+automatic sync after commit when per-item sync is enabled. Full sync continues
+to respect the account's status and rating filters. Preview requests unfiltered
+MAL lists so provider-filtered titles are not repeatedly reported as missing.
+
+The Sync to Trackers page restores the complete latest full-sync report from
+the database on every page load. All write results remain visible, alongside
+an "Anime with mapping issues" list naming unresolved episode coordinates.
+Preview also shows these issues before confirmation. A new full sync replaces
+the previous report; per-item sync does not erase it.
+
 ## Classification policy
 
 The shared classifier is intentionally fail-closed. A title is routed to

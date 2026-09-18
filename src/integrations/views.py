@@ -1508,20 +1508,7 @@ def mal_full_sync_status(request):
     if mal_account is None:
         return JsonResponse({"error": "Connect a MyAnimeList account first."}, status=404)
 
-    return JsonResponse(
-        {
-            "status": mal_account.full_sync_status,
-            "status_label": mal_account.get_full_sync_status_display(),
-            "is_active": mal_account.full_sync_is_active,
-            "total": mal_account.full_sync_total,
-            "processed": mal_account.full_sync_processed,
-            "succeeded": mal_account.full_sync_succeeded,
-            "failed": mal_account.full_sync_failed,
-            "results": mal_account.full_sync_results,
-            "started_at": mal_account.full_sync_started_at,
-            "completed_at": mal_account.full_sync_completed_at,
-        }
-    )
+    return JsonResponse(mal_sync.full_sync_report(mal_account))
 
 
 @require_GET
@@ -1541,8 +1528,9 @@ def mal_full_sync_preview(request):
             {"error": "Turn sync back on before running a full sync."}, status=400
         )
 
+    mapping_issues = []
     try:
-        changes = mal_sync.preview_full_sync(request.user, mal_account)
+        changes = mal_sync.preview_full_sync(request.user, mal_account, mapping_issues=mapping_issues)
     except mal_sync.MALAuthError as error:
         return JsonResponse({"error": str(error)}, status=400)
     except services.ProviderAPIError:
@@ -1551,7 +1539,7 @@ def mal_full_sync_preview(request):
             status=502,
         )
 
-    return JsonResponse({"changes": changes, "count": len(changes)})
+    return JsonResponse({"changes": changes, "count": len(changes), "mapping_issues": mapping_issues})
 
 
 @require_POST

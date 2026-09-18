@@ -17,6 +17,7 @@ from datetime import timedelta
 
 import requests
 from django.apps import apps
+from django.db import transaction
 from django.utils import timezone
 
 from app.models.choices import MediaTypes, Sources, Status
@@ -227,7 +228,152 @@ def status_payload(media):
     return data
 
 
-def full_sync_entries(user, mal_account=None):
+def queue_grouped_sync(user_id, item):
+    """Queue current grouped progress after commit for connected, opted-in users."""
+    from app.models import TV
+    from integrations.tasks import sync_mal_status
+
+    if item is None or item.library_media_type != MediaTypes.ANIME.value:
+        return
+    if not MALAccount.objects.filter(
+        user_id=user_id,
+        sync_enabled=True,
+        per_item_sync_enabled=True,
+        connection_broken=False,
+    ).exists():
+        return
+    shows = TV.objects.filter(user_id=user_id, item__library_media_type="anime")
+    if item.media_type == MediaTypes.TV.value:
+        shows = shows.filter(item=item)
+    elif item.media_type in {MediaTypes.SEASON.value, MediaTypes.EPISODE.value}:
+        shows = shows.filter(
+            seasons__item__source=item.source,
+            seasons__item__media_id=item.media_id,
+            seasons__item__season_number=item.season_number,
+            seasons__order_archived=False,
+        )
+    else:
+        return
+    for show_id in shows.values_list("pk", flat=True).distinct():
+        transaction.on_commit(
+            lambda show_id=show_id: sync_mal_status.delay(
+                media_type="tv", media_id=show_id,
+            ),
+        )
+
+
+def grouped_sync_entries(user, tv=None, mapping_issues=None):
+    """Project grouped anime watches into transient MAL entries, one per cour."""
+    from app.models import TV, Anime, Episode, Item, WatchState
+    from integrations.webhooks import anime_mappings
+
+    shows = TV.objects.filter(
+        user=user, item__library_media_type=MediaTypes.ANIME.value,
+    )
+    if tv is not None:
+        shows = shows.filter(pk=tv.pk)
+    shows = list(shows.select_related("item", "active_episode_order"))
+    if not shows:
+        return []
+
+    mapping_data = anime_mappings.fetch_mapping_data()
+    entries = {}
+    for show in shows:
+        unmapped = []
+        watches = Episode.objects.filter(
+            related_season__related_tv=show,
+            related_season__order_archived=False,
+        ).select_related("item", "related_season")
+        states = WatchState.objects.filter(
+            user=user,
+            item__media_type=MediaTypes.EPISODE.value,
+            item__library_media_type=MediaTypes.ANIME.value,
+            item__source=show.tracking_source,
+            item__media_id=show.tracking_media_id,
+        ).select_related("item")
+        coordinates = {
+            state.item_id: (state.item, False, show.score)
+            for state in states
+        }
+        for watch in watches:
+            if watch.item_id is None:
+                continue
+            previous = coordinates.get(watch.item_id)
+            watched = not watch.dropped or bool(previous and previous[1])
+            score = watch.related_season.score
+            coordinates[watch.item_id] = (
+                watch.item,
+                watched,
+                score if score is not None else show.score,
+            )
+
+        for item, watched, score in coordinates.values():
+            if item.season_number is None or item.episode_number is None:
+                unmapped.append(item.title)
+                continue
+            mal_id, episode_number = anime_mappings.get_mal_id_from_series(
+                mapping_data,
+                item.source,
+                item.media_id,
+                item.season_number,
+                item.episode_number,
+            )
+            if not mal_id or not episode_number or episode_number < 1:
+                unmapped.append(f"S{item.season_number:02}E{item.episode_number:02}")
+                continue
+            mal_id = str(mal_id)
+            if mal_id not in entries:
+                with credentials.current_user_scope(user):
+                    metadata = services.get_media_metadata(
+                        "anime", mal_id, Sources.MAL.value,
+                    )
+                entries[mal_id] = (
+                    Anime(
+                        user=user,
+                        item=Item(
+                            media_id=mal_id,
+                            source=Sources.MAL.value,
+                            media_type=MediaTypes.ANIME.value,
+                            title=metadata["title"],
+                        ),
+                        score=score,
+                        status=show.status,
+                        progress=0,
+                    ),
+                    set(),
+                    metadata.get("max_progress"),
+                )
+            _, watched_numbers, _ = entries[mal_id]
+            if watched:
+                watched_numbers.add(episode_number)
+
+        if mapping_issues is not None and (unmapped or not coordinates):
+            mapping_issues.append({
+                "title": show.item.title,
+                "media_type": "Anime",
+                "mal_id": "",
+                "item_id": show.item_id,
+                "outcome": "skipped",
+                "reason": (
+                    "No reliable MAL episode mapping for: " + ", ".join(sorted(set(unmapped)))
+                    if unmapped else "No episode history available to resolve a MAL mapping."
+                ),
+            })
+
+    result = []
+    for media, watched_numbers, total in entries.values():
+        media.progress = len(watched_numbers)
+        if total and media.progress >= total:
+            media.status = Status.COMPLETED.value
+        elif media.status not in {Status.DROPPED.value, Status.PAUSED.value}:
+            media.status = (
+                Status.IN_PROGRESS.value if media.progress else Status.PLANNING.value
+            )
+        result.append(media)
+    return result
+
+
+def full_sync_entries(user, mal_account=None, mapping_issues=None):
     """Return every MAL-backed anime/manga entry eligible for a full sync.
 
     Applies the account's sync filters (which statuses to include, and
@@ -250,9 +396,16 @@ def full_sync_entries(user, mal_account=None):
         "status__in": included_statuses,
     }
     entries = [
-        *Anime.all_objects.filter(**filters).select_related("item"),
+        *Anime.objects.filter(**filters).select_related("item"),
         *Manga.objects.filter(**filters).select_related("item"),
+        *[
+            media for media in grouped_sync_entries(user, mapping_issues=mapping_issues)
+            if media.status in included_statuses
+        ],
     ]
+    entries = list({
+        (media.item.media_type, media.item.media_id): media for media in entries
+    }.values())
     if mal_account is not None and mal_account.sync_filter_rated_only:
         entries = [media for media in entries if media.score is not None]
     return entries
@@ -262,7 +415,7 @@ def _fetch_list_statuses(media_type, mal_account):
     """Return MAL list statuses keyed by media ID for one media type."""
     access_token = get_valid_access_token(mal_account)
     headers = {"Authorization": f"Bearer {access_token}"}
-    params = {"fields": "list_status", "limit": 1000}
+    params = {"fields": "list_status", "limit": 1000, "nsfw": "true"}
     url = f"{API_BASE_URL}/users/@me/{media_type}list"
     statuses = {}
 
@@ -293,7 +446,27 @@ def _fetch_list_statuses(media_type, mal_account):
     return statuses
 
 
-def preview_full_sync(user, mal_account):
+def full_sync_report(mal_account):
+    """Return the persisted report used by both page loads and live polling."""
+    return {
+        "status": mal_account.full_sync_status,
+        "status_label": mal_account.get_full_sync_status_display(),
+        "is_active": mal_account.full_sync_is_active,
+        "total": mal_account.full_sync_total,
+        "processed": mal_account.full_sync_processed,
+        "succeeded": mal_account.full_sync_succeeded,
+        "failed": mal_account.full_sync_failed,
+        "results": mal_account.full_sync_results,
+        "mapping_issues": [
+            result for result in mal_account.full_sync_results
+            if result.get("outcome") == "skipped"
+        ],
+        "started_at": mal_account.full_sync_started_at,
+        "completed_at": mal_account.full_sync_completed_at,
+    }
+
+
+def preview_full_sync(user, mal_account, mapping_issues=None):
     """Return field-level changes a full sync would make without writing to MAL."""
     remote_statuses = {
         media_type: _fetch_list_statuses(media_type, mal_account)
@@ -307,7 +480,7 @@ def preview_full_sync(user, mal_account):
     }
     preview = []
 
-    for media in full_sync_entries(user, mal_account):
+    for media in full_sync_entries(user, mal_account, mapping_issues=mapping_issues):
         media_type = media.item.media_type
         desired = status_payload(media)
         current = remote_statuses[media_type].get(str(media.item.media_id))

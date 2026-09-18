@@ -86,11 +86,23 @@ def sync_mal_status(media_type, media_id):
     if not mal_account.per_item_sync_enabled:
         return
 
-    if media.status is None:
+    if media.status is None and media_type != "tv":
         return
 
     try:
-        mal_sync.push_status(media, mal_account)
+        if media_type == "anime" and media.migrated_to_item_id:
+            media = apps.get_model("app", "TV").objects.filter(
+                user=media.user, item_id=media.migrated_to_item_id,
+            ).first()
+            if media is None:
+                return
+            media_type = "tv"
+        entries = (
+            mal_sync.grouped_sync_entries(media.user, tv=media)
+            if media_type == "tv" else [media]
+        )
+        for media in entries:
+            mal_sync.push_status(media, mal_account)
     except mal_sync.MALAuthError as error:
         _mark_connection_broken(mal_account, error)
     except mal_sync.MALSyncMismatchError as error:
@@ -151,13 +163,35 @@ def bulk_sync_mal_status(user_id):
         )
         return
 
-    entries = mal_sync.full_sync_entries(user, mal_account)
+    mapping_issues = []
+    try:
+        entries = mal_sync.full_sync_entries(user, mal_account, mapping_issues=mapping_issues)
+    except services.ProviderAPIError:
+        mal_account.full_sync_status = MALFullSyncStatus.FAILED
+        mal_account.full_sync_total = 0
+        mal_account.full_sync_processed = 0
+        mal_account.full_sync_succeeded = 0
+        mal_account.full_sync_failed = 1
+        mal_account.full_sync_completed_at = timezone.now()
+        mal_account.full_sync_results = [{
+            "title": "Anime mappings",
+            "media_type": "Anime",
+            "mal_id": "",
+            "outcome": "failed",
+            "reason": "Could not load anime mappings or metadata. Please try again.",
+        }]
+        mal_account.save(update_fields=[
+            "full_sync_status", "full_sync_total", "full_sync_processed",
+            "full_sync_succeeded", "full_sync_failed", "full_sync_completed_at",
+            "full_sync_results", "updated_at",
+        ])
+        return
     mal_account.full_sync_status = MALFullSyncStatus.RUNNING
     mal_account.full_sync_total = len(entries)
     mal_account.full_sync_processed = 0
     mal_account.full_sync_succeeded = 0
     mal_account.full_sync_failed = 0
-    mal_account.full_sync_results = []
+    mal_account.full_sync_results = mapping_issues
     mal_account.full_sync_started_at = timezone.now()
     mal_account.full_sync_completed_at = None
     mal_account.save(
@@ -176,7 +210,7 @@ def bulk_sync_mal_status(user_id):
 
     synced = 0
     failed = 0
-    results = []
+    results = list(mapping_issues)
     for media in entries:
         result = {
             "title": media.item.title,

@@ -5,16 +5,21 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import requests
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from django.test import TestCase, override_settings, tag
 from django.urls import reverse
 from django.utils import timezone
 
 from app.models import (
+    TV,
     Anime,
+    Episode,
     Item,
     Manga,
     MediaTypes,
+    Season,
     Sources,
     Status,
 )
@@ -591,6 +596,238 @@ class PreviewFullSync(TestCase):
         self.assertEqual(len(preview), 2)
         self.assertTrue(all(entry["not_on_list"] for entry in preview))
 
+    @patch("integrations.mal_sync.services.api_request")
+    def test_preview_includes_filtered_titles_already_synced(self, mock_request):
+        def list_response(_provider, _method, url, *, params, headers):
+            self.assertEqual(params["nsfw"], "true")
+            self.assertIn("Authorization", headers)
+            if url.endswith("/animelist"):
+                return {"data": [{"node": {"id": 42}, "list_status": {
+                    "status": "dropped", "num_episodes_watched": 5, "score": 8,
+                }}]}
+            return {"data": [{"node": {"id": 99}, "list_status": {
+                "status": "completed", "num_chapters_read": 0,
+            }}]}
+
+        mock_request.side_effect = list_response
+
+        self.assertEqual(mal_sync.preview_full_sync(self.user, self.account), [])
+
+
+class GroupedMALSync(TestCase):
+    """Grouped episode progress is projected per MAL cour without duplicate rows."""
+
+    def setUp(self):
+        self.user = _make_user()
+        self.account = make_mal_account(self.user)
+        self.show_item = Item.objects.create(
+            media_id="100", source="tmdb", media_type="tv",
+            library_media_type="anime", title="Grouped Anime",
+        )
+        self.show = TV(user=self.user, item=self.show_item, status=Status.IN_PROGRESS.value)
+        TV.objects.bulk_create([self.show])
+        self.season = Season(
+            user=self.user, related_tv=self.show, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="100", source="tmdb", media_type="season",
+                library_media_type="anime", season_number=1, title="Season 1",
+            ),
+        )
+        Season.objects.bulk_create([self.season])
+        episodes = []
+        for number in (1, 2, 3):
+            item = Item.objects.create(
+                media_id="100", source="tmdb", media_type="episode",
+                library_media_type="anime", season_number=1,
+                episode_number=number, title=f"Episode {number}",
+            )
+            episodes.append(Episode(item=item, related_season=self.season))
+        Episode.objects.bulk_create(episodes)
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_full_sync_projects_each_cour_and_ignores_migrated_progress(self, metadata):
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 2}
+        anime = Anime(
+            user=self.user, item=Item.objects.create(
+                media_id="43", source="mal", media_type="anime", title="Old Anime",
+            ),
+            migrated_to_item=self.show_item, status=Status.COMPLETED.value, progress=2,
+        )
+        Anime.all_objects.bulk_create([anime])
+
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertEqual(
+            [(entry.item.media_id, entry.progress, entry.status) for entry in entries],
+            [("42", 2, Status.COMPLETED.value), ("43", 1, Status.IN_PROGRESS.value)],
+        )
+        self.assertEqual(Anime.all_objects.filter(user=self.user).count(), 1)
+
+    @patch("integrations.tasks.sync_mal_status.delay")
+    def test_watch_state_queues_grouped_sync_after_commit(self, delay):
+        from app.services.watch_state import project_watch_state_for_change
+
+        episode = Episode.objects.filter(related_season=self.season).first()
+        with self.captureOnCommitCallbacks(execute=True):
+            project_watch_state_for_change(self.user, episode.item)
+            delay.assert_not_called()
+        delay.assert_called_once_with(media_type="tv", media_id=self.show.pk)
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={})
+    def test_mapping_issues_persist_and_survive_page_reload(self):
+        self.client.force_login(self.user)
+        with patch("integrations.mal_sync._fetch_list_statuses", return_value={}):
+            preview = self.client.get(reverse("mal_full_sync_preview")).json()
+        self.assertEqual(preview["count"], 0)
+        self.assertEqual(preview["mapping_issues"][0]["title"], "Grouped Anime")
+        self.assertIn("S01E03", preview["mapping_issues"][0]["reason"])
+
+        tasks.bulk_sync_mal_status(self.user.pk)
+
+        report = self.client.get(reverse("mal_full_sync_status")).json()
+        self.assertEqual(report["mapping_issues"], preview["mapping_issues"])
+        self.assertEqual(report["succeeded"], 0)
+        self.assertEqual(report["failed"], 0)
+        page = self.client.get(reverse("mal_export"))
+        self.assertEqual(page.context["mal_sync_initial"]["mapping_issues"], report["mapping_issues"])
+
+    @patch("integrations.tasks.sync_mal_status.delay")
+    def test_per_item_toggle_prevents_grouped_queue(self, delay):
+        self.account.per_item_sync_enabled = False
+        self.account.save(update_fields=["per_item_sync_enabled"])
+        with self.captureOnCommitCallbacks(execute=True):
+            mal_sync.queue_grouped_sync(self.user.pk, self.show_item)
+        delay.assert_not_called()
+
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_per_item_task_pushes_grouped_projection(self, entries, push):
+        entries.return_value = [MagicMock()]
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+        entries.assert_called_once_with(self.user, tv=self.show)
+        push.assert_called_once_with(entries.return_value[0], self.account)
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    @patch("integrations.mal_sync.services.api_request")
+    def test_new_episode_syncs_and_then_disappears_from_preview(self, request, metadata):
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 2}
+        remote = {}
+
+        def response(_provider, method, url, **kwargs):
+            if method == "PUT":
+                data = kwargs["data"].copy()
+                data["num_episodes_watched"] = data.pop("num_watched_episodes")
+                remote[url.split("/")[-2]] = data
+                return data
+            self.assertEqual(kwargs["params"]["nsfw"], "true")
+            return {"data": [
+                {"node": {"id": int(media_id)}, "list_status": status}
+                for media_id, status in remote.items()
+            ] if url.endswith("/animelist") else []}
+
+        request.side_effect = response
+        self.assertEqual(len(mal_sync.preview_full_sync(self.user, self.account)), 2)
+        tasks.bulk_sync_mal_status(self.user.pk)
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.full_sync_succeeded, 2)
+        self.assertEqual(mal_sync.preview_full_sync(self.user, self.account), [])
+
+        item = Item.objects.create(
+            media_id="100", source="tmdb", media_type="episode",
+            library_media_type="anime", season_number=1, episode_number=4,
+            title="Episode 4",
+        )
+        Episode.objects.bulk_create([Episode(item=item, related_season=self.season)])
+        preview = mal_sync.preview_full_sync(self.user, self.account)
+        self.assertEqual([entry["mal_id"] for entry in preview], ["43"])
+        self.assertIn({"field": "Episodes watched", "from": 1, "to": 2}, preview[0]["changes"])
+
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+        self.assertEqual(remote["43"]["num_episodes_watched"], 2)
+        self.assertEqual(mal_sync.preview_full_sync(self.user, self.account), [])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_rewatches_unwatched_and_unmapped_episodes(self, metadata):
+        from app.services.watch_state import project_watch_state_for_change
+
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 2}
+        episode = Episode.objects.get(related_season=self.season, item__episode_number=1)
+        Episode.objects.bulk_create([Episode(item=episode.item, related_season=self.season)])
+        dropped = Episode.objects.get(related_season=self.season, item__episode_number=2)
+        Episode.objects.filter(pk=dropped.pk).update(dropped=True)
+        project_watch_state_for_change(self.user, dropped.item)
+        unmapped = Item.objects.create(
+            media_id="100", source="tmdb", media_type="episode",
+            library_media_type="anime", season_number=0, episode_number=1,
+            title="Unmapped special",
+        )
+        Episode.objects.bulk_create([Episode(item=unmapped, related_season=self.season)])
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+        self.assertEqual({entry.item.media_id: entry.progress for entry in entries}, {"42": 1, "43": 1})
+        self.assertEqual(mal_sync.grouped_sync_entries(_make_user(username="other")), [])
+
+    @patch("integrations.tasks.sync_mal_status.delay")
+    def test_bulk_side_effects_queue_grouped_sync_once(self, delay):
+        from app.signals import flush_media_change_side_effects
+
+        with self.captureOnCommitCallbacks(execute=True):
+            flush_media_change_side_effects(
+                owner=self.user, items=[self.show_item, self.season.item],
+                changed_media_type="episode", reason="episode_change",
+            )
+            delay.assert_not_called()
+        delay.assert_called_once_with(media_type="tv", media_id=self.show.pk)
+
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_mapping_outage_fails_full_sync_without_leaving_it_queued(self, entries):
+        entries.side_effect = ProviderAPIError("mal", requests.RequestException())
+        self.account.full_sync_status = "queued"
+        self.account.save(update_fields=["full_sync_status"])
+
+        tasks.bulk_sync_mal_status(self.user.pk)
+
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.full_sync_status, "failed")
+        self.assertEqual(self.account.full_sync_failed, 1)
+        self.assertIn("mappings or metadata", self.account.full_sync_results[0]["reason"])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_bulk_watches_override_stale_projection(self, metadata):
+        from app.models import WatchState
+        from app.providers import credentials
+
+        credentials.set_user("mal", self.user, {"client_id": "personal-mal-client"})
+
+        def anime_metadata(*_args):
+            self.assertEqual(credentials.get("mal", "client_id"), "personal-mal-client")
+            return {"title": "Mapped Anime", "max_progress": 2}
+
+        metadata.side_effect = anime_metadata
+        episode = Episode.objects.get(related_season=self.season, item__episode_number=1)
+        WatchState.objects.bulk_create([
+            WatchState(user=self.user, item=episode.item, watched=False),
+        ])
+        Episode.objects.bulk_create([
+            Episode(item=episode.item, related_season=self.season, dropped=True),
+        ])
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual({entry.item.media_id: entry.progress for entry in entries}, {"42": 2, "43": 1})
+
 
 class SyncMALStatusTask(TestCase):
     """Test the Celery task that drives a single push to MyAnimeList."""
@@ -659,7 +896,7 @@ class SyncMALStatusTask(TestCase):
         mock_push.assert_not_called()
 
     def test_finds_anime_migrated_to_episode_tracking(self):
-        """all_objects (not the default manager) still finds a migrated row."""
+        """A migrated row syncs the current grouped history, not its old count."""
         make_mal_account(self.user)
         Anime.objects.filter(pk=self.anime.pk).update(migrated_to_item_id=None)
         # Simulate migration by pointing at a placeholder item id, matching how
@@ -674,9 +911,16 @@ class SyncMALStatusTask(TestCase):
         self.assertFalse(Anime.objects.filter(pk=self.anime.pk).exists())
         self.assertTrue(Anime.all_objects.filter(pk=self.anime.pk).exists())
 
-        with patch("integrations.mal_sync.push_status") as mock_push:
+        show = TV(user=self.user, item=other_item, status=Status.IN_PROGRESS.value)
+        TV.objects.bulk_create([show])
+        projected = MagicMock()
+        with (
+            patch("integrations.mal_sync.push_status") as mock_push,
+            patch("integrations.mal_sync.grouped_sync_entries", return_value=[projected]) as mock_entries,
+        ):
             tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
-        mock_push.assert_called_once()
+        mock_entries.assert_called_once_with(self.user, tv=show)
+        mock_push.assert_called_once_with(projected, self.user.mal_account)
 
     def test_not_found_from_mal_is_logged_not_raised(self):
         """A 404 from MAL (e.g. a deleted MAL entry) doesn't raise or retry."""
@@ -1005,6 +1249,61 @@ class MALSyncFiltersView(TestCase):
         self.assertTrue(account.sync_filter_rated_only)
 
 
+@tag("slow", "playwright")
+class MALSyncReportBrowser(StaticLiveServerTestCase):
+    """The saved report remains visible when polling fails, including on reload."""
+
+    def test_report_survives_reload_on_desktop_and_mobile(self):
+        import tempfile
+        from pathlib import Path
+
+        from playwright.sync_api import expect, sync_playwright
+
+        user = _make_user()
+        account = make_mal_account(user)
+        account.full_sync_status = "completed"
+        account.full_sync_processed = 65
+        account.full_sync_succeeded = 65
+        account.full_sync_results = [
+            {"title": f"Synced Anime {index}", "media_type": "Anime",
+             "mal_id": str(index), "outcome": "succeeded", "reason": ""}
+            for index in range(65)
+        ] + [{
+            "title": "Unmapped Anime", "media_type": "Anime", "mal_id": "",
+            "outcome": "skipped", "reason": "No reliable MAL episode mapping for: S01E03",
+        }]
+        account.save()
+        self.client.force_login(user)
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            context = browser.new_context()
+            context.add_cookies([{
+                "name": settings.SESSION_COOKIE_NAME,
+                "value": self.client.cookies[settings.SESSION_COOKIE_NAME].value,
+                "url": self.live_server_url,
+            }])
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/sync/mal/full/status", lambda route: route.abort())
+            for width, height in ((1366, 900), (390, 844)):
+                page.set_viewport_size({"width": width, "height": height})
+                page.goto(self.live_server_url + reverse("mal_export"))
+                for _ in range(2):
+                    expect(page.get_by_text("65 results", exact=True)).to_be_visible()
+                    expect(page.get_by_text("Synced Anime 64", exact=True)).to_be_visible()
+                    expect(page.get_by_text("Unmapped Anime", exact=True)).to_be_visible()
+                    self.assertLessEqual(
+                        page.evaluate("document.documentElement.scrollWidth"), width,
+                    )
+                    page.get_by_text("Anime with mapping issues", exact=True).first.scroll_into_view_if_needed()
+                    page.screenshot(path=str(Path(tempfile.gettempdir()) / f"mal-report-{width}.png"))
+                    page.reload()
+            self.assertEqual(errors, [])
+            context.close()
+            browser.close()
+
+
 class MALFullSyncView(TestCase):
     """Test the "Sync All Now" view."""
 
@@ -1086,6 +1385,24 @@ class MALFullSyncView(TestCase):
         response = self.client.get(reverse("mal_full_sync_status"))
 
         self.assertEqual(response.status_code, 404)
+
+    def test_complete_report_survives_page_reload(self):
+        account = make_mal_account(self.user)
+        account.full_sync_status = "completed"
+        account.full_sync_results = [
+            {"title": f"Synced Anime {index}", "media_type": "Anime",
+             "mal_id": str(index), "outcome": "succeeded", "reason": ""}
+            for index in range(65)
+        ]
+        account.save(update_fields=["full_sync_status", "full_sync_results"])
+
+        for _ in range(2):
+            response = self.client.get(reverse("mal_export"))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.context["mal_sync_initial"]["results"], account.full_sync_results)
+            self.assertContains(response, "Synced Anime 64")
+        status = self.client.get(reverse("mal_full_sync_status")).json()
+        self.assertEqual(len(status["results"]), 65)
 
     def test_full_sync_requires_preview_confirmation(self):
         make_mal_account(self.user)

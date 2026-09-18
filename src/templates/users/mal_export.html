@@ -9,13 +9,64 @@
 {% endblock title %}
 
 {% block settings_content %}
-  <div class="space-y-6" x-data="{ activeModal: null, scheduleFrequency: 'daily', scheduleTime: '03:00', malSyncChanges: [], malSyncPreviewLoading: false, malSyncPreviewError: '', malSyncConnected:
-    {% if mal_account %}
-      true
-    {% else %}
-      false
-    {% endif %}
-    , malSyncStatus: null, malSyncPollTimer: null, init() { if (this.malSyncConnected) { this.refreshMalSyncStatus(); } }, async refreshMalSyncStatus() { window.clearTimeout(this.malSyncPollTimer); try { const response = await fetch('{% url "mal_full_sync_status" %}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (!response.ok) { return; } this.malSyncStatus = await response.json(); if (this.malSyncStatus.is_active) { this.malSyncPollTimer = window.setTimeout( () => this.refreshMalSyncStatus(), 1500 ); } } catch (error) { this.malSyncPollTimer = window.setTimeout( () => this.refreshMalSyncStatus(), 5000 ); } }, malSyncProgressPercent() { if (!this.malSyncStatus || !this.malSyncStatus.total) { return 0; } return Math.round( (this.malSyncStatus.processed / this.malSyncStatus.total) * 100 ); }, async previewMalSync() { this.malSyncPreviewLoading = true; this.malSyncPreviewError = ''; this.malSyncChanges = []; this.activeModal = 'mal-sync-preview'; try { const response = await fetch('{% url "mal_full_sync_preview" %}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const data = await response.json(); if (!response.ok) { throw new Error(data.error || gettext('Could not preview MyAnimeList changes.')); } this.malSyncChanges = data.changes || []; } catch (error) { this.malSyncPreviewError = error.message || gettext('Could not preview MyAnimeList changes.'); } finally { this.malSyncPreviewLoading = false; } }, formatMalValue(value) { if (value === null || value === undefined) { return gettext('Not set'); } return String(value).replaceAll('_', ' '); }, }">
+  {{ mal_sync_initial|json_script:"mal-sync-initial" }}
+  <div class="space-y-6"
+       x-data="{
+         activeModal: null,
+         scheduleFrequency: 'daily',
+         scheduleTime: '03:00',
+         malSyncChanges: [],
+         malMappingIssues: [],
+         malSyncPreviewLoading: false,
+         malSyncPreviewError: '',
+         malSyncStatus: JSON.parse(document.getElementById('mal-sync-initial').textContent),
+         malSyncPollTimer: null,
+         init() {
+           if (this.malSyncStatus) { this.refreshMalSyncStatus(); }
+         },
+         destroy() { window.clearTimeout(this.malSyncPollTimer); },
+         syncResults() { return (this.malSyncStatus?.results || []).filter(entry => entry.outcome !== 'skipped'); },
+         async refreshMalSyncStatus() {
+           window.clearTimeout(this.malSyncPollTimer);
+           try {
+             const response = await fetch('{% url "mal_full_sync_status" %}', {
+               cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+             });
+             if (!response.ok) { throw new Error('Status unavailable'); }
+             this.malSyncStatus = await response.json();
+             if (this.malSyncStatus.is_active) {
+               this.malSyncPollTimer = window.setTimeout(() => this.refreshMalSyncStatus(), 1500);
+             }
+           } catch (error) {
+             this.malSyncPollTimer = window.setTimeout(() => this.refreshMalSyncStatus(), 5000);
+           }
+         },
+         malSyncProgressPercent() {
+           if (!this.malSyncStatus?.total) { return 0; }
+           return Math.round(this.malSyncStatus.processed / this.malSyncStatus.total * 100);
+         },
+         async previewMalSync() {
+           this.malSyncPreviewLoading = true;
+           this.malSyncPreviewError = '';
+           this.malSyncChanges = [];
+           this.malMappingIssues = [];
+           this.activeModal = 'mal-sync-preview';
+           try {
+             const response = await fetch('{% url "mal_full_sync_preview" %}', {
+               cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+             });
+             const data = await response.json();
+             if (!response.ok) { throw new Error(data.error || gettext('Could not preview MyAnimeList changes.')); }
+             this.malSyncChanges = data.changes || [];
+             this.malMappingIssues = data.mapping_issues || [];
+           } catch (error) {
+             this.malSyncPreviewError = error.message || gettext('Could not preview MyAnimeList changes.');
+           } finally { this.malSyncPreviewLoading = false; }
+         },
+         formatMalValue(value) {
+           return value === null || value === undefined ? gettext('Not set') : String(value).replaceAll('_', ' ');
+         }
+       }">
 
     {# Connection #}
     <div class="bg-[var(--color-surface)] rounded-lg p-6">
@@ -126,10 +177,10 @@
              x-show="malSyncStatus?.processed"
              x-text="interpolate(gettext('%s succeeded, %s failed'), [malSyncStatus?.succeeded || 0, malSyncStatus?.failed || 0])">
           </p>
-          <div x-show="malSyncStatus?.results?.length"
-               class="max-h-64 overflow-y-auto space-y-2">
-            <template x-for="entry in malSyncStatus?.results || []"
-                      :key="entry.media_type + '-' + entry.mal_id">
+           <p class="text-xs text-[var(--color-text-muted)]"
+             x-text="interpolate(gettext('%s results'), [syncResults().length])"></p>
+          <div x-show="syncResults().length" class="space-y-2">
+            <template x-for="(entry, index) in syncResults()" :key="index">
               <div class="flex items-start gap-2 text-xs">
                 <span class="mt-0.5"
                       :class="entry.outcome === 'succeeded' ? 'text-emerald-300' : 'text-red-300'"
@@ -143,6 +194,15 @@
               </div>
             </template>
           </div>
+          <section x-show="malSyncStatus?.mapping_issues?.length" class="space-y-2 border-t border-[var(--color-surface-border)] pt-3">
+            <h3 class="text-sm font-semibold">{% translate "Anime with mapping issues" %}</h3>
+            <template x-for="(entry, index) in malSyncStatus?.mapping_issues || []" :key="index">
+              <div class="text-xs space-y-1">
+                <strong class="break-words" x-text="entry.title"></strong>
+                <p class="break-words text-[var(--color-warning-text)]" x-text="entry.reason"></p>
+              </div>
+            </template>
+          </section>
         </div>
 
       {% elif mal_sync_configured %}
@@ -318,10 +378,20 @@
         <div x-show="malSyncPreviewError"
              class="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded p-3"
              x-text="malSyncPreviewError"></div>
-        <p x-show="!malSyncPreviewLoading && !malSyncPreviewError && !malSyncChanges.length"
+        <p x-show="!malSyncPreviewLoading && !malSyncPreviewError && !malSyncChanges.length && !malMappingIssues.length"
            class="text-sm text-[var(--color-text-muted)] py-6 text-center">
           {% translate "Everything is already up to date." %}
         </p>
+
+        <section x-show="!malSyncPreviewLoading && malMappingIssues.length" class="space-y-2 mb-4">
+          <h3 class="text-sm font-semibold">{% translate "Anime with mapping issues" %}</h3>
+          <template x-for="(entry, index) in malMappingIssues" :key="index">
+            <div class="text-xs space-y-1">
+              <strong class="break-words" x-text="entry.title"></strong>
+              <p class="break-words text-[var(--color-warning-text)]" x-text="entry.reason"></p>
+            </div>
+          </template>
+        </section>
 
         <div x-show="!malSyncPreviewLoading && malSyncChanges.length"
              class="space-y-3">
@@ -345,7 +415,7 @@
                   <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-xs">
                     <span class="text-[var(--color-text-muted)]"
                           x-text="change.field + ': ' + formatMalValue(change.from)"></span>
-                    <span aria-hidden="true" class="text-[var(--color-text-muted)]">&rarr;</span>
+                    <span aria-hidden="true" class="text-[var(--color-text-muted)]">{% include "app/icons/right-arrow.svg" with classes="w-4 h-4" %}</span>
                     <span class="text-[var(--color-text)]" x-text="formatMalValue(change.to)"></span>
                   </div>
                 </template>
@@ -365,7 +435,7 @@
             <input type="hidden" name="next" value="{{ request.path }}">
             <input type="hidden" name="confirmed" value="true">
             <button type="submit"
-                    :disabled="malSyncPreviewLoading || malSyncPreviewError || !malSyncChanges.length"
+                    :disabled="malSyncPreviewLoading || malSyncPreviewError || (!malSyncChanges.length && !malMappingIssues.length)"
                     class="w-full px-3 py-2 text-sm rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
               {% translate "Confirm Sync" %}
             </button>

@@ -1869,6 +1869,7 @@ def mal_export(request):
         "mal_account": mal_account,
         "mal_sync_configured": mal_sync.is_sync_configured(user),
         "mal_export_schedule": schedule,
+        "mal_sync_initial": mal_sync.full_sync_report(mal_account) if mal_account else None,
     }
     return render(request, "users/mal_export.html", context)
 
