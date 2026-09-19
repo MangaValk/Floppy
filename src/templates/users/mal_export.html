@@ -19,12 +19,13 @@
          malMappingIssues: [],
          malSyncPreviewLoading: false,
          malSyncPreviewError: '',
+         malPreviewController: null,
          malSyncStatus: JSON.parse(document.getElementById('mal-sync-initial').textContent),
          malSyncPollTimer: null,
          init() {
            if (this.malSyncStatus) { this.refreshMalSyncStatus(); }
          },
-         destroy() { window.clearTimeout(this.malSyncPollTimer); },
+         destroy() { window.clearTimeout(this.malSyncPollTimer); this.malPreviewController?.abort(); },
          syncResults() { return (this.malSyncStatus?.results || []).filter(entry => entry.outcome !== 'skipped'); },
          async refreshMalSyncStatus() {
            window.clearTimeout(this.malSyncPollTimer);
@@ -46,22 +47,54 @@
            return Math.round(this.malSyncStatus.processed / this.malSyncStatus.total * 100);
          },
          async previewMalSync() {
+           this.malPreviewController?.abort();
+           const controller = new AbortController();
+           this.malPreviewController = controller;
            this.malSyncPreviewLoading = true;
            this.malSyncPreviewError = '';
            this.malSyncChanges = [];
            this.malMappingIssues = [];
            this.activeModal = 'mal-sync-preview';
            try {
-             const response = await fetch('{% url "mal_full_sync_preview" %}', {
-               cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+             let token = null;
+             const started = Date.now();
+             while (!controller.signal.aborted) {
+             if (Date.now() - started > 900000) {
+               throw new Error(gettext('Preview is taking too long. Check that the background Celery worker is running.'));
+             }
+             const response = await fetch('{% url "mal_full_sync_preview" %}' + (token ? '?token=' + encodeURIComponent(token) : ''), {
+               method: token ? 'GET' : 'POST',
+               signal: controller.signal,
+               cache: 'no-store',
+               headers: {
+                 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+               }
              });
+             if (response.redirected) {
+               throw new Error(gettext('Your session may have expired. Reload the page and sign in again.'));
+             }
+             if (!response.headers.get('content-type')?.includes('application/json')) {
+               if ([502, 503, 504].includes(response.status)) {
+                 throw new Error(interpolate(gettext('MyAnimeList preview could not finish: the server timed out or is unavailable (HTTP %s). Check the web server logs before retrying.'), [response.status]));
+               }
+               throw new Error(interpolate(gettext('MyAnimeList preview returned an unexpected server response (HTTP %s). Check the web server logs.'), [response.status]));
+             }
              const data = await response.json();
              if (!response.ok) { throw new Error(data.error || gettext('Could not preview MyAnimeList changes.')); }
+             if (data.pending) {
+               token = data.token || token;
+               await new Promise(resolve => window.setTimeout(resolve, 1500));
+               continue;
+             }
              this.malSyncChanges = data.changes || [];
              this.malMappingIssues = data.mapping_issues || [];
+             break;
+             }
            } catch (error) {
+             if (controller.signal.aborted) { return; }
              this.malSyncPreviewError = error.message || gettext('Could not preview MyAnimeList changes.');
-           } finally { this.malSyncPreviewLoading = false; }
+           } finally { if (this.malPreviewController === controller) { this.malSyncPreviewLoading = false; } }
          },
          formatMalValue(value) {
            return value === null || value === undefined ? gettext('Not set') : String(value).replaceAll('_', ' ');

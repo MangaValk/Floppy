@@ -693,7 +693,7 @@ class GroupedMALSync(TestCase):
     def test_mapping_issues_persist_and_survive_page_reload(self):
         self.client.force_login(self.user)
         with patch("integrations.mal_sync._fetch_list_statuses", return_value={}):
-            preview = self.client.get(reverse("mal_full_sync_preview")).json()
+            preview = tasks.preview_mal_sync(self.user.pk)
         self.assertEqual(preview["count"], 0)
         self.assertEqual(preview["mapping_issues"][0]["title"], "Grouped Anime")
         self.assertIn("S01E03", preview["mapping_issues"][0]["reason"])
@@ -1476,11 +1476,69 @@ class MALFullSyncView(TestCase):
         ]
 
         with patch("integrations.tasks.bulk_sync_mal_status.delay") as mock_delay:
-            response = self.client.get(reverse("mal_full_sync_preview"))
+            result = tasks.preview_mal_sync(self.user.pk)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(result["count"], 1)
         mock_delay.assert_not_called()
+
+    @patch("integrations.tasks.preview_mal_sync.delay")
+    @patch("integrations.mal_sync.preview_full_sync")
+    def test_preview_request_queues_without_doing_provider_work(self, preview, delay):
+        make_mal_account(self.user)
+        delay.return_value.id = "preview-task"
+        response = self.client.post(reverse("mal_full_sync_preview"))
+        self.assertEqual(response.status_code, 202)
+        preview.assert_not_called()
+        delay.assert_called_once_with(self.user.pk)
+        token = response.json()["token"]
+        with patch("integrations.tasks.preview_mal_sync.AsyncResult") as result:
+            result.return_value.ready.return_value = False
+            pending = self.client.get(reverse("mal_full_sync_preview"), {"token": token})
+            self.assertEqual(pending.status_code, 202)
+            result.return_value.ready.return_value = True
+            result.return_value.failed.return_value = False
+            result.return_value.result = {"changes": [], "mapping_issues": [], "count": 0}
+            completed = self.client.get(reverse("mal_full_sync_preview"), {"token": token})
+            self.assertEqual(completed.status_code, 200)
+            self.assertEqual(completed.json()["count"], 0)
+        other = _make_user(username="other-preview")
+        make_mal_account(other)
+        self.client.force_login(other)
+        self.assertEqual(self.client.get(reverse("mal_full_sync_preview"), {"token": token}).status_code, 404)
+
+    @patch("integrations.mal_sync.preview_full_sync", side_effect=ValueError("bad mapping"))
+    def test_preview_worker_returns_safe_error(self, preview):
+        make_mal_account(self.user)
+        result = tasks.preview_mal_sync(self.user.pk)
+        self.assertIn("worker logs", result["error"])
+        self.assertNotIn("bad mapping", result["error"])
+
+    def test_preview_rejects_invalid_token_without_loading_results(self):
+        make_mal_account(self.user)
+        with patch("integrations.tasks.preview_mal_sync.AsyncResult") as result:
+            response = self.client.get(reverse("mal_full_sync_preview"), {"token": "invalid"})
+        self.assertEqual(response.status_code, 400)
+        result.assert_not_called()
+
+    def test_preview_start_requires_csrf(self):
+        from django.test import Client
+
+        make_mal_account(self.user)
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
+        with patch("integrations.tasks.preview_mal_sync.delay") as delay:
+            response = client.post(reverse("mal_full_sync_preview"))
+        self.assertEqual(response.status_code, 302)
+        delay.assert_not_called()
+
+    def test_preview_broker_failure_returns_json(self):
+        from kombu.exceptions import OperationalError
+
+        make_mal_account(self.user)
+        with patch("integrations.tasks.preview_mal_sync.delay", side_effect=OperationalError()):
+            response = self.client.post(reverse("mal_full_sync_preview"))
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("background worker", response.json()["error"])
 
 
 class MultiUserIsolation(TestCase):

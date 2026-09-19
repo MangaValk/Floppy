@@ -17,6 +17,7 @@ import requests
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required, login_required
+from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -32,7 +33,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from kombu.exceptions import OperationalError as BrokerOperationalError
 
 import users
 from app import helpers as app_helpers
@@ -1505,9 +1507,9 @@ def mal_full_sync_status(request):
     return JsonResponse(mal_sync.full_sync_report(mal_account))
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def mal_full_sync_preview(request):
-    """Return the changes a full MAL sync would make without writing them."""
+    """Queue or poll a user-bound, read-only MAL preview."""
     mal_account = getattr(request.user, "mal_account", None)
     if mal_account is None:
         return JsonResponse(
@@ -1522,18 +1524,30 @@ def mal_full_sync_preview(request):
             {"error": "Turn sync back on before running a full sync."}, status=400
         )
 
-    mapping_issues = []
-    try:
-        changes = mal_sync.preview_full_sync(request.user, mal_account, mapping_issues=mapping_issues)
-    except mal_sync.MALAuthError as error:
-        return JsonResponse({"error": str(error)}, status=400)
-    except services.ProviderAPIError:
-        return JsonResponse(
-            {"error": "Couldn't load your MyAnimeList list. Please try again."},
-            status=502,
+    salt = "mal-sync-preview"
+    if request.method == "POST":
+        try:
+            job = tasks.preview_mal_sync.delay(request.user.pk)
+        except BrokerOperationalError:
+            return JsonResponse({"error": "Could not queue preview. Check the background worker and Redis."}, status=503)
+        token = signing.dumps(
+            {"user_id": request.user.pk, "task_id": job.id}, salt=salt,
         )
+        return JsonResponse({"pending": True, "token": token}, status=202)
 
-    return JsonResponse({"changes": changes, "count": len(changes), "mapping_issues": mapping_issues})
+    try:
+        payload = signing.loads(request.GET.get("token", ""), salt=salt, max_age=3600)
+    except signing.BadSignature:
+        return JsonResponse({"error": "Preview expired. Start a new preview."}, status=400)
+    if payload["user_id"] != request.user.pk:
+        return JsonResponse({"error": "Preview not found."}, status=404)
+    job = tasks.preview_mal_sync.AsyncResult(payload["task_id"])
+    if not job.ready():
+        return JsonResponse({"pending": True}, status=202)
+    if job.failed():
+        return JsonResponse({"error": "Preview worker failed. Check the worker logs."}, status=502)
+    result = job.result
+    return JsonResponse(result, status=502 if "error" in result else 200)
 
 
 @require_POST

@@ -93,6 +93,13 @@ an "Anime with mapping issues" list naming unresolved episode coordinates.
 Preview also shows these issues before confirmation. A new full sync replaces
 the previous report; per-item sync does not erase it.
 
+Preview runs as a read-only Celery task on the background queue. The page starts
+it with a CSRF-protected POST and polls with an expiring, user-bound token, so
+large libraries do not have to finish within a web/proxy request timeout. The
+background worker must be running; restart it along with the web process after
+deploying changes to preview tasks. HTML proxy errors and expired logins are
+reported separately from provider errors.
+
 ## Classification policy
 
 The shared classifier is intentionally fail-closed. A title is routed to

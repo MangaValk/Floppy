@@ -22,6 +22,28 @@ MAL_SYNC_TASK_NAME = "Sync status to MyAnimeList"
 MAL_FULL_SYNC_TASK_NAME = "Full sync to MyAnimeList"
 
 
+@shared_task(name="Preview sync to MyAnimeList", ignore_result=False)
+def preview_mal_sync(user_id):
+    """Build a read-only preview outside the web request timeout."""
+    try:
+        account = MALAccount.objects.select_related("user").get(user_id=user_id)
+    except MALAccount.DoesNotExist:
+        return {"error": "Connect a MyAnimeList account first."}
+    if account.connection_broken or not account.sync_enabled:
+        return {"error": "Reconnect or enable your MyAnimeList account first."}
+    issues = []
+    try:
+        changes = mal_sync.preview_full_sync(account.user, account, mapping_issues=issues)
+    except mal_sync.MALAuthError as error:
+        return {"error": str(error)}
+    except services.ProviderAPIError:
+        return {"error": "Couldn't load MyAnimeList data or anime mappings. Please try again."}
+    except Exception:
+        logger.exception("MyAnimeList preview failed for user %s", user_id)
+        return {"error": "MyAnimeList preview failed. Check the worker logs for details."}
+    return {"changes": changes, "count": len(changes), "mapping_issues": issues}
+
+
 def _mark_connection_broken(mal_account, message):
     """Disable sync and record why, matching the LastFM/Koito account pattern."""
     mal_account.connection_broken = True
