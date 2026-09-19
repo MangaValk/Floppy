@@ -239,6 +239,11 @@ urlpatterns = [
     ),
     path("sync/mal/full", views.mal_full_sync, name="mal_full_sync"),
     path(
+        "sync/mal/full/retry-failed",
+        views.mal_full_sync_retry_failed,
+        name="mal_full_sync_retry_failed",
+    ),
+    path(
         "sync/mal/export/schedule",
         views.mal_export_schedule_save,
         name="mal_export_schedule_save",

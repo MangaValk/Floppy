@@ -363,3 +363,153 @@ def bulk_sync_mal_status(user_id):
             "updated_at",
         ]
     )
+
+
+@shared_task(name="Retry failed MyAnimeList entries")
+def retry_failed_mal_status(user_id):
+    """Retry only the entries marked "failed" on the last full sync.
+
+    Recomputes eligible entries the same way a full sync does (so a fixed
+    mapping or clamp takes effect), but only pushes the MAL ids already
+    marked failed, updating those result rows in place. Succeeded and
+    skipped rows are left untouched.
+    """
+    try:
+        user = get_user_model().objects.select_related("mal_account").get(pk=user_id)
+    except get_user_model().DoesNotExist:
+        return
+
+    try:
+        mal_account = user.mal_account
+    except MALAccount.DoesNotExist:
+        return
+
+    if not mal_account.sync_enabled or mal_account.connection_broken:
+        return
+
+    failed_keys = {
+        (result.get("media_type"), result.get("mal_id"))
+        for result in mal_account.full_sync_results
+        if result.get("outcome") == "failed"
+    }
+    if not failed_keys:
+        return
+
+    stale_before = timezone.now() - timedelta(hours=24)
+    claimed = MALAccount.objects.filter(pk=mal_account.pk).filter(
+        ~models.Q(full_sync_status=MALFullSyncStatus.RUNNING)
+        | models.Q(full_sync_started_at__lt=stale_before),
+    ).update(
+        full_sync_status=MALFullSyncStatus.RUNNING,
+        full_sync_started_at=timezone.now(),
+        full_sync_completed_at=None,
+    )
+    if not claimed:
+        return
+    mal_account.refresh_from_db()
+
+    mapping_issues = []
+    try:
+        entries = mal_sync.full_sync_entries(
+            user, mal_account, mapping_issues=mapping_issues,
+        )
+    except services.ProviderAPIError:
+        mal_account.full_sync_status = MALFullSyncStatus.FAILED
+        mal_account.full_sync_completed_at = timezone.now()
+        mal_account.save(
+            update_fields=[
+                "full_sync_status", "full_sync_completed_at", "updated_at",
+            ],
+        )
+        return
+
+    retryable = [
+        media
+        for media in entries
+        if (media._meta.verbose_name.title(), str(media.item.media_id)) in failed_keys
+    ]
+    results = list(mal_account.full_sync_results)
+    results_by_key = {
+        (result.get("media_type"), result.get("mal_id")): result for result in results
+    }
+
+    def save_progress():
+        mal_account.full_sync_succeeded = sum(
+            1 for result in results if result.get("outcome") == "succeeded"
+        )
+        mal_account.full_sync_failed = sum(
+            1 for result in results if result.get("outcome") == "failed"
+        )
+        mal_account.full_sync_results = results
+        mal_account.save(
+            update_fields=[
+                "full_sync_status",
+                "full_sync_succeeded",
+                "full_sync_failed",
+                "full_sync_results",
+                "full_sync_completed_at",
+                "updated_at",
+            ],
+        )
+
+    for media in retryable:
+        key = (media._meta.verbose_name.title(), str(media.item.media_id))
+        result = results_by_key.get(key)
+        if result is None:
+            continue
+        try:
+            mal_sync.push_status(media, mal_account)
+            result["outcome"] = "succeeded"
+            result["reason"] = ""
+        except mal_sync.MALAuthError as error:
+            result["outcome"] = "failed"
+            result["reason"] = str(error)[:500]
+            _mark_connection_broken(mal_account, error)
+            mal_account.full_sync_status = MALFullSyncStatus.FAILED
+            mal_account.full_sync_completed_at = timezone.now()
+            save_progress()
+            return
+        except mal_sync.MALSyncMismatchError as error:
+            result["outcome"] = "failed"
+            result["reason"] = str(error)[:500]
+        except services.ProviderAPIError as error:
+            logger.warning(
+                "Retry MyAnimeList sync: failed to push %s (MAL ID %s): %s",
+                media.item.title,
+                media.item.media_id,
+                error,
+            )
+            result["outcome"] = "failed"
+            result["reason"] = str(error)[:500]
+        except Exception:
+            logger.exception(
+                "Retry MyAnimeList sync: unexpected failure pushing %s (MAL ID %s)",
+                media.item.title,
+                media.item.media_id,
+            )
+            result["outcome"] = "failed"
+            result["reason"] = "Unexpected error; check the server logs."
+
+        save_progress()
+
+    mal_account.full_sync_status = MALFullSyncStatus.COMPLETED
+    mal_account.full_sync_completed_at = timezone.now()
+    remaining_failed = sum(1 for result in results if result.get("outcome") == "failed")
+    if remaining_failed:
+        mal_account.last_error_message = (
+            f"Retry: {remaining_failed} entries still failed - check server "
+            "logs for details."
+        )[:500]
+        mal_account.last_failed_at = timezone.now()
+    else:
+        mal_account.last_error_message = ""
+        mal_account.last_failed_at = None
+    mal_account.save(
+        update_fields=[
+            "full_sync_status",
+            "full_sync_completed_at",
+            "last_error_message",
+            "last_failed_at",
+            "updated_at",
+        ]
+    )

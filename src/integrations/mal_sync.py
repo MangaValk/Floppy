@@ -464,6 +464,13 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
     result = []
     for media, watched_numbers, total in entries.values():
         media.progress = len(watched_numbers)
+        if total:
+            # An overlapping mapping can produce more distinct episode
+            # numbers than the MAL entry actually has. MAL doesn't reject an
+            # out-of-range count, it just silently keeps the old value,
+            # which then surfaces as push_status()'s MALSyncMismatchError -
+            # clamp before it ever reaches MAL instead.
+            media.progress = min(media.progress, total)
         if total and media.progress >= total:
             media.status = Status.COMPLETED.value
         elif media.status not in {Status.DROPPED.value, Status.PAUSED.value}:

@@ -697,6 +697,27 @@ class GroupedMALSync(TestCase):
         self.assertEqual(entries[0].status, Status.COMPLETED.value)
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:33035": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_progress_is_clamped_to_the_mal_entrys_episode_count(self, metadata):
+        """MAL silently ignores an out-of-range count instead of applying it.
+
+        Regression: an overlapping or stale mapping can produce more watched
+        episode numbers than a short MAL entry actually has, which must be
+        clamped before the push instead of surfacing as a false
+        MALSyncMismatchError ("MyAnimeList accepted the update ... but its
+        response shows it wasn't applied").
+        """
+        metadata.return_value = {"title": "Short OVA", "max_progress": 1}
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].progress, 1)
+        self.assertEqual(entries[0].status, Status.COMPLETED.value)
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")
@@ -1569,6 +1590,105 @@ class MALSyncReportBrowser(StaticLiveServerTestCase):
             browser.close()
 
 
+class RetryFailedMALStatusTask(TestCase):
+    """Test retrying only the entries marked failed on the last full sync."""
+
+    def setUp(self):
+        self.user = _make_user()
+        self.account = make_mal_account(self.user)
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            self.anime = Anime.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="1", source=Sources.MAL.value,
+                    media_type=MediaTypes.ANIME.value, title="Anime One",
+                ),
+                status=Status.IN_PROGRESS.value,
+            )
+            self.manga = Manga.objects.create(
+                user=self.user,
+                item=Item.objects.create(
+                    media_id="2", source=Sources.MAL.value,
+                    media_type=MediaTypes.MANGA.value, title="Manga One",
+                ),
+                status=Status.IN_PROGRESS.value,
+            )
+        self.account.full_sync_status = "completed"
+        self.account.full_sync_total = 2
+        self.account.full_sync_succeeded = 1
+        self.account.full_sync_failed = 1
+        self.account.full_sync_results = [
+            {
+                "title": "Anime One", "media_type": "Anime", "mal_id": "1",
+                "outcome": "failed", "reason": "boom",
+            },
+            {
+                "title": "Manga One", "media_type": "Manga", "mal_id": "2",
+                "outcome": "succeeded", "reason": "",
+            },
+        ]
+        self.account.save()
+
+    def test_noop_without_failed_entries(self):
+        self.account.full_sync_results = [self.account.full_sync_results[1]]
+        self.account.save(update_fields=["full_sync_results"])
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.retry_failed_mal_status(self.user.pk)
+        mock_push.assert_not_called()
+
+    def test_noop_when_sync_disabled(self):
+        self.account.sync_enabled = False
+        self.account.save(update_fields=["sync_enabled"])
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.retry_failed_mal_status(self.user.pk)
+        mock_push.assert_not_called()
+
+    def test_retries_only_the_failed_entry(self):
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.retry_failed_mal_status(self.user.pk)
+
+        mock_push.assert_called_once_with(self.anime, self.account)
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.full_sync_status, "completed")
+        self.assertEqual(self.account.full_sync_succeeded, 2)
+        self.assertEqual(self.account.full_sync_failed, 0)
+        results_by_id = {result["mal_id"]: result for result in self.account.full_sync_results}
+        self.assertEqual(results_by_id["1"]["outcome"], "succeeded")
+        self.assertEqual(results_by_id["2"]["outcome"], "succeeded")
+
+    def test_entry_that_fails_again_keeps_its_updated_reason(self):
+        error = ProviderAPIError("MAL", MagicMock(response=MagicMock(status_code=503)))
+        with patch("integrations.mal_sync.push_status", side_effect=error):
+            tasks.retry_failed_mal_status(self.user.pk)
+
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.full_sync_status, "completed")
+        self.assertEqual(self.account.full_sync_failed, 1)
+        results_by_id = {result["mal_id"]: result for result in self.account.full_sync_results}
+        self.assertEqual(results_by_id["1"]["outcome"], "failed")
+        self.assertIn("503", results_by_id["1"]["reason"])
+
+    def test_auth_error_breaks_connection_and_stops(self):
+        with patch(
+            "integrations.mal_sync.push_status",
+            side_effect=mal_sync.MALAuthError("expired"),
+        ):
+            tasks.retry_failed_mal_status(self.user.pk)
+
+        self.account.refresh_from_db()
+        self.assertTrue(self.account.connection_broken)
+        self.assertFalse(self.account.sync_enabled)
+        self.assertEqual(self.account.full_sync_status, "failed")
+
+    def test_running_sync_blocks_retry(self):
+        self.account.full_sync_status = "running"
+        self.account.full_sync_started_at = timezone.now()
+        self.account.save(update_fields=["full_sync_status", "full_sync_started_at"])
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.retry_failed_mal_status(self.user.pk)
+        mock_push.assert_not_called()
+
+
 class MALFullSyncView(TestCase):
     """Test the "Sync All Now" view."""
 
@@ -1650,6 +1770,44 @@ class MALFullSyncView(TestCase):
         response = self.client.get(reverse("mal_full_sync_status"))
 
         self.assertEqual(response.status_code, 404)
+
+    def test_retry_without_account_shows_error(self):
+        with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
+            response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
+        mock_delay.assert_not_called()
+        self.assertContains(response, "Connect a MyAnimeList account")
+
+    def test_retry_without_failed_entries_shows_error(self):
+        make_mal_account(self.user)
+        with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
+            response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
+        mock_delay.assert_not_called()
+        self.assertContains(response, "No failed MyAnimeList entries")
+
+    def test_retry_queues_task_when_entries_failed(self):
+        account = make_mal_account(self.user)
+        account.full_sync_failed = 2
+        account.save(update_fields=["full_sync_failed"])
+
+        with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
+            response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
+
+        mock_delay.assert_called_once_with(user_id=self.user.pk)
+        self.assertContains(response, "Retrying failed MyAnimeList entries")
+        account.refresh_from_db()
+        self.assertEqual(account.full_sync_status, "queued")
+
+    def test_retry_blocked_while_sync_active(self):
+        account = make_mal_account(self.user)
+        account.full_sync_failed = 1
+        account.full_sync_status = "running"
+        account.save(update_fields=["full_sync_failed", "full_sync_status"])
+
+        with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
+            response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
+
+        mock_delay.assert_not_called()
+        self.assertContains(response, "already in progress")
 
     def test_complete_report_survives_page_reload(self):
         account = make_mal_account(self.user)

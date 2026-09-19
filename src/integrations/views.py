@@ -1630,6 +1630,37 @@ def mal_full_sync(request):
     return _integration_redirect(request)
 
 
+@require_POST
+def mal_full_sync_retry_failed(request):
+    """Retry only the entries marked failed on the last full MyAnimeList sync."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    elif mal_account.connection_broken:
+        messages.error(request, "Reconnect your MyAnimeList account first.")
+    elif not mal_account.sync_enabled:
+        messages.error(request, "Turn sync back on before retrying.")
+    elif mal_account.full_sync_is_active:
+        messages.info(request, "A MyAnimeList sync is already in progress.")
+    elif mal_account.full_sync_failed <= 0:
+        messages.error(request, "No failed MyAnimeList entries to retry.")
+    else:
+        from integrations.models import MALFullSyncStatus
+
+        queued = type(mal_account).objects.filter(pk=mal_account.pk).exclude(
+            full_sync_status__in=[MALFullSyncStatus.QUEUED, MALFullSyncStatus.RUNNING],
+        ).update(full_sync_status=MALFullSyncStatus.QUEUED)
+        if not queued:
+            messages.info(request, "A MyAnimeList sync is already in progress.")
+            return _integration_redirect(request)
+        tasks.retry_failed_mal_status.delay(user_id=request.user.pk)
+        messages.success(
+            request,
+            "Retrying failed MyAnimeList entries in the background.",
+        )
+    return _integration_redirect(request)
+
+
 @require_GET
 def mal_full_sync_status(request):
     """Return durable progress and outcomes for the latest manual MAL sync."""
