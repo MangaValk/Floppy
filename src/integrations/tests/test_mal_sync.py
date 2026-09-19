@@ -17,6 +17,7 @@ from app.models import (
     Anime,
     Episode,
     Item,
+    ItemProviderLink,
     Manga,
     MediaTypes,
     Season,
@@ -656,6 +657,44 @@ class GroupedMALSync(TestCase):
             )
             episodes.append(Episode(item=item, related_season=self.season))
         Episode.objects.bulk_create(episodes)
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        # Only episode 1 has an unambiguous AniBridge mapping - a recap/alt-
+        # numbering episode elsewhere in the season would make the rest
+        # ambiguous on a real show, exactly like Steins;Gate (MAL 9253).
+        "tmdb_show:100:s1": {"mal:9253": {"1": "1"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_provider_link_from_migration_overrides_ambiguous_anibridge_mapping(
+        self, metadata,
+    ):
+        """Auto-migrated shows use Floppy's own exact mapping, not AniBridge's.
+
+        Regression for a completed flat MAL anime (e.g. Steins;Gate) whose
+        auto-migration to grouped tracking left an exact ItemProviderLink, but
+        whose AniBridge mapping only resolves the first episode - previously
+        this undercounted progress down to 1 watched episode.
+        """
+        metadata.return_value = {"title": "Steins;Gate", "max_progress": 3}
+        original_flat_item = Item.objects.create(
+            media_id="9253", source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value, title="Steins;Gate",
+        )
+        ItemProviderLink.objects.create(
+            item=original_flat_item,
+            provider=Sources.TMDB.value,
+            provider_media_id="100",
+            provider_media_type=MediaTypes.TV.value,
+            season_number=1,
+            episode_offset=0,
+        )
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].item.media_id, "9253")
+        self.assertEqual(entries[0].progress, 3)
+        self.assertEqual(entries[0].status, Status.COMPLETED.value)
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},

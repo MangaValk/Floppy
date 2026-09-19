@@ -234,6 +234,54 @@ def status_payload(media):
     return data
 
 
+def _resolve_mal_from_provider_link(provider, provider_media_id, season_number, episode_number):
+    """Resolve an episode through Floppy's own exact migration/correction mapping.
+
+    ItemProviderLink is written by Floppy itself (auto-migrating a completed
+    flat MAL anime, or a manual match correction) with an exact season and
+    episode offset - unlike AniBridge's external mapping data, it cannot be
+    ambiguous for shows with recap or alternate-numbering episodes, so it is
+    tried first.
+    """
+    from app.models import ItemProviderLink
+
+    if not provider_media_id or season_number is None or episode_number is None:
+        return None, None
+
+    link = (
+        ItemProviderLink.objects.filter(
+            provider=provider,
+            provider_media_type=MediaTypes.TV.value,
+            provider_media_id=str(provider_media_id),
+            season_number=season_number,
+            item__source=Sources.MAL.value,
+            item__media_type=MediaTypes.ANIME.value,
+        )
+        .select_related("item")
+        .first()
+    )
+    if link is None:
+        link = (
+            ItemProviderLink.objects.filter(
+                provider=provider,
+                provider_media_type=MediaTypes.TV.value,
+                provider_media_id=str(provider_media_id),
+                season_number__isnull=True,
+                item__source=Sources.MAL.value,
+                item__media_type=MediaTypes.ANIME.value,
+            )
+            .select_related("item")
+            .first()
+        )
+    if link is None:
+        return None, None
+
+    mapped_episode = episode_number - int(link.episode_offset or 0)
+    if mapped_episode < 1:
+        return None, None
+    return str(link.item.media_id), mapped_episode
+
+
 def queue_grouped_sync(user_id, item):
     """Queue current grouped progress after commit for connected, opted-in users."""
     from app.models import TV
@@ -340,6 +388,13 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             manual = manual_mappings.get(identity, {})
             mal_id = manual.get("mal_id")
             episode_number = manual.get("episode")
+            if not mal_id or not episode_number:
+                mal_id, episode_number = _resolve_mal_from_provider_link(
+                    item.source,
+                    item.media_id,
+                    item.season_number,
+                    item.episode_number,
+                )
             if not mal_id or not episode_number:
                 mal_id, episode_number = anime_mappings.get_mal_id_from_series(
                     mapping_data,
