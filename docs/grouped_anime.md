@@ -108,6 +108,12 @@ Saving the same grouped episode again updates its override. Floppy does not
 guess through ambiguous, split, or ratio mappings because MAL only accepts a
 single watched-episode count.
 
+The repair wizard searches the complete MAL anime catalogue, including titles
+hidden by the normal search preference, then loads the selected title's episode
+count. A single unresolved episode can be mapped independently. When every
+tracked episode in a season is unresolved, "Fix whole season" stores one
+override per source episode, sequentially from the selected MAL episode.
+
 ## Classification policy
 
 The shared classifier is intentionally fail-closed. A title is routed to

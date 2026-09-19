@@ -697,6 +697,11 @@ class GroupedMALSync(TestCase):
         self.assertEqual(preview["count"], 0)
         self.assertEqual(preview["mapping_issues"][0]["title"], "Grouped Anime")
         self.assertIn("S01E03", preview["mapping_issues"][0]["reason"])
+        self.assertEqual(preview["mapping_issues"][0]["seasons"], [{
+            "season": 1,
+            "episodes": [1, 2, 3],
+            "all_unmapped": True,
+        }])
 
         tasks.bulk_sync_mal_status(self.user.pk)
 
@@ -731,6 +736,14 @@ class GroupedMALSync(TestCase):
     def test_manual_episode_mappings_restore_completed_season_progress(self, metadata):
         metadata.return_value = {"title": "Mapped Anime", "max_progress": 3}
         self.client.force_login(self.user)
+        issues = []
+        initial = mal_sync.grouped_sync_entries(self.user, mapping_issues=issues)
+        self.assertEqual(initial[0].progress, 1)
+        self.assertEqual(issues[0]["seasons"], [{
+            "season": 1,
+            "episodes": [2, 3],
+            "all_unmapped": False,
+        }])
         for source_episode in (2, 3):
             response = self.client.post(reverse("mal_episode_mapping_save"), {
                 "item_id": self.show_item.pk,
@@ -746,6 +759,32 @@ class GroupedMALSync(TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0].progress, 3)
         self.assertEqual(entries[0].status, Status.COMPLETED.value)
+
+    def test_season_mapping_is_sequential_across_source_number_gaps(self):
+        Episode.objects.filter(
+            related_season=self.season,
+            item__episode_number=2,
+        ).delete()
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk,
+            "season": 1,
+            "episode": 1,
+            "scope": "season",
+            "mal_id": 500,
+            "mal_episode": 4,
+        })
+        self.assertEqual(response.json()["mapped"], 2)
+        mappings = sorted(
+            (
+                reference.metadata["episode_number"],
+                reference.episode_mapping["episode"],
+            )
+            for reference in self.user.external_references.filter(
+                integration="mal_sync",
+            )
+        )
+        self.assertEqual(mappings, [(1, 4), (3, 5)])
 
     def test_manual_mapping_is_user_scoped_and_validated(self):
         self.client.force_login(self.user)
@@ -769,6 +808,90 @@ class GroupedMALSync(TestCase):
             "mal_id": 42, "mal_episode": 2,
         })
         self.assertEqual(denied.status_code, 404)
+
+    def test_season_mapping_persists_sequential_episode_overrides(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk,
+            "season": 1,
+            "episode": 1,
+            "scope": "season",
+            "mal_id": 500,
+            "mal_episode": 4,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["mapped"], 3)
+        mappings = {
+            reference.metadata["episode_number"]: reference.episode_mapping
+            for reference in self.user.external_references.filter(
+                integration="mal_sync",
+            )
+        }
+        self.assertEqual(mappings, {
+            1: {"mal_id": 500, "episode": 4},
+            2: {"mal_id": 500, "episode": 5},
+            3: {"mal_id": 500, "episode": 6},
+        })
+
+    @patch("app.providers.mal.search")
+    def test_mapping_wizard_searches_mal_anime(self, search):
+        self.client.force_login(self.user)
+        search.return_value = {"results": [{
+            "media_id": "42", "title": "Prison School", "year": 2015,
+            "image": "https://example.test/prison-school.jpg",
+        }]}
+
+        response = self.client.get(reverse("mal_mapping_search"), {"q": "Prison"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"][0]["media_id"], "42")
+        search.assert_called_once_with(
+            MediaTypes.ANIME.value,
+            "Prison",
+            1,
+            include_nsfw=True,
+        )
+
+    @patch("app.providers.mal.services.api_request")
+    def test_mapping_search_cache_is_separate_from_filtered_search(self, request):
+        from app.providers import mal as mal_provider
+
+        request.side_effect = [
+            {"data": [{"node": {"id": 1, "title": "Filtered"}}]},
+            {"data": [{"node": {"id": 2, "title": "Unfiltered"}}]},
+        ]
+        filtered = mal_provider.search("anime", "same query", 1, include_nsfw=False)
+        unfiltered = mal_provider.search("anime", "same query", 1, include_nsfw=True)
+        self.assertEqual(filtered["results"][0]["media_id"], 1)
+        self.assertEqual(unfiltered["results"][0]["media_id"], 2)
+        self.assertNotIn("nsfw", request.call_args_list[0].kwargs["params"])
+        self.assertEqual(request.call_args_list[1].kwargs["params"]["nsfw"], "true")
+
+    @patch("integrations.views.services.get_media_metadata")
+    def test_mapping_wizard_lists_selected_mal_episodes(self, metadata):
+        self.client.force_login(self.user)
+        metadata.return_value = {
+            "title": "Prison School",
+            "image": "https://example.test/prison-school.jpg",
+            "max_progress": 3,
+        }
+
+        response = self.client.get(reverse("mal_mapping_episodes"), {"mal_id": 42})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["episodes"], [1, 2, 3])
+        self.assertEqual(response.json()["title"], "Prison School")
+
+    @patch("integrations.views.services.get_media_metadata")
+    def test_mapping_wizard_handles_unknown_episode_count(self, metadata):
+        self.client.force_login(self.user)
+        metadata.return_value = {
+            "title": "Ongoing Anime", "image": None, "max_progress": None,
+        }
+        response = self.client.get(reverse("mal_mapping_episodes"), {"mal_id": 42})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["episodes"], [])
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_per_item_toggle_prevents_grouped_queue(self, delay):
@@ -1520,7 +1643,10 @@ class MALFullSyncView(TestCase):
         self.assertContains(response, 'aria-labelledby="mal-mapping-tab"')
         self.assertContains(response, '@click="previewMalSync(false)"')
         self.assertContains(response, 'class="max-h-96 overflow-y-auto space-y-2 pr-2"')
-        self.assertContains(response, 'x-model="episode.mal_id"')
+        self.assertContains(response, "Fix whole season")
+        self.assertContains(response, "activeModal === 'mal-mapping-wizard'")
+        self.assertContains(response, 'x-for="result in mappingSearchResults"')
+        self.assertContains(response, 'x-for="episode in malEpisodeOptions"')
         self.assertContains(response, ':aria-valuenow="malSyncPreviewProgress"')
         page, modal = response.content.decode().split('x-show="activeModal === \'mal-sync-preview\'"', 1)
         self.assertIn("Anime with mapping issues", page)

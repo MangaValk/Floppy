@@ -299,6 +299,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             progress_callback(show_index, len(shows), show.item.title)
         unmapped = []
         unmapped_episodes = []
+        season_counts = {}
         watches = Episode.objects.filter(
             related_season__related_tv=show,
             related_season__order_archived=False,
@@ -330,6 +331,11 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             if item.season_number is None or item.episode_number is None:
                 unmapped.append(item.title)
                 continue
+            season_count = season_counts.setdefault(
+                item.season_number,
+                {"total": 0, "unmapped": []},
+            )
+            season_count["total"] += 1
             identity = f"{show.item_id}:{item.season_number}:{item.episode_number}"
             manual = manual_mappings.get(identity, {})
             mal_id = manual.get("mal_id")
@@ -348,6 +354,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                     "season": item.season_number,
                     "episode": item.episode_number,
                 })
+                season_count["unmapped"].append(item.episode_number)
                 continue
             mal_id = str(mal_id)
             if mal_id not in entries:
@@ -382,6 +389,16 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 "mal_id": "",
                 "item_id": show.item_id,
                 "episodes": unmapped_episodes,
+                "seasons": [
+                    {
+                        "season": season,
+                        "episodes": sorted(values["unmapped"]),
+                        "all_unmapped": bool(values["unmapped"])
+                        and len(values["unmapped"]) == values["total"],
+                    }
+                    for season, values in sorted(season_counts.items())
+                    if values["unmapped"]
+                ],
                 "outcome": "skipped",
                 "reason": (
                     "No reliable MAL episode mapping for: " + ", ".join(sorted(set(unmapped)))

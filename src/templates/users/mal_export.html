@@ -25,6 +25,14 @@
          malSyncPreviewError: '',
          mappingSaveError: '',
          mappingSaving: '',
+         mappingWizard: null,
+         mappingSearchQuery: '',
+         mappingSearchResults: [],
+         mappingSearchLoading: false,
+         mappingWizardError: '',
+         selectedMalTitle: null,
+         malEpisodeOptions: [],
+         selectedMalEpisode: '',
          malPreviewController: null,
          malSyncStatus: JSON.parse(document.getElementById('mal-sync-initial').textContent),
          malSyncPollTimer: null,
@@ -107,16 +115,79 @@
              this.malSyncPreviewError = error.message || gettext('Could not preview MyAnimeList changes.');
            } finally { if (this.malPreviewController === controller) { this.malSyncPreviewLoading = false; } }
          },
-         async saveEpisodeMapping(entry, episode) {
-           const key = `${entry.item_id}:${episode.season}:${episode.episode}`;
-           this.mappingSaving = key;
+         openMappingWizard(entry, season, episode = null) {
+           this.mappingWizard = {
+             entry,
+             season: season.season,
+             episode: episode || season.episodes[0],
+             scope: episode ? 'episode' : 'season'
+           };
+           this.mappingSearchQuery = entry.title;
+           this.mappingSearchResults = [];
+           this.selectedMalTitle = null;
+           this.malEpisodeOptions = [];
+           this.selectedMalEpisode = '';
+           this.mappingWizardError = '';
+           this.activeModal = 'mal-mapping-wizard';
+         },
+         async searchMalTitles() {
+           if (this.mappingSearchQuery.trim().length < 2) { return; }
+           this.mappingSearchLoading = true;
+           this.mappingWizardError = '';
+           try {
+             const response = await fetch('{% url "mal_mapping_search" %}?q=' + encodeURIComponent(this.mappingSearchQuery.trim()), {
+               cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+             });
+             if (response.redirected || !response.headers.get('content-type')?.includes('application/json')) {
+               throw new Error(gettext('MyAnimeList search returned an unexpected response. Reload the page and try again.'));
+             }
+             const data = await response.json();
+             if (!response.ok) { throw new Error(data.error || gettext('Could not search MyAnimeList.')); }
+             this.mappingSearchResults = data.results || [];
+           } catch (error) {
+             this.mappingWizardError = error.message || gettext('Could not search MyAnimeList.');
+           } finally { this.mappingSearchLoading = false; }
+         },
+         async selectMalTitle(result) {
+           this.selectedMalTitle = result;
+           this.malEpisodeOptions = [];
+           this.selectedMalEpisode = '';
+           this.mappingWizardError = '';
+           try {
+             const response = await fetch('{% url "mal_mapping_episodes" %}?mal_id=' + encodeURIComponent(result.media_id), {
+               cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+             });
+             if (response.redirected || !response.headers.get('content-type')?.includes('application/json')) {
+               throw new Error(gettext('MyAnimeList episode choices returned an unexpected response. Reload the page and try again.'));
+             }
+             const data = await response.json();
+             if (!response.ok) { throw new Error(data.error || gettext('Could not load episodes.')); }
+             this.malEpisodeOptions = data.episodes || [];
+             if (this.mappingWizard?.scope === 'season') {
+               const required = this.mappingWizard.entry.seasons
+                 .find(season => season.season === this.mappingWizard.season)?.episodes.length || 1;
+               this.malEpisodeOptions = this.malEpisodeOptions.slice(
+                 0,
+                 Math.max(0, this.malEpisodeOptions.length - required + 1)
+               );
+             }
+             this.selectedMalEpisode = this.malEpisodeOptions[0] || '';
+           } catch (error) {
+             this.mappingWizardError = error.message || gettext('Could not load episodes.');
+           }
+         },
+         async saveMappingWizard() {
+           const entry = this.mappingWizard.entry;
+           const sourceEpisode = this.mappingWizard.episode;
+           this.mappingSaving = `${entry.item_id}:${this.mappingWizard.season}:${sourceEpisode}`;
            this.mappingSaveError = '';
            const body = new URLSearchParams({
              item_id: entry.item_id,
-             season: episode.season,
-             episode: episode.episode,
-             mal_id: episode.mal_id || '',
-             mal_episode: episode.mal_episode || ''
+             season: this.mappingWizard.season,
+             episode: sourceEpisode,
+             scope: this.mappingWizard.scope,
+             mal_id: this.selectedMalTitle?.media_id || '',
+             mal_episode: this.selectedMalEpisode || ''
            });
            try {
              const response = await fetch('{% url "mal_episode_mapping_save" %}', {
@@ -131,6 +202,7 @@
              }
              const data = await response.json();
              if (!response.ok) { throw new Error(data.error || gettext('Could not save mapping.')); }
+             this.activeModal = null;
              await this.previewMalSync(false);
            } catch (error) {
              this.mappingSaveError = error.message || gettext('Could not save mapping.');
@@ -189,25 +261,25 @@
           <strong class="break-words" x-text="entry.title"></strong>
           <p class="break-words text-[var(--color-warning-text)]" x-text="entry.reason"></p>
           <div class="space-y-2 pt-2">
-            <template x-for="episode in entry.episodes || []" :key="episode.season + ':' + episode.episode">
-              <div class="grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
-                <span class="text-xs text-[var(--color-text-secondary)] pb-2"
-                      x-text="`S${String(episode.season).padStart(2, '0')}E${String(episode.episode).padStart(2, '0')}`"></span>
-                <label class="text-xs text-[var(--color-text-muted)]">
-                  {% translate "MAL ID" %}
-                  <input type="number" min="1" inputmode="numeric" x-model="episode.mal_id"
-                         class="mt-1 w-full py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)]">
-                </label>
-                <label class="text-xs text-[var(--color-text-muted)]">
-                  {% translate "MAL episode" %}
-                  <input type="number" min="1" inputmode="numeric" x-model="episode.mal_episode"
-                         class="mt-1 w-full py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)]">
-                </label>
-                <button type="button" @click="saveEpisodeMapping(entry, episode)"
-                        :disabled="mappingSaving || !episode.mal_id || !episode.mal_episode"
-                        class="h-10 px-3 text-sm bg-indigo-600 text-white rounded-md cursor-pointer disabled:opacity-50">
-                  {% translate "Save" %}
-                </button>
+            <template x-for="season in entry.seasons || []" :key="season.season">
+              <div class="space-y-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-xs font-medium" x-text="interpolate(gettext('Season %s'), [season.season])"></span>
+                  <button x-show="season.all_unmapped" type="button"
+                          @click="openMappingWizard(entry, season)"
+                          class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md cursor-pointer">
+                    {% translate "Fix whole season" %}
+                  </button>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <template x-for="episode in season.episodes" :key="episode">
+                    <button type="button" @click="openMappingWizard(entry, season, episode)"
+                            class="px-2 py-1 text-xs border border-[var(--color-surface-border)] rounded cursor-pointer">
+                      <span x-text="`E${String(episode).padStart(2, '0')}`"></span>
+                      <span class="sr-only">{% translate "Fix mapping" %}</span>
+                    </button>
+                  </template>
+                </div>
               </div>
             </template>
           </div>
@@ -493,6 +565,103 @@
       </div>
     {% endif %}
 
+    </div>
+
+    {# Manual MAL episode mapping wizard #}
+    <div x-show="activeModal === 'mal-mapping-wizard'"
+         x-cloak
+         @keydown.escape.window="activeModal = null"
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+         @mousedown.self="activeModal = null">
+      <div class="modal-max-height overflow-y-auto w-full bg-[var(--color-surface-strong)] p-4 rounded-lg"
+           style="width: min(96vw, 42rem)">
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h2 class="text-lg font-semibold">{% translate "Match episodes to MyAnimeList" %}</h2>
+            <p class="text-sm text-[var(--color-text-muted)]"
+               x-text="mappingWizard?.scope === 'season' ? interpolate(gettext('Map all unresolved episodes in season %s'), [mappingWizard?.season]) : interpolate(gettext('Map season %s, episode %s'), [mappingWizard?.season, mappingWizard?.episode])"></p>
+          </div>
+          <button type="button" @click="activeModal = null" title="{% translate 'Close' %}"
+                  class="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer">
+            {% include "app/icons/x.svg" with classes="w-4 h-4" %}
+          </button>
+        </div>
+
+        <p x-show="mappingWizardError" x-text="mappingWizardError" class="mb-3 text-sm text-red-300"></p>
+
+        <div x-show="!selectedMalTitle" class="space-y-4">
+          <form @submit.prevent="searchMalTitles()" class="flex gap-2">
+            <label class="sr-only" for="mal-mapping-search">{% translate "Search MyAnimeList" %}</label>
+            <input id="mal-mapping-search" type="search" x-model="mappingSearchQuery"
+                   placeholder="{% translate 'Search anime title' %}"
+                   class="min-w-0 flex-1 py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)]">
+            <button type="submit" :disabled="mappingSearchLoading || mappingSearchQuery.trim().length < 2"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-md cursor-pointer disabled:opacity-50">
+              {% translate "Search" %}
+            </button>
+          </form>
+          <p x-show="mappingSearchLoading" class="text-sm text-[var(--color-text-muted)]">
+            {% translate "Searching MyAnimeList..." %}
+          </p>
+          <p x-show="!mappingSearchLoading && mappingSearchResults.length === 0"
+             class="text-sm text-[var(--color-text-muted)]">
+            {% translate "Search for the matching MyAnimeList title." %}
+          </p>
+          <div class="max-h-80 overflow-y-auto divide-y divide-[var(--color-surface-border)]">
+            <template x-for="result in mappingSearchResults" :key="result.media_id">
+              <button type="button" @click="selectMalTitle(result)"
+                      class="w-full flex items-center gap-3 py-3 text-left cursor-pointer hover:bg-[var(--color-surface-hover)]">
+                <img x-show="result.image" :src="result.image" alt="" class="h-16 w-11 object-cover rounded">
+                <span class="min-w-0">
+                  <strong class="block break-words" x-text="result.title"></strong>
+                  <span class="text-xs text-[var(--color-text-muted)]"
+                        x-text="result.year ? `${result.year} · MAL ${result.media_id}` : `MAL ${result.media_id}`"></span>
+                </span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <div x-show="selectedMalTitle" class="space-y-4">
+          <div class="flex items-center gap-3">
+            <img x-show="selectedMalTitle?.image" :src="selectedMalTitle?.image" alt=""
+                 class="h-20 w-14 object-cover rounded">
+            <div class="min-w-0">
+              <strong class="block break-words" x-text="selectedMalTitle?.title"></strong>
+              <span class="text-xs text-[var(--color-text-muted)]"
+                    x-text="`MAL ${selectedMalTitle?.media_id}`"></span>
+            </div>
+          </div>
+          <label class="block text-sm text-[var(--color-text-muted)]">
+            <span x-text="mappingWizard?.scope === 'season' ? gettext('First MAL episode') : gettext('MAL episode')"></span>
+            <select x-model="selectedMalEpisode"
+                    class="mt-1 w-full py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)]">
+              <option value="">{% translate "Select an episode" %}</option>
+              <template x-for="episode in malEpisodeOptions" :key="episode">
+                <option :value="episode" x-text="interpolate(gettext('Episode %s'), [episode])"></option>
+              </template>
+            </select>
+          </label>
+          <p x-show="selectedMalTitle && malEpisodeOptions.length === 0"
+             class="text-sm text-[var(--color-warning-text)]">
+            {% translate "MyAnimeList does not report an episode count for this title, so it cannot be selected for episode mapping." %}
+          </p>
+          <p x-show="mappingWizard?.scope === 'season'" class="text-xs text-[var(--color-text-muted)]">
+            {% translate "Episodes are mapped sequentially from the selected first MAL episode." %}
+          </p>
+          <div class="flex gap-2">
+            <button type="button" @click="selectedMalTitle = null; selectedMalEpisode = ''"
+                    class="flex-1 px-3 py-2 text-sm border border-[var(--color-surface-border)] rounded-md cursor-pointer">
+              {% translate "Back" %}
+            </button>
+            <button type="button" @click="saveMappingWizard()"
+                    :disabled="mappingSaving || !selectedMalEpisode"
+                    class="flex-1 px-3 py-2 text-sm bg-indigo-600 text-white rounded-md cursor-pointer disabled:opacity-50">
+              {% translate "Save mapping" %}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     {# MyAnimeList full sync preview #}

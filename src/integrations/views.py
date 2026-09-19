@@ -140,6 +140,7 @@ from integrations.upload_staging import (
 from integrations.webhooks.plex import extract_plex_webhook_usernames
 
 logger = logging.getLogger(__name__)
+MAL_MAPPING_MIN_QUERY_LENGTH = 2
 ARR_SYNC_INTERVAL_HOURS = 2
 RADARR_RECURRING_TASK_NAME = "Import from Radarr (Recurring)"
 JELLYFIN_PLAYBACK_REPORTING_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -1458,7 +1459,7 @@ def mal_sync_filters_save(request):
 
 @require_POST
 def mal_episode_mapping_save(request):
-    """Persist a user-owned grouped episode to MAL episode override."""
+    """Persist a user-owned grouped episode or whole-season MAL override."""
     from integrations.models import ExternalReference, ExternalReferenceReviewStatus
 
     try:
@@ -1482,26 +1483,110 @@ def mal_episode_mapping_save(request):
     if show is None:
         return JsonResponse({"error": "Tracked anime episode not found."}, status=404)
 
-    ExternalReference.objects.update_or_create(
-        user=request.user,
-        integration="mal_sync",
-        source_account="",
-        external_namespace="grouped_anime_episode",
-        external_identity=f"{item_id}:{season}:{episode}",
-        media_type=MediaTypes.EPISODE.value,
-        defaults={
-            "matched_item": show.item,
-            "corrected_item": show.item,
-            "review_status": ExternalReferenceReviewStatus.CORRECTED.value,
-            "episode_mapping": {"mal_id": mal_id, "episode": mal_episode},
-            "metadata": {
-                "series_title": show.item.title,
-                "season_number": season,
-                "episode_number": episode,
-            },
-        },
+    scope = request.POST.get("scope", "episode")
+    if scope not in {"episode", "season"}:
+        return JsonResponse({"error": "Unsupported mapping scope."}, status=400)
+    source_episodes = [episode]
+    if scope == "season":
+        source_episodes = list(
+            show.seasons.filter(
+                item__season_number=season,
+                order_archived=False,
+            )
+            .values_list("episodes__item__episode_number", flat=True)
+            .exclude(episodes__item__episode_number__isnull=True)
+            .distinct()
+            .order_by("episodes__item__episode_number")
+        )
+        if not source_episodes:
+            return JsonResponse({"error": "No tracked episodes found for this season."}, status=400)
+
+    references = []
+    for mapping_offset, source_episode in enumerate(source_episodes):
+        references.append(
+            ExternalReference(
+                user=request.user,
+                integration="mal_sync",
+                source_account="",
+                external_namespace="grouped_anime_episode",
+                external_identity=f"{item_id}:{season}:{source_episode}",
+                media_type=MediaTypes.EPISODE.value,
+                matched_item=show.item,
+                corrected_item=show.item,
+                review_status=ExternalReferenceReviewStatus.CORRECTED.value,
+                episode_mapping={
+                    "mal_id": mal_id,
+                    "episode": mal_episode + mapping_offset,
+                },
+                metadata={
+                    "series_title": show.item.title,
+                    "season_number": season,
+                    "episode_number": source_episode,
+                },
+            )
+        )
+    ExternalReference.objects.bulk_create(
+        references,
+        update_conflicts=True,
+        unique_fields=[
+            "user", "integration", "source_account", "external_namespace",
+            "external_identity", "media_type",
+        ],
+        update_fields=[
+            "matched_item", "corrected_item", "review_status", "episode_mapping",
+            "metadata", "updated_at",
+        ],
     )
-    return JsonResponse({"saved": True})
+    return JsonResponse({"saved": True, "mapped": len(references)})
+
+
+@require_GET
+def mal_mapping_search(request):
+    """Search MAL anime titles for the manual episode-mapping wizard."""
+    query = request.GET.get("q", "").strip()
+    if len(query) < MAL_MAPPING_MIN_QUERY_LENGTH:
+        return JsonResponse({"error": "Enter at least two characters."}, status=400)
+    try:
+        from app.providers import mal as mal_provider
+
+        with credentials.current_user_scope(request.user), services.interactive_request_scope():
+            response = mal_provider.search(
+                MediaTypes.ANIME.value,
+                query,
+                1,
+                include_nsfw=True,
+            )
+    except services.ProviderAPIError:
+        return JsonResponse({"error": "MyAnimeList search is unavailable. Please try again."}, status=502)
+    return JsonResponse({"results": response.get("results", [])})
+
+
+@require_GET
+def mal_mapping_episodes(request):
+    """Return numbered episode choices for a selected MAL anime title."""
+    try:
+        mal_id = int(request.GET["mal_id"])
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse({"error": "Choose a valid MyAnimeList title."}, status=400)
+    try:
+        with credentials.current_user_scope(request.user), services.interactive_request_scope():
+            metadata = services.get_media_metadata(
+                MediaTypes.ANIME.value,
+                str(mal_id),
+                Sources.MAL.value,
+            )
+    except services.ProviderAPIError:
+        return JsonResponse({"error": "Could not load MyAnimeList episodes."}, status=502)
+    try:
+        episode_count = int(metadata.get("max_progress") or 0)
+    except (TypeError, ValueError):
+        episode_count = 0
+    episode_count = max(0, min(episode_count, 10000))
+    return JsonResponse({
+        "title": metadata["title"],
+        "image": metadata.get("image"),
+        "episodes": list(range(1, episode_count + 1)),
+    })
 
 
 @require_POST

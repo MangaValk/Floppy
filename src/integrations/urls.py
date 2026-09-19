@@ -218,6 +218,16 @@ urlpatterns = [
         name="mal_episode_mapping_save",
     ),
     path(
+        "sync/mal/mapping-search",
+        views.mal_mapping_search,
+        name="mal_mapping_search",
+    ),
+    path(
+        "sync/mal/mapping-episodes",
+        views.mal_mapping_episodes,
+        name="mal_mapping_episodes",
+    ),
+    path(
         "sync/mal/full/preview",
         views.mal_full_sync_preview,
         name="mal_full_sync_preview",
