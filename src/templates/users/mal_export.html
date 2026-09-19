@@ -13,12 +13,18 @@
   <div class="space-y-6"
        x-data="{
          activeModal: null,
+         activeTab: 'sync',
          scheduleFrequency: 'daily',
          scheduleTime: '03:00',
          malSyncChanges: [],
          malMappingIssues: [],
+         hasMappingPreview: false,
          malSyncPreviewLoading: false,
+         malSyncPreviewProgress: 0,
+         malSyncPreviewMessage: '',
          malSyncPreviewError: '',
+         mappingSaveError: '',
+         mappingSaving: '',
          malPreviewController: null,
          malSyncStatus: JSON.parse(document.getElementById('mal-sync-initial').textContent),
          malSyncPollTimer: null,
@@ -27,6 +33,7 @@
          },
          destroy() { window.clearTimeout(this.malSyncPollTimer); this.malPreviewController?.abort(); },
          syncResults() { return (this.malSyncStatus?.results || []).filter(entry => entry.outcome !== 'skipped'); },
+         mappingIssues() { return this.hasMappingPreview ? this.malMappingIssues : (this.malSyncStatus?.mapping_issues || []); },
          async refreshMalSyncStatus() {
            window.clearTimeout(this.malSyncPollTimer);
            try {
@@ -46,15 +53,16 @@
            if (!this.malSyncStatus?.total) { return 0; }
            return Math.round(this.malSyncStatus.processed / this.malSyncStatus.total * 100);
          },
-         async previewMalSync() {
+         async previewMalSync(showReview = true) {
            this.malPreviewController?.abort();
            const controller = new AbortController();
            this.malPreviewController = controller;
            this.malSyncPreviewLoading = true;
+           this.malSyncPreviewProgress = 0;
+           this.malSyncPreviewMessage = gettext('Preparing preview');
            this.malSyncPreviewError = '';
            this.malSyncChanges = [];
-           this.malMappingIssues = [];
-           this.activeModal = 'mal-sync-preview';
+           if (showReview) { this.activeModal = 'mal-sync-preview'; }
            try {
              let token = null;
              const started = Date.now();
@@ -84,11 +92,14 @@
              if (!response.ok) { throw new Error(data.error || gettext('Could not preview MyAnimeList changes.')); }
              if (data.pending) {
                token = data.token || token;
+               this.malSyncPreviewProgress = data.progress || this.malSyncPreviewProgress;
+               this.malSyncPreviewMessage = data.message || this.malSyncPreviewMessage;
                await new Promise(resolve => window.setTimeout(resolve, 1500));
                continue;
              }
              this.malSyncChanges = data.changes || [];
              this.malMappingIssues = data.mapping_issues || [];
+             this.hasMappingPreview = true;
              break;
              }
            } catch (error) {
@@ -96,11 +107,116 @@
              this.malSyncPreviewError = error.message || gettext('Could not preview MyAnimeList changes.');
            } finally { if (this.malPreviewController === controller) { this.malSyncPreviewLoading = false; } }
          },
+         async saveEpisodeMapping(entry, episode) {
+           const key = `${entry.item_id}:${episode.season}:${episode.episode}`;
+           this.mappingSaving = key;
+           this.mappingSaveError = '';
+           const body = new URLSearchParams({
+             item_id: entry.item_id,
+             season: episode.season,
+             episode: episode.episode,
+             mal_id: episode.mal_id || '',
+             mal_episode: episode.mal_episode || ''
+           });
+           try {
+             const response = await fetch('{% url "mal_episode_mapping_save" %}', {
+               method: 'POST', body,
+               headers: {
+                 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+               }
+             });
+             if (response.redirected || !response.headers.get('content-type')?.includes('application/json')) {
+               throw new Error(gettext('The mapping could not be saved. Reload the page and try again.'));
+             }
+             const data = await response.json();
+             if (!response.ok) { throw new Error(data.error || gettext('Could not save mapping.')); }
+             await this.previewMalSync(false);
+           } catch (error) {
+             this.mappingSaveError = error.message || gettext('Could not save mapping.');
+           } finally { this.mappingSaving = ''; }
+         },
          formatMalValue(value) {
            return value === null || value === undefined ? gettext('Not set') : String(value).replaceAll('_', ' ');
          }
        }">
 
+    <div role="tablist" aria-label="{% translate 'MyAnimeList sync' %}"
+         class="flex flex-wrap gap-4 border-b border-[var(--color-surface-border)]">
+      <button type="button" role="tab" id="mal-sync-tab" aria-controls="mal-sync-panel"
+              :aria-selected="activeTab === 'sync'"
+              @click="activeTab = 'sync'"
+              @keydown.arrow-right.prevent="activeTab = 'mapping'; $refs.mappingTab.focus()"
+              x-ref="syncTab"
+              :class="activeTab === 'sync' ? 'border-current text-[var(--color-link)]' : 'border-transparent text-[var(--color-text-muted)]'"
+              class="border-b-2 py-3 text-sm font-medium cursor-pointer">
+        {% translate "Sync" %}
+      </button>
+      <button type="button" role="tab" id="mal-mapping-tab" aria-controls="mal-mapping-panel"
+              :aria-selected="activeTab === 'mapping'"
+              @click="activeTab = 'mapping'"
+              @keydown.arrow-left.prevent="activeTab = 'sync'; $refs.syncTab.focus()"
+              x-ref="mappingTab"
+              :class="activeTab === 'mapping' ? 'border-current text-[var(--color-link)]' : 'border-transparent text-[var(--color-text-muted)]'"
+              class="border-b-2 py-3 text-sm font-medium cursor-pointer">
+        {% translate "Mapping Issues" %}
+        <span x-text="'(' + mappingIssues().length + ')'"></span>
+      </button>
+    </div>
+
+    <section id="mal-mapping-panel" role="tabpanel" aria-labelledby="mal-mapping-tab"
+             x-show="activeTab === 'mapping'" x-cloak class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-lg font-semibold">{% translate "Anime with mapping issues" %}</h2>
+        {% if mal_account and mal_account.is_connected and mal_account.sync_enabled %}
+          <button type="button" @click="previewMalSync(false)" :disabled="malSyncPreviewLoading"
+                  class="px-3 py-2 text-sm border border-[var(--color-surface-border)] rounded-md cursor-pointer disabled:opacity-50">
+            {% translate "Refresh" %}
+          </button>
+        {% endif %}
+      </div>
+      <p x-show="malSyncPreviewLoading" class="text-sm text-[var(--color-text-muted)]">
+        {% translate "Checking anime mappings..." %}
+      </p>
+      <p x-show="malSyncPreviewError" x-text="malSyncPreviewError" class="text-sm text-red-300"></p>
+      <p x-show="mappingSaveError" x-text="mappingSaveError" class="text-sm text-red-300"></p>
+      <p x-show="!malSyncPreviewLoading && !malSyncPreviewError && !mappingIssues().length"
+         class="text-sm text-[var(--color-text-muted)]">
+        {% translate "No mapping issues reported." %}
+      </p>
+      <template x-for="(entry, index) in mappingIssues()" :key="index">
+        <div class="border-b border-[var(--color-surface-border)] pb-3 space-y-1 text-sm">
+          <strong class="break-words" x-text="entry.title"></strong>
+          <p class="break-words text-[var(--color-warning-text)]" x-text="entry.reason"></p>
+          <div class="space-y-2 pt-2">
+            <template x-for="episode in entry.episodes || []" :key="episode.season + ':' + episode.episode">
+              <div class="grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
+                <span class="text-xs text-[var(--color-text-secondary)] pb-2"
+                      x-text="`S${String(episode.season).padStart(2, '0')}E${String(episode.episode).padStart(2, '0')}`"></span>
+                <label class="text-xs text-[var(--color-text-muted)]">
+                  {% translate "MAL ID" %}
+                  <input type="number" min="1" inputmode="numeric" x-model="episode.mal_id"
+                         class="mt-1 w-full py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)]">
+                </label>
+                <label class="text-xs text-[var(--color-text-muted)]">
+                  {% translate "MAL episode" %}
+                  <input type="number" min="1" inputmode="numeric" x-model="episode.mal_episode"
+                         class="mt-1 w-full py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)]">
+                </label>
+                <button type="button" @click="saveEpisodeMapping(entry, episode)"
+                        :disabled="mappingSaving || !episode.mal_id || !episode.mal_episode"
+                        class="h-10 px-3 text-sm bg-indigo-600 text-white rounded-md cursor-pointer disabled:opacity-50">
+                  {% translate "Save" %}
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <div id="mal-sync-panel" role="tabpanel" aria-labelledby="mal-sync-tab"
+         x-show="activeTab === 'sync'" class="space-y-6">
     {# Connection #}
     <div class="bg-[var(--color-surface)] rounded-lg p-6">
       <div class="flex items-center justify-between mb-4">
@@ -214,7 +330,7 @@
           </p>
            <p class="text-xs text-[var(--color-text-muted)]"
              x-text="interpolate(gettext('%s results'), [syncResults().length])"></p>
-          <div x-show="syncResults().length" class="space-y-2">
+          <div x-show="syncResults().length" class="max-h-96 overflow-y-auto space-y-2 pr-2">
             <template x-for="(entry, index) in syncResults()" :key="index">
               <div class="flex items-start gap-2 text-xs">
                 <span class="mt-0.5"
@@ -229,15 +345,6 @@
               </div>
             </template>
           </div>
-          <section x-show="malSyncStatus?.mapping_issues?.length" class="space-y-2 border-t border-[var(--color-surface-border)] pt-3">
-            <h3 class="text-sm font-semibold">{% translate "Anime with mapping issues" %}</h3>
-            <template x-for="(entry, index) in malSyncStatus?.mapping_issues || []" :key="index">
-              <div class="text-xs space-y-1">
-                <strong class="break-words" x-text="entry.title"></strong>
-                <p class="break-words text-[var(--color-warning-text)]" x-text="entry.reason"></p>
-              </div>
-            </template>
-          </section>
         </div>
 
       {% if not mal_account or not mal_account.is_connected %}
@@ -386,6 +493,8 @@
       </div>
     {% endif %}
 
+    </div>
+
     {# MyAnimeList full sync preview #}
     <div x-show="activeModal === 'mal-sync-preview'"
          x-cloak
@@ -408,27 +517,22 @@
           </button>
         </div>
 
-        <p x-show="malSyncPreviewLoading"
-           class="text-sm text-[var(--color-text-muted)] py-6 text-center">
-          {% translate "Checking your MyAnimeList list..." %}
-        </p>
+          <div x-show="malSyncPreviewLoading" class="space-y-2 py-6">
+           <div class="h-2 overflow-hidden rounded bg-[var(--color-surface)]" role="progressbar"
+              aria-valuemin="0" aria-valuemax="100" :aria-valuenow="malSyncPreviewProgress">
+            <div class="h-full bg-indigo-500 transition-[width] duration-300"
+                :style="`width: ${malSyncPreviewProgress}%`"></div>
+           </div>
+           <p class="text-sm text-[var(--color-text-muted)] text-center"
+             x-text="malSyncPreviewMessage || gettext('Checking your MyAnimeList list...')"></p>
+          </div>
         <div x-show="malSyncPreviewError"
              class="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded p-3"
              x-text="malSyncPreviewError"></div>
-        <p x-show="!malSyncPreviewLoading && !malSyncPreviewError && !malSyncChanges.length && !malMappingIssues.length"
+        <p x-show="!malSyncPreviewLoading && !malSyncPreviewError && !malSyncChanges.length"
            class="text-sm text-[var(--color-text-muted)] py-6 text-center">
-          {% translate "Everything is already up to date." %}
+          {% translate "No changes to sync for mapped entries." %}
         </p>
-
-        <section x-show="!malSyncPreviewLoading && malMappingIssues.length" class="space-y-2 mb-4">
-          <h3 class="text-sm font-semibold">{% translate "Anime with mapping issues" %}</h3>
-          <template x-for="(entry, index) in malMappingIssues" :key="index">
-            <div class="text-xs space-y-1">
-              <strong class="break-words" x-text="entry.title"></strong>
-              <p class="break-words text-[var(--color-warning-text)]" x-text="entry.reason"></p>
-            </div>
-          </template>
-        </section>
 
         <div x-show="!malSyncPreviewLoading && malSyncChanges.length"
              class="space-y-3">
@@ -472,7 +576,7 @@
             <input type="hidden" name="next" value="{{ request.path }}">
             <input type="hidden" name="confirmed" value="true">
             <button type="submit"
-                    :disabled="malSyncPreviewLoading || malSyncPreviewError || (!malSyncChanges.length && !malMappingIssues.length)"
+                    :disabled="malSyncPreviewLoading || malSyncPreviewError || !malSyncChanges.length"
                     class="w-full px-3 py-2 text-sm rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
               {% translate "Confirm Sync" %}
             </button>

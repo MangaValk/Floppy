@@ -1457,6 +1457,54 @@ def mal_sync_filters_save(request):
 
 
 @require_POST
+def mal_episode_mapping_save(request):
+    """Persist a user-owned grouped episode to MAL episode override."""
+    from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+
+    try:
+        item_id = int(request.POST["item_id"])
+        season = int(request.POST["season"])
+        episode = int(request.POST["episode"])
+        mal_id = int(request.POST["mal_id"])
+        mal_episode = int(request.POST["mal_episode"])
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse({"error": "Enter valid episode and MAL numbers."}, status=400)
+    if min(item_id, season, episode, mal_id, mal_episode) < 1:
+        return JsonResponse({"error": "Episode and MAL numbers must be positive."}, status=400)
+
+    show = TV.objects.filter(
+        user=request.user,
+        item_id=item_id,
+        item__library_media_type=MediaTypes.ANIME.value,
+        seasons__item__season_number=season,
+        seasons__episodes__item__episode_number=episode,
+    ).first()
+    if show is None:
+        return JsonResponse({"error": "Tracked anime episode not found."}, status=404)
+
+    ExternalReference.objects.update_or_create(
+        user=request.user,
+        integration="mal_sync",
+        source_account="",
+        external_namespace="grouped_anime_episode",
+        external_identity=f"{item_id}:{season}:{episode}",
+        media_type=MediaTypes.EPISODE.value,
+        defaults={
+            "matched_item": show.item,
+            "corrected_item": show.item,
+            "review_status": ExternalReferenceReviewStatus.CORRECTED.value,
+            "episode_mapping": {"mal_id": mal_id, "episode": mal_episode},
+            "metadata": {
+                "series_title": show.item.title,
+                "season_number": season,
+                "episode_number": episode,
+            },
+        },
+    )
+    return JsonResponse({"saved": True})
+
+
+@require_POST
 def mal_full_sync(request):
     """Trigger a one-off full sync of every MAL-backed anime/manga entry."""
     mal_account = getattr(request.user, "mal_account", None)
@@ -1543,7 +1591,12 @@ def mal_full_sync_preview(request):
         return JsonResponse({"error": "Preview not found."}, status=404)
     job = tasks.preview_mal_sync.AsyncResult(payload["task_id"])
     if not job.ready():
-        return JsonResponse({"pending": True}, status=202)
+        info = job.info if isinstance(job.info, dict) else {}
+        return JsonResponse({
+            "pending": True,
+            "progress": info.get("percent", 0),
+            "message": info.get("message", "Preparing preview"),
+        }, status=202)
     if job.failed():
         return JsonResponse({"error": "Preview worker failed. Check the worker logs."}, status=502)
     result = job.result

@@ -268,9 +268,10 @@ def queue_grouped_sync(user_id, item):
         )
 
 
-def grouped_sync_entries(user, tv=None, mapping_issues=None):
+def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=None):
     """Project grouped anime watches into transient MAL entries, one per cour."""
     from app.models import TV, Anime, Episode, Item, WatchState
+    from integrations.models import ExternalReference
     from integrations.webhooks import anime_mappings
 
     shows = TV.objects.filter(
@@ -283,9 +284,21 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None):
         return []
 
     mapping_data = anime_mappings.fetch_mapping_data()
+    manual_mappings = {
+        reference.external_identity: reference.episode_mapping
+        for reference in ExternalReference.objects.filter(
+            user=user,
+            integration="mal_sync",
+            external_namespace="grouped_anime_episode",
+            review_status="corrected",
+        )
+    }
     entries = {}
-    for show in shows:
+    for show_index, show in enumerate(shows, start=1):
+        if progress_callback:
+            progress_callback(show_index, len(shows), show.item.title)
         unmapped = []
+        unmapped_episodes = []
         watches = Episode.objects.filter(
             related_season__related_tv=show,
             related_season__order_archived=False,
@@ -317,15 +330,24 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None):
             if item.season_number is None or item.episode_number is None:
                 unmapped.append(item.title)
                 continue
-            mal_id, episode_number = anime_mappings.get_mal_id_from_series(
-                mapping_data,
-                item.source,
-                item.media_id,
-                item.season_number,
-                item.episode_number,
-            )
+            identity = f"{show.item_id}:{item.season_number}:{item.episode_number}"
+            manual = manual_mappings.get(identity, {})
+            mal_id = manual.get("mal_id")
+            episode_number = manual.get("episode")
+            if not mal_id or not episode_number:
+                mal_id, episode_number = anime_mappings.get_mal_id_from_series(
+                    mapping_data,
+                    item.source,
+                    item.media_id,
+                    item.season_number,
+                    item.episode_number,
+                )
             if not mal_id or not episode_number or episode_number < 1:
                 unmapped.append(f"S{item.season_number:02}E{item.episode_number:02}")
+                unmapped_episodes.append({
+                    "season": item.season_number,
+                    "episode": item.episode_number,
+                })
                 continue
             mal_id = str(mal_id)
             if mal_id not in entries:
@@ -359,6 +381,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None):
                 "media_type": "Anime",
                 "mal_id": "",
                 "item_id": show.item_id,
+                "episodes": unmapped_episodes,
                 "outcome": "skipped",
                 "reason": (
                     "No reliable MAL episode mapping for: " + ", ".join(sorted(set(unmapped)))
@@ -379,7 +402,9 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None):
     return result
 
 
-def full_sync_entries(user, mal_account=None, mapping_issues=None):
+def full_sync_entries(
+    user, mal_account=None, mapping_issues=None, progress_callback=None,
+):
     """Return every MAL-backed anime/manga entry eligible for a full sync.
 
     Applies the account's sync filters (which statuses to include, and
@@ -405,7 +430,11 @@ def full_sync_entries(user, mal_account=None, mapping_issues=None):
         *Anime.objects.filter(**filters).select_related("item"),
         *Manga.objects.filter(**filters).select_related("item"),
         *[
-            media for media in grouped_sync_entries(user, mapping_issues=mapping_issues)
+            media for media in grouped_sync_entries(
+                user,
+                mapping_issues=mapping_issues,
+                progress_callback=progress_callback,
+            )
             if media.status in included_statuses
         ],
     ]
@@ -472,12 +501,18 @@ def full_sync_report(mal_account):
     }
 
 
-def preview_full_sync(user, mal_account, mapping_issues=None):
+def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=None):
     """Return field-level changes a full sync would make without writing to MAL."""
+    if progress_callback:
+        progress_callback(5, "Loading your MyAnimeList anime list")
     remote_statuses = {
-        media_type: _fetch_list_statuses(media_type, mal_account)
-        for media_type in (MediaTypes.ANIME.value, MediaTypes.MANGA.value)
+        MediaTypes.ANIME.value: _fetch_list_statuses(MediaTypes.ANIME.value, mal_account),
     }
+    if progress_callback:
+        progress_callback(20, "Loading your MyAnimeList manga list")
+    remote_statuses[MediaTypes.MANGA.value] = _fetch_list_statuses(
+        MediaTypes.MANGA.value, mal_account,
+    )
     field_labels = {
         "status": "Status",
         "num_watched_episodes": "Episodes watched",
@@ -486,7 +521,22 @@ def preview_full_sync(user, mal_account, mapping_issues=None):
     }
     preview = []
 
-    for media in full_sync_entries(user, mal_account, mapping_issues=mapping_issues):
+    def grouped_progress(current, total, title):
+        if progress_callback:
+            progress_callback(
+                30 + round(current / max(total, 1) * 55),
+                f"Checking anime mappings: {title}",
+            )
+
+    entries = full_sync_entries(
+        user,
+        mal_account,
+        mapping_issues=mapping_issues,
+        progress_callback=grouped_progress,
+    )
+    if progress_callback:
+        progress_callback(90, "Comparing local and MyAnimeList entries")
+    for media in entries:
         media_type = media.item.media_type
         desired = status_payload(media)
         current = remote_statuses[media_type].get(str(media.item.media_id))
@@ -518,6 +568,8 @@ def preview_full_sync(user, mal_account, mapping_issues=None):
                 }
             )
 
+    if progress_callback:
+        progress_callback(100, "Preview ready")
     return preview
 
 

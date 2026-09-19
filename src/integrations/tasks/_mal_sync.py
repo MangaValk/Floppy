@@ -5,11 +5,13 @@ never pull changes back (that's the separate MAL import in integrations.imports.
 """
 
 import logging
+from datetime import timedelta
 
 import requests
 from celery import shared_task
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.db import models
 from django.utils import timezone
 
 from app.providers import services
@@ -22,8 +24,8 @@ MAL_SYNC_TASK_NAME = "Sync status to MyAnimeList"
 MAL_FULL_SYNC_TASK_NAME = "Full sync to MyAnimeList"
 
 
-@shared_task(name="Preview sync to MyAnimeList", ignore_result=False)
-def preview_mal_sync(user_id):
+@shared_task(name="Preview sync to MyAnimeList", ignore_result=False, bind=True)
+def preview_mal_sync(self, user_id):
     """Build a read-only preview outside the web request timeout."""
     try:
         account = MALAccount.objects.select_related("user").get(user_id=user_id)
@@ -32,8 +34,20 @@ def preview_mal_sync(user_id):
     if account.connection_broken or not account.sync_enabled:
         return {"error": "Reconnect or enable your MyAnimeList account first."}
     issues = []
+    def report(percent, message):
+        if not self.request.id:
+            return
+        self.update_state(
+            state="PROGRESS",
+            meta={"percent": percent, "message": message},
+        )
     try:
-        changes = mal_sync.preview_full_sync(account.user, account, mapping_issues=issues)
+        changes = mal_sync.preview_full_sync(
+            account.user,
+            account,
+            mapping_issues=issues,
+            progress_callback=report,
+        )
     except mal_sync.MALAuthError as error:
         return {"error": str(error)}
     except services.ProviderAPIError:
@@ -185,8 +199,10 @@ def bulk_sync_mal_status(user_id):
         )
         return
 
-    claimed = MALAccount.objects.filter(pk=mal_account.pk).exclude(
-        full_sync_status=MALFullSyncStatus.RUNNING,
+    stale_before = timezone.now() - timedelta(hours=24)
+    claimed = MALAccount.objects.filter(pk=mal_account.pk).filter(
+        ~models.Q(full_sync_status=MALFullSyncStatus.RUNNING)
+        | models.Q(full_sync_started_at__lt=stale_before),
     ).update(
         full_sync_status=MALFullSyncStatus.RUNNING,
         full_sync_started_at=timezone.now(),

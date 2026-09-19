@@ -724,6 +724,52 @@ class GroupedMALSync(TestCase):
                 self.assertEqual(issues[0]["title"], "Grouped Anime")
                 self.assertIn("S01E01", issues[0]["reason"])
 
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1": "1"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_manual_episode_mappings_restore_completed_season_progress(self, metadata):
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 3}
+        self.client.force_login(self.user)
+        for source_episode in (2, 3):
+            response = self.client.post(reverse("mal_episode_mapping_save"), {
+                "item_id": self.show_item.pk,
+                "season": 1,
+                "episode": source_episode,
+                "mal_id": 42,
+                "mal_episode": source_episode,
+            })
+            self.assertEqual(response.status_code, 200)
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].progress, 3)
+        self.assertEqual(entries[0].status, Status.COMPLETED.value)
+
+    def test_manual_mapping_is_user_scoped_and_validated(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 2,
+            "mal_id": 42, "mal_episode": 2,
+        })
+        self.assertEqual(response.status_code, 200)
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 2,
+            "mal_id": 43, "mal_episode": 7,
+        })
+        self.assertEqual(response.status_code, 200)
+        reference = self.user.external_references.get(integration="mal_sync")
+        self.assertEqual(reference.episode_mapping, {"mal_id": 43, "episode": 7})
+
+        other = _make_user(username="mapping-other")
+        self.client.force_login(other)
+        denied = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 2,
+            "mal_id": 42, "mal_episode": 2,
+        })
+        self.assertEqual(denied.status_code, 404)
+
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_per_item_toggle_prevents_grouped_queue(self, delay):
         self.account.per_item_sync_enabled = False
@@ -1045,6 +1091,17 @@ class BulkSyncMALStatusTask(TestCase):
         self.assertEqual(account.full_sync_processed, 10)
         self.assertEqual(account.full_sync_results[0]["title"], "Already synced")
 
+    def test_stale_running_sync_is_reclaimed(self):
+        account = make_mal_account(self.user)
+        account.full_sync_status = "running"
+        account.full_sync_started_at = timezone.now() - timedelta(hours=25)
+        account.save(update_fields=["full_sync_status", "full_sync_started_at"])
+        with patch("integrations.mal_sync.full_sync_entries", return_value=[]):
+            tasks.bulk_sync_mal_status(self.user.pk)
+        account.refresh_from_db()
+        self.assertEqual(account.full_sync_status, "completed")
+        self.assertEqual(account.full_sync_total, 0)
+
     def test_queued_sync_fails_cleanly_when_sync_was_disabled(self):
         account = make_mal_account(self.user, sync_enabled=False)
         account.full_sync_status = "queued"
@@ -1335,7 +1392,10 @@ class MALSyncReportBrowser(StaticLiveServerTestCase):
                 for _ in range(2):
                     expect(page.get_by_text("65 results", exact=True)).to_be_visible()
                     expect(page.get_by_text("Synced Anime 64", exact=True)).to_be_visible()
+                    expect(page.get_by_text("Unmapped Anime", exact=True)).to_be_hidden()
+                    page.get_by_role("tab", name="Mapping Issues").click()
                     expect(page.get_by_text("Unmapped Anime", exact=True)).to_be_visible()
+                    expect(page.get_by_text("Synced Anime 64", exact=True)).to_be_hidden()
                     self.assertLessEqual(
                         page.evaluate("document.documentElement.scrollWidth"), width,
                     )
@@ -1453,6 +1513,19 @@ class MALFullSyncView(TestCase):
         self.assertContains(page, "Full sync status")
         self.assertContains(page, 'x-for="(entry, index) in syncResults()"')
 
+    def test_mapping_issues_are_in_page_tab_not_review_modal(self):
+        make_mal_account(self.user)
+        response = self.client.get(reverse("mal_export"))
+        self.assertContains(response, 'id="mal-mapping-tab"')
+        self.assertContains(response, 'aria-labelledby="mal-mapping-tab"')
+        self.assertContains(response, '@click="previewMalSync(false)"')
+        self.assertContains(response, 'class="max-h-96 overflow-y-auto space-y-2 pr-2"')
+        self.assertContains(response, 'x-model="episode.mal_id"')
+        self.assertContains(response, ':aria-valuenow="malSyncPreviewProgress"')
+        page, modal = response.content.decode().split('x-show="activeModal === \'mal-sync-preview\'"', 1)
+        self.assertIn("Anime with mapping issues", page)
+        self.assertNotIn("Anime with mapping issues", modal)
+
     def test_full_sync_requires_preview_confirmation(self):
         make_mal_account(self.user)
         with patch("integrations.tasks.bulk_sync_mal_status.delay") as mock_delay:
@@ -1493,8 +1566,14 @@ class MALFullSyncView(TestCase):
         token = response.json()["token"]
         with patch("integrations.tasks.preview_mal_sync.AsyncResult") as result:
             result.return_value.ready.return_value = False
+            result.return_value.info = {
+                "percent": 42,
+                "message": "Checking anime mappings",
+            }
             pending = self.client.get(reverse("mal_full_sync_preview"), {"token": token})
             self.assertEqual(pending.status_code, 202)
+            self.assertEqual(pending.json()["progress"], 42)
+            self.assertEqual(pending.json()["message"], "Checking anime mappings")
             result.return_value.ready.return_value = True
             result.return_value.failed.return_value = False
             result.return_value.result = {"changes": [], "mapping_issues": [], "count": 0}

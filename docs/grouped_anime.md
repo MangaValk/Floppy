@@ -100,6 +100,14 @@ background worker must be running; restart it along with the web process after
 deploying changes to preview tasks. HTML proxy errors and expired logins are
 reported separately from provider errors.
 
+When AniBridge cannot uniquely map an episode, the Mapping Issues tab accepts
+a MAL title ID and MAL episode number for that grouped episode. These overrides
+are stored as user-scoped `ExternalReference` decisions and take precedence
+over automatic mappings on later previews, full syncs, and per-item syncs.
+Saving the same grouped episode again updates its override. Floppy does not
+guess through ambiguous, split, or ratio mappings because MAL only accepts a
+single watched-episode count.
+
 ## Classification policy
 
 The shared classifier is intentionally fail-closed. A title is routed to
