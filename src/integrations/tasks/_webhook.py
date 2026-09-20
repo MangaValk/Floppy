@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.utils.module_loading import import_string
 from simple_history.models import HistoricalRecords
 
+from app.db_retry import run_retryable_db_operation
 from app.log_safety import redact_payload_pii, redact_secrets
 from app.providers.services import ProviderAPIError
 from integrations import anime_mapping
@@ -114,15 +115,28 @@ def _process_webhook(provider, payload, user_id, share_id=None):
 
     try:
         with _webhook_history_user(user):
+            # A concurrent import/sync writing at the same moment can hold
+            # SQLite's write lock past a single attempt; retry the payload
+            # itself rather than losing a live scrobble to transient
+            # contention (#521 covered the exception-swallowing half of this,
+            # not the lock-contention half).
             if share is None:
-                processor.process_payload(payload, user)
+                run_retryable_db_operation(
+                    lambda: processor.process_payload(payload, user),
+                    operation_name=f"{provider} webhook processing",
+                    operation_logger=logger,
+                )
             else:
-                processor.process_payload(
-                    payload,
-                    user,
-                    source_account=source_account,
-                    source_username=source_username,
-                    source_libraries=source_libraries,
+                run_retryable_db_operation(
+                    lambda: processor.process_payload(
+                        payload,
+                        user,
+                        source_account=source_account,
+                        source_username=source_username,
+                        source_libraries=source_libraries,
+                    ),
+                    operation_name=f"{provider} webhook processing",
+                    operation_logger=logger,
                 )
     except Exception:
         logger.exception(

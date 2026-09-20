@@ -1535,7 +1535,9 @@ class SqliteIntegrityTests(SimpleTestCase):
 
         self.assertIn(check, script)
         # The bound and the message it reports must come from one definition.
-        self.assertIn("integrity_timeout=600", script)
+        self.assertIn(
+            "integrity_timeout=${FLOPPY_SQLITE_INTEGRITY_TIMEOUT:-600}", script
+        )
         self.assertIn('"$DB_FILE" &', script)
         # The heartbeat reads the status sidecar the scan itself writes; it
         # must never poll the scanner's own PID or /proc directly, which is

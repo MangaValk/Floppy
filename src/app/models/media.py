@@ -125,6 +125,29 @@ class Media(models.Model):
         else:
             super().save(*args, **kwargs)
 
+    def _sync_relevant_fields_changed(self):
+        """Return whether status, progress or score changed in this save()."""
+        return (
+            self.tracker.has_changed("status")
+            or self.tracker.has_changed("progress")
+            or self.tracker.has_changed("score")
+        )
+
+    def _queue_mal_sync(self, media_type):
+        """Queue an async push of this entry's status to MyAnimeList, if applicable.
+
+        No-ops for entries not sourced from MAL (e.g. AniList-backed anime or
+        MangaUpdates-backed manga). Bulk imports bypass save() entirely, so
+        this only fires for interactive edits and webhook-driven updates -
+        never as a side effect of importing.
+        """
+        if self.item.source != Sources.MAL.value:
+            return
+
+        from integrations.tasks import sync_mal_status
+
+        sync_mal_status.delay(media_type=media_type, media_id=self.pk)
+
     def _get_local_max_progress(self):
         """Return locally-derived runtime minutes for music/podcast without provider calls."""
         if self.item.media_type == MediaTypes.PODCAST.value:
@@ -700,6 +723,13 @@ class Manga(Media):
 
     tracker = FieldTracker()
 
+    def save(self, *args, **kwargs):
+        """Save the manga instance, then queue a MyAnimeList sync if relevant."""
+        should_sync = self._sync_relevant_fields_changed()
+        super().save(*args, **kwargs)
+        if should_sync:
+            self._queue_mal_sync(MediaTypes.MANGA.value)
+
     @property
     def formatted_progress(self):
         """Return progress as a percentage when percentage tracking is enabled."""
@@ -766,7 +796,11 @@ class Anime(Media):
         """
         is_create = self._state.adding
         status_changed = self.tracker.has_changed("status")
+        should_sync = self._sync_relevant_fields_changed()
         super().save(*args, **kwargs)
+
+        if should_sync:
+            self._queue_mal_sync(MediaTypes.ANIME.value)
 
         became_completed = self.status == Status.COMPLETED.value and (
             status_changed or is_create

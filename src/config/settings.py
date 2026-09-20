@@ -1222,6 +1222,18 @@ MAL_API = config(
 )
 MAL_NSFW = config("MAL_NSFW", default=False, cast=bool)
 
+# Only used to sync watch status back to MyAnimeList. Unlike MAL_API (search),
+# OAuth requires a redirect URI registered to a specific app, so this can't
+# ship a shared default the way IGDB_SECRET does - each user or instance
+# needs their own MyAnimeList API application (see docs/mal-sync.md).
+MAL_API_SECRET = config(
+    "MAL_API_SECRET",
+    default=secret(
+        "MAL_API_SECRET_FILE",
+        "",
+    ),
+)
+
 MU_NSFW = config("MU_NSFW", default=False, cast=bool)
 
 IGDB_ID = config(
@@ -1477,6 +1489,7 @@ else:
         "integrations.tasks._jellyfin_pull",
         "integrations.tasks._koito",
         "integrations.tasks._lastfm",
+        "integrations.tasks._mal_sync",
         "integrations.tasks._media_imports",
         "integrations.tasks._plex_collection",
         "integrations.tasks._plex_sections",

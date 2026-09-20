@@ -17,6 +17,7 @@ import requests
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required, login_required
+from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -32,7 +33,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from kombu.exceptions import OperationalError as BrokerOperationalError
 
 import users
 from app import helpers as app_helpers
@@ -49,6 +51,7 @@ from integrations import (
     gpodder_api,
     koito_api,
     lastfm_api,
+    mal_sync,
     pocketcasts_api,
     psn_api,
     stremio_catalog,
@@ -137,6 +140,7 @@ from integrations.upload_staging import (
 from integrations.webhooks.plex import extract_plex_webhook_usernames
 
 logger = logging.getLogger(__name__)
+MAL_MAPPING_MIN_QUERY_LENGTH = 2
 ARR_SYNC_INTERVAL_HOURS = 2
 RADARR_RECURRING_TASK_NAME = "Import from Radarr (Recurring)"
 JELLYFIN_PLAYBACK_REPORTING_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -1309,6 +1313,494 @@ def import_anilist_private(request):
             token=enc_token,
         )
     return _integration_redirect(request, connected_slug="anilist", next_url=return_to)
+
+
+@require_POST
+def mal_oauth(request):
+    """Initiate the MyAnimeList OAuth2 flow used for status syncing."""
+    if not mal_sync.is_sync_configured(request.user):
+        messages.error(
+            request,
+            "MyAnimeList sync isn't configured. Add your own MyAnimeList "
+            "Client ID and Client secret under Settings > Metadata first.",
+        )
+        return _integration_redirect(request)
+
+    redirect_uri = app_helpers.build_absolute_app_url(request, reverse("mal_callback"))
+    if not app_helpers.supports_oauth_redirect(redirect_uri):
+        # Unlike Trakt (#681), MyAnimeList has no device-code alternative, so
+        # an HTTP-only instance simply can't complete this flow.
+        messages.error(
+            request,
+            "MyAnimeList sync needs an HTTPS-accessible callback URL. This "
+            "instance is served over plain HTTP, and MyAnimeList doesn't "
+            "offer a device-code alternative the way Trakt does.",
+        )
+        return _integration_redirect(request)
+
+    code_verifier = mal_sync.generate_code_verifier()
+    state = {
+        "code_verifier": code_verifier,
+        "redirect_uri": redirect_uri,
+        "return_to": request.POST.get("next"),
+    }
+    state_token = secrets.token_urlsafe(32)
+    request.session[state_token] = state
+
+    url = mal_sync.AUTHORIZE_URL
+    mal_client_id = mal_sync.client_id(request.user)
+    return redirect(
+        f"{url}?response_type=code&client_id={mal_client_id}"
+        f"&redirect_uri={redirect_uri}&state={state_token}"
+        f"&code_challenge={code_verifier}&code_challenge_method=plain",
+    )
+
+
+@require_GET
+def mal_callback(request):
+    """Handle the MyAnimeList OAuth2 callback and store the connection."""
+    state_data = _consume_oauth_state(request, "MyAnimeList")
+    if state_data is None:
+        return _integration_redirect(request)
+
+    return_to = state_data.get("return_to")
+    code = request.GET.get("code")
+    if not code:
+        messages.error(request, "MyAnimeList authorization failed.")
+        return _integration_redirect(request, next_url=return_to)
+
+    try:
+        mal_sync.connect_account(
+            user=request.user,
+            code=code,
+            code_verifier=state_data["code_verifier"],
+            redirect_uri=state_data["redirect_uri"],
+        )
+    except mal_sync.MALAuthError as error:
+        messages.error(request, str(error))
+        return _integration_redirect(request, next_url=return_to)
+    except services.ProviderAPIError:
+        messages.error(
+            request,
+            "Couldn't reach MyAnimeList to finish connecting. Please try again.",
+        )
+        return _integration_redirect(request, next_url=return_to)
+
+    messages.success(
+        request,
+        "Connected to MyAnimeList. Status, progress and score changes on "
+        "MAL-tracked anime and manga will now sync automatically.",
+    )
+    return _integration_redirect(request, connected_slug="mal", next_url=return_to)
+
+
+@require_POST
+def mal_disconnect(request):
+    """Disconnect the user's MyAnimeList account."""
+    from integrations.models import MALAccount
+
+    MALAccount.objects.filter(user=request.user).delete()
+    messages.success(request, "Disconnected from MyAnimeList.")
+    return _integration_redirect(request)
+
+
+@require_POST
+def mal_toggle(request):
+    """Pause or resume pushing status updates to MyAnimeList."""
+    from integrations.models import MALAccount
+
+    updated = MALAccount.objects.filter(user=request.user).update(
+        sync_enabled=request.POST.get("enabled") == "true",
+    )
+    if not updated:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    return _integration_redirect(request)
+
+
+@require_POST
+def mal_per_item_sync_toggle(request):
+    """Pause or resume the automatic push that fires when an entry is edited.
+
+    Independent of `mal_toggle`'s overall sync_enabled: this only affects the
+    per-item push, not "Sync All Now" or the scheduled full sync.
+    """
+    from integrations.models import MALAccount
+
+    updated = MALAccount.objects.filter(user=request.user).update(
+        per_item_sync_enabled=request.POST.get("enabled") == "true",
+    )
+    if not updated:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    return _integration_redirect(request)
+
+
+@require_POST
+def mal_sync_filters_save(request):
+    """Save which statuses (and whether a rating is required) a full sync sends."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        messages.error(request, "Connect a MyAnimeList account first.")
+        return redirect("mal_export")
+
+    mal_account.sync_filter_watched = request.POST.get("watched") == "on"
+    mal_account.sync_filter_dropped = request.POST.get("dropped") == "on"
+    mal_account.sync_filter_rated_only = request.POST.get("rated_only") == "on"
+    mal_account.save(
+        update_fields=[
+            "sync_filter_watched",
+            "sync_filter_dropped",
+            "sync_filter_rated_only",
+            "updated_at",
+        ]
+    )
+    messages.success(request, "MyAnimeList sync filters saved.")
+    return redirect("mal_export")
+
+
+@require_POST
+def mal_episode_mapping_save(request):
+    """Persist a user-owned grouped episode or whole-season MAL override."""
+    from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+
+    try:
+        item_id = int(request.POST["item_id"])
+        season = int(request.POST["season"])
+        episode = int(request.POST["episode"])
+        mal_id = int(request.POST["mal_id"])
+        mal_episode = int(request.POST["mal_episode"])
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse({"error": "Enter valid episode and MAL numbers."}, status=400)
+    if min(item_id, season, episode, mal_id, mal_episode) < 1:
+        return JsonResponse({"error": "Episode and MAL numbers must be positive."}, status=400)
+
+    show = TV.objects.filter(
+        user=request.user,
+        item_id=item_id,
+        item__library_media_type=MediaTypes.ANIME.value,
+        seasons__item__season_number=season,
+        seasons__episodes__item__episode_number=episode,
+    ).first()
+    if show is None:
+        return JsonResponse({"error": "Tracked anime episode not found."}, status=404)
+
+    scope = request.POST.get("scope", "episode")
+    if scope not in {"episode", "season"}:
+        return JsonResponse({"error": "Unsupported mapping scope."}, status=400)
+    source_episodes = [episode]
+    if scope == "season":
+        source_episodes = list(
+            show.seasons.filter(
+                item__season_number=season,
+                order_archived=False,
+            )
+            .values_list("episodes__item__episode_number", flat=True)
+            .exclude(episodes__item__episode_number__isnull=True)
+            .distinct()
+            .order_by("episodes__item__episode_number")
+        )
+        if not source_episodes:
+            return JsonResponse({"error": "No tracked episodes found for this season."}, status=400)
+
+    references = []
+    for mapping_offset, source_episode in enumerate(source_episodes):
+        references.append(
+            ExternalReference(
+                user=request.user,
+                integration="mal_sync",
+                source_account="",
+                external_namespace="grouped_anime_episode",
+                external_identity=f"{item_id}:{season}:{source_episode}",
+                media_type=MediaTypes.EPISODE.value,
+                matched_item=show.item,
+                corrected_item=show.item,
+                review_status=ExternalReferenceReviewStatus.CORRECTED.value,
+                episode_mapping={
+                    "mal_id": mal_id,
+                    "episode": mal_episode + mapping_offset,
+                },
+                metadata={
+                    "series_title": show.item.title,
+                    "season_number": season,
+                    "episode_number": source_episode,
+                },
+            )
+        )
+    ExternalReference.objects.bulk_create(
+        references,
+        update_conflicts=True,
+        unique_fields=[
+            "user", "integration", "source_account", "external_namespace",
+            "external_identity", "media_type",
+        ],
+        update_fields=[
+            "matched_item", "corrected_item", "review_status", "episode_mapping",
+            "metadata", "updated_at",
+        ],
+    )
+    return JsonResponse({"saved": True, "mapped": len(references)})
+
+
+@require_GET
+def mal_mapping_search(request):
+    """Search MAL anime titles for the manual episode-mapping wizard."""
+    query = request.GET.get("q", "").strip()
+    if len(query) < MAL_MAPPING_MIN_QUERY_LENGTH:
+        return JsonResponse({"error": "Enter at least two characters."}, status=400)
+    try:
+        from app.providers import mal as mal_provider
+
+        with credentials.current_user_scope(request.user), services.interactive_request_scope():
+            response = mal_provider.search(
+                MediaTypes.ANIME.value,
+                query,
+                1,
+                include_nsfw=True,
+            )
+    except services.ProviderAPIError:
+        return JsonResponse({"error": "MyAnimeList search is unavailable. Please try again."}, status=502)
+    return JsonResponse({"results": response.get("results", [])})
+
+
+@require_GET
+def mal_mapping_episodes(request):
+    """Return numbered episode choices for a selected MAL anime title."""
+    try:
+        mal_id = int(request.GET["mal_id"])
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse({"error": "Choose a valid MyAnimeList title."}, status=400)
+    try:
+        with credentials.current_user_scope(request.user), services.interactive_request_scope():
+            metadata = services.get_media_metadata(
+                MediaTypes.ANIME.value,
+                str(mal_id),
+                Sources.MAL.value,
+            )
+    except services.ProviderAPIError:
+        return JsonResponse({"error": "Could not load MyAnimeList episodes."}, status=502)
+    try:
+        episode_count = int(metadata.get("max_progress") or 0)
+    except (TypeError, ValueError):
+        episode_count = 0
+    episode_count = max(0, min(episode_count, 10000))
+    return JsonResponse({
+        "title": metadata["title"],
+        "image": metadata.get("image"),
+        "episodes": list(range(1, episode_count + 1)),
+    })
+
+
+@require_POST
+def mal_full_sync(request):
+    """Trigger a one-off full sync of every MAL-backed anime/manga entry."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    elif mal_account.connection_broken:
+        messages.error(request, "Reconnect your MyAnimeList account first.")
+    elif not mal_account.sync_enabled:
+        messages.error(request, "Turn sync back on before running a full sync.")
+    elif mal_sync.reconcile_stale_full_sync(mal_account).full_sync_is_active:
+        messages.info(request, "A full MyAnimeList sync is already in progress.")
+    elif request.POST.get("confirmed") != "true":
+        messages.error(request, "Review the MyAnimeList changes before syncing.")
+    else:
+        from integrations.models import MALFullSyncStatus
+
+        queued = type(mal_account).objects.filter(pk=mal_account.pk).exclude(
+            full_sync_status__in=[MALFullSyncStatus.QUEUED, MALFullSyncStatus.RUNNING],
+        ).update(
+            full_sync_status=MALFullSyncStatus.QUEUED,
+            full_sync_total=0,
+            full_sync_processed=0,
+            full_sync_succeeded=0,
+            full_sync_failed=0,
+            full_sync_results=[],
+            full_sync_started_at=None,
+            full_sync_completed_at=None,
+        )
+        if not queued:
+            messages.info(request, "A full MyAnimeList sync is already in progress.")
+            return _integration_redirect(request)
+        tasks.bulk_sync_mal_status.delay(user_id=request.user.pk)
+        messages.success(
+            request,
+            "Full sync to MyAnimeList started in the background. This can "
+            "take a while for large libraries.",
+        )
+    return _integration_redirect(request)
+
+
+@require_POST
+def mal_full_sync_retry_failed(request):
+    """Retry only the entries marked failed on the last full MyAnimeList sync."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        messages.error(request, "Connect a MyAnimeList account first.")
+    elif mal_account.connection_broken:
+        messages.error(request, "Reconnect your MyAnimeList account first.")
+    elif not mal_account.sync_enabled:
+        messages.error(request, "Turn sync back on before retrying.")
+    elif mal_sync.reconcile_stale_full_sync(mal_account).full_sync_is_active:
+        messages.info(request, "A MyAnimeList sync is already in progress.")
+    elif mal_account.full_sync_failed <= 0:
+        messages.error(request, "No failed MyAnimeList entries to retry.")
+    else:
+        from integrations.models import MALFullSyncStatus
+
+        queued = type(mal_account).objects.filter(pk=mal_account.pk).exclude(
+            full_sync_status__in=[MALFullSyncStatus.QUEUED, MALFullSyncStatus.RUNNING],
+        ).update(full_sync_status=MALFullSyncStatus.QUEUED)
+        if not queued:
+            messages.info(request, "A MyAnimeList sync is already in progress.")
+            return _integration_redirect(request)
+        tasks.retry_failed_mal_status.delay(user_id=request.user.pk)
+        messages.success(
+            request,
+            "Retrying failed MyAnimeList entries in the background.",
+        )
+    return _integration_redirect(request)
+
+
+@require_GET
+def mal_full_sync_status(request):
+    """Return durable progress and outcomes for the latest manual MAL sync."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        return JsonResponse({"error": "Connect a MyAnimeList account first."}, status=404)
+
+    mal_account = mal_sync.reconcile_stale_full_sync(mal_account)
+    return JsonResponse(mal_sync.full_sync_report(mal_account))
+
+
+@require_http_methods(["GET", "POST"])
+def mal_full_sync_preview(request):
+    """Queue or poll a user-bound, read-only MAL preview."""
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None:
+        return JsonResponse(
+            {"error": "Connect a MyAnimeList account first."}, status=400
+        )
+    if mal_account.connection_broken:
+        return JsonResponse(
+            {"error": "Reconnect your MyAnimeList account first."}, status=400
+        )
+    if not mal_account.sync_enabled:
+        return JsonResponse(
+            {"error": "Turn sync back on before running a full sync."}, status=400
+        )
+
+    salt = "mal-sync-preview"
+    if request.method == "POST":
+        try:
+            job = tasks.preview_mal_sync.delay(request.user.pk)
+        except BrokerOperationalError:
+            return JsonResponse({"error": "Could not queue preview. Check the background worker and Redis."}, status=503)
+        token = signing.dumps(
+            {"user_id": request.user.pk, "task_id": job.id}, salt=salt,
+        )
+        return JsonResponse({"pending": True, "token": token}, status=202)
+
+    try:
+        payload = signing.loads(request.GET.get("token", ""), salt=salt, max_age=3600)
+    except signing.BadSignature:
+        return JsonResponse({"error": "Preview expired. Start a new preview."}, status=400)
+    if payload["user_id"] != request.user.pk:
+        return JsonResponse({"error": "Preview not found."}, status=404)
+    job = tasks.preview_mal_sync.AsyncResult(payload["task_id"])
+    if not job.ready():
+        info = job.info if isinstance(job.info, dict) else {}
+        return JsonResponse({
+            "pending": True,
+            "progress": info.get("percent", 0),
+            "message": info.get("message", "Preparing preview"),
+        }, status=202)
+    if job.failed():
+        return JsonResponse({"error": "Preview worker failed. Check the worker logs."}, status=502)
+    result = job.result
+    return JsonResponse(result, status=502 if "error" in result else 200)
+
+
+@require_POST
+def mal_export_schedule_save(request):
+    """Create or update the user's recurring full sync to MyAnimeList."""
+    import datetime as dt
+
+    from django_celery_beat.models import CrontabSchedule, PeriodicTask
+
+    mal_account = getattr(request.user, "mal_account", None)
+    if mal_account is None or not mal_account.is_connected:
+        messages.error(request, "Connect a MyAnimeList account first.")
+        return redirect("mal_export")
+
+    frequency = request.POST.get("frequency", "daily")
+    export_time = request.POST.get("time", "03:00")
+
+    try:
+        parsed_time = dt.datetime.strptime(export_time, "%H:%M").time()  # noqa: DTZ007  # date-only value; no timezone applies
+    except ValueError:
+        messages.error(request, "Invalid schedule time.")
+        return redirect("mal_export")
+
+    if frequency == "daily":
+        day_of_week = "*"
+    elif frequency == "2days":
+        day_of_week = "*/2"
+    elif frequency == "weekly":
+        day_of_week = "0"  # Sunday
+    else:
+        messages.error(request, "Invalid schedule frequency.")
+        return redirect("mal_export")
+
+    crontab, _ = CrontabSchedule.objects.get_or_create(
+        hour=parsed_time.hour,
+        minute=parsed_time.minute,
+        day_of_week=day_of_week,
+        timezone=timezone.get_default_timezone(),
+    )
+
+    task_name = f"Scheduled export to MyAnimeList for {request.user.username}"
+    existing_task = PeriodicTask.objects.filter(
+        _periodic_task_filter_for_user(request.user.id),
+        task=tasks.MAL_FULL_SYNC_TASK_NAME,
+    ).first()
+
+    if existing_task:
+        existing_task.name = task_name
+        existing_task.crontab = crontab
+        existing_task.kwargs = json.dumps({"user_id": request.user.id})
+        existing_task.enabled = True
+        existing_task.start_time = timezone.now()
+        existing_task.save(
+            update_fields=["name", "crontab", "kwargs", "enabled", "start_time"],
+        )
+    else:
+        PeriodicTask.objects.create(
+            name=task_name,
+            task=tasks.MAL_FULL_SYNC_TASK_NAME,
+            crontab=crontab,
+            kwargs=json.dumps({"user_id": request.user.id}),
+            start_time=timezone.now(),
+            enabled=True,
+        )
+
+    messages.success(request, "MyAnimeList export schedule saved.")
+    return redirect("mal_export")
+
+
+@require_POST
+def mal_export_schedule_delete(request):
+    """Delete the user's recurring full sync to MyAnimeList."""
+    from django_celery_beat.models import PeriodicTask
+
+    deleted, _ = PeriodicTask.objects.filter(
+        _periodic_task_filter_for_user(request.user.id),
+        task=tasks.MAL_FULL_SYNC_TASK_NAME,
+    ).delete()
+    if deleted:
+        messages.success(request, "MyAnimeList export schedule deleted.")
+    else:
+        messages.error(request, "MyAnimeList export schedule not found.")
+    return redirect("mal_export")
 
 
 @require_POST

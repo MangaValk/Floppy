@@ -110,6 +110,7 @@ def repair_celery_broker_bindings():
 # ---------------------------------------------------------------------------
 from app.tasks_anime_library_repair import (  # noqa: E402
     convert_anime_library_shape_task,
+    deduplicate_watched_anime_task,
     repair_duplicated_anime_libraries_task,
 )
 from app.tasks_backfill_state import (  # noqa: E402
@@ -1339,6 +1340,7 @@ __all__ = [
     "bulk_music_plays_task",
     "convert_anime_library_shape_task",
     "count_igdb_rating_backfill_items",
+    "deduplicate_watched_anime_task",
     "enqueue_due_external_ids_backfill_retries",
     "enqueue_due_provider_backfill_retries",
     "enqueue_external_ids_backfill_items",

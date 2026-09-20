@@ -86,6 +86,11 @@ urlpatterns = [
         views.convert_anime_library,
         name="convert_anime_library",
     ),
+    path(
+        "settings/metadata/deduplicate-anime",
+        views.deduplicate_watched_anime,
+        name="deduplicate_watched_anime",
+    ),
     path("settings/integrations", views.integrations, name="integrations"),
     path("settings/rss", views.rss_settings, name="rss_settings"),
     path(
@@ -135,6 +140,7 @@ urlpatterns = [
         name="import_data_plex_sections",
     ),
     path("settings/export", views.export_data, name="export_data"),
+    path("settings/export/mal", views.mal_export, name="mal_export"),
     path("settings/advanced", views.advanced, name="advanced"),
     path(
         "settings/advanced/image-cache",
