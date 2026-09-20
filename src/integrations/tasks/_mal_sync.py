@@ -211,11 +211,12 @@ def bulk_sync_mal_status(user_id):
         return
 
     try:
-        remote_statuses = {
-            media_type: mal_sync._fetch_list_statuses(media_type, mal_account)
-            for media_type in ("anime", "manga")
-        }
-        mal_sync.pull_higher_mal_progress(user, mal_account, remote_statuses)
+        if mal_account.pull_higher_progress_enabled:
+            remote_statuses = {
+                media_type: mal_sync._fetch_list_statuses(media_type, mal_account)
+                for media_type in ("anime", "manga")
+            }
+            mal_sync.pull_higher_mal_progress(user, mal_account, remote_statuses)
     except mal_sync.MALAuthError as error:
         _mark_connection_broken(mal_account, error)
         mal_account.full_sync_status = MALFullSyncStatus.FAILED

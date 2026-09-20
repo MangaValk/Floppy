@@ -42,6 +42,8 @@ def make_mal_account(
     per_item_sync_enabled=True,
     connection_broken=False,
     expired=False,
+    pull_higher_progress_enabled=True,
+    pull_ratings_enabled=True,
 ):
     """Create a MALAccount for a user with encrypted placeholder tokens."""
     expires_at = timezone.now() + (
@@ -56,6 +58,8 @@ def make_mal_account(
         sync_enabled=sync_enabled,
         per_item_sync_enabled=per_item_sync_enabled,
         connection_broken=connection_broken,
+        pull_higher_progress_enabled=pull_higher_progress_enabled,
+        pull_ratings_enabled=pull_ratings_enabled,
     )
 
 
@@ -507,6 +511,71 @@ class PullHigherMALProgress(TestCase):
 
         self.assertEqual(corrected, [])
 
+    def test_remote_rating_is_adopted_when_floppy_has_none(self, *_mocks):
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.IN_PROGRESS.value, progress=10, score=None,
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {
+                    "status": "watching", "num_episodes_watched": 10, "score": 8,
+                }},
+                "manga": {},
+            },
+        )
+
+        anime.refresh_from_db()
+        self.assertEqual([media.pk for media in corrected], [anime.pk])
+        self.assertEqual(anime.score, 8)
+
+    def test_remote_rating_never_overwrites_an_existing_floppy_rating(self, *_mocks):
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.IN_PROGRESS.value, progress=10, score=Decimal(5),
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {
+                    "status": "watching", "num_episodes_watched": 10, "score": 8,
+                }},
+                "manga": {},
+            },
+        )
+
+        anime.refresh_from_db()
+        self.assertEqual(corrected, [])
+        self.assertEqual(anime.score, Decimal(5))
+
+    def test_pull_ratings_disabled_leaves_an_unset_rating_alone(self, *_mocks):
+        self.account.pull_ratings_enabled = False
+        self.account.save(update_fields=["pull_ratings_enabled"])
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.IN_PROGRESS.value, progress=10, score=None,
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {
+                    "status": "watching", "num_episodes_watched": 10, "score": 8,
+                }},
+                "manga": {},
+            },
+        )
+
+        anime.refresh_from_db()
+        self.assertEqual(corrected, [])
+        self.assertIsNone(anime.score)
+
 
 @patch("integrations.mal_sync.client_id", return_value="test_client_id")
 @patch("integrations.mal_sync.client_secret", return_value="test_client_secret")
@@ -571,6 +640,26 @@ class PushStatus(TestCase):
         self.assertEqual(data["status"], "dropped")
         self.assertEqual(data["num_chapters_read"], 64)
         self.assertEqual(data["score"], 8)
+
+    @patch("requests.Session.put")
+    def test_sync_ratings_disabled_omits_score(self, mock_put, *_mocks):
+        """Turning off ratings sync leaves score out of the pushed payload."""
+        self.account.sync_ratings_enabled = False
+        self.account.save(update_fields=["sync_ratings_enabled"])
+        mock_put.return_value = MagicMock(
+            json=lambda: {"status": "dropped", "num_chapters_read": 64},
+        )
+        manga = Manga.objects.create(
+            user=self.user,
+            item=self.manga_item,
+            status=Status.DROPPED.value,
+            progress=64,
+            score=Decimal("7.8"),
+        )
+
+        mal_sync.push_status(manga, self.account)
+
+        self.assertNotIn("score", mock_put.call_args.kwargs["data"])
 
     @patch("requests.Session.put")
     @patch("requests.Session.post")
@@ -886,6 +975,59 @@ class GroupedMALSync(TestCase):
         self.assertEqual(report["failed"], 0)
         page = self.client.get(reverse("mal_export"))
         self.assertEqual(page.context["mal_sync_initial"]["mapping_issues"], report["mapping_issues"])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={})
+    def test_ignored_show_is_skipped_from_sync_and_mapping_issues(self):
+        mal_sync.set_mapping_ignored(self.user, self.show_item.pk, ignored=True)
+
+        issues = []
+        entries = mal_sync.grouped_sync_entries(self.user, mapping_issues=issues)
+
+        self.assertEqual(entries, [])
+        self.assertEqual(issues, [])
+        self.assertEqual(
+            mal_sync.ignored_mappings(self.user),
+            [{"item_id": self.show_item.pk, "title": "Grouped Anime"}],
+        )
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={})
+    def test_unignoring_a_show_restores_its_mapping_issue(self):
+        mal_sync.set_mapping_ignored(self.user, self.show_item.pk, ignored=True)
+        mal_sync.set_mapping_ignored(self.user, self.show_item.pk, ignored=False)
+
+        issues = []
+        mal_sync.grouped_sync_entries(self.user, mapping_issues=issues)
+
+        self.assertEqual(issues[0]["title"], "Grouped Anime")
+        self.assertEqual(mal_sync.ignored_mappings(self.user), [])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={})
+    def test_mal_mapping_ignore_view_toggles_ignore_state(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("mal_mapping_ignore"), {
+            "item_id": self.show_item.pk, "ignored": "true",
+        })
+        self.assertEqual(response.json(), {"ignored": True})
+        self.assertEqual(
+            mal_sync.ignored_mapping_item_ids(self.user), {self.show_item.pk},
+        )
+
+        response = self.client.post(reverse("mal_mapping_ignore"), {
+            "item_id": self.show_item.pk, "ignored": "false",
+        })
+        self.assertEqual(response.json(), {"ignored": False})
+        self.assertEqual(mal_sync.ignored_mapping_item_ids(self.user), set())
+
+    def test_mal_mapping_ignore_view_is_user_scoped(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("mal_mapping_ignore"), {
+            "item_id": self.show_item.pk, "ignored": "true",
+        })
+        self.assertEqual(response.status_code, 200)
+
+        other = _make_user(username="ignore-other")
+        self.assertEqual(mal_sync.ignored_mapping_item_ids(other), set())
 
     def test_unsafe_mapping_is_reported_instead_of_guessed(self):
         mappings = [
@@ -1451,6 +1593,17 @@ class BulkSyncMALStatusTask(TestCase):
         self.assertEqual(account.full_sync_status, "failed")
         self.assertIn("disabled", account.full_sync_results[0]["reason"])
 
+    def test_pull_higher_progress_disabled_skips_the_correction(self):
+        """Turning the setting off skips fetching/adopting MAL's remote progress."""
+        make_mal_account(self.user, pull_higher_progress_enabled=False)
+        with (
+            patch("integrations.mal_sync.pull_higher_mal_progress") as mock_pull,
+            patch("integrations.mal_sync.push_status"),
+        ):
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        mock_pull.assert_not_called()
+
     def test_pushes_only_mal_backed_entries(self):
         """Every MAL-sourced anime/manga is pushed; the TMDB one is skipped."""
         make_mal_account(self.user)
@@ -1611,15 +1764,26 @@ class FullSyncEntriesFilters(TestCase):
             },
         )
 
-    def test_unchecking_watched_drops_completed_and_in_progress(self):
-        self.account.sync_filter_watched = False
-        self.account.save(update_fields=["sync_filter_watched"])
+    def test_unchecking_completed_drops_completed_only(self):
+        self.account.sync_filter_completed = False
+        self.account.save(update_fields=["sync_filter_completed"])
 
         entries = mal_sync.full_sync_entries(self.user, self.account)
 
         self.assertEqual(
             {media.item.title for media in entries},
-            {"Dropped Anime", "Unrated Dropped Anime"},
+            {"In Progress Anime", "Dropped Anime", "Unrated Dropped Anime"},
+        )
+
+    def test_unchecking_in_progress_drops_in_progress_only(self):
+        self.account.sync_filter_in_progress = False
+        self.account.save(update_fields=["sync_filter_in_progress"])
+
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertEqual(
+            {media.item.title for media in entries},
+            {"Completed Anime", "Dropped Anime", "Unrated Dropped Anime"},
         )
 
     def test_unchecking_dropped_drops_dropped_entries(self):
@@ -1680,9 +1844,13 @@ class MALSyncFiltersView(TestCase):
 
         self.assertContains(response, "sync filters saved")
         account.refresh_from_db()
-        self.assertFalse(account.sync_filter_watched)
+        self.assertFalse(account.sync_filter_completed)
+        self.assertFalse(account.sync_filter_in_progress)
         self.assertTrue(account.sync_filter_dropped)
         self.assertTrue(account.sync_filter_rated_only)
+        self.assertFalse(account.sync_ratings_enabled)
+        self.assertFalse(account.pull_higher_progress_enabled)
+        self.assertFalse(account.pull_ratings_enabled)
 
 
 @tag("slow", "playwright")

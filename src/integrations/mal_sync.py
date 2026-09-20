@@ -62,6 +62,10 @@ MAL_STATUS_TO_FLOPPY = {
     MediaTypes.MANGA.value: {value: key for key, value in MANGA_STATUS_TO_MAL.items()},
 }
 
+# Namespace used on ExternalReference to remember grouped anime the user has
+# chosen to stop seeing mapping issues for (see mal_mapping_ignore in views.py).
+MAPPING_IGNORE_NAMESPACE = "grouped_anime_ignore"
+
 
 class MALAuthError(Exception):
     """Raised when MyAnimeList rejects an OAuth request or credentials are missing."""
@@ -223,7 +227,7 @@ def connect_account(user, code, code_verifier, redirect_uri):
     return mal_account
 
 
-def status_payload(media):
+def status_payload(media, mal_account=None):
     """Return the exact fields that Floppy will push for a media entry."""
     media_type = media.item.media_type
     is_anime = media_type == MediaTypes.ANIME.value
@@ -234,7 +238,8 @@ def status_payload(media):
         "status": status_map[media.status],
         progress_field: media.progress,
     }
-    if media.score is not None:
+    sync_ratings = mal_account is None or mal_account.sync_ratings_enabled
+    if media.score is not None and sync_ratings:
         data["score"] = round(media.score)
     return data
 
@@ -321,6 +326,76 @@ def queue_grouped_sync(user_id, item):
         )
 
 
+def ignored_mapping_item_ids(user):
+    """Return the TV item ids the user has chosen to ignore mapping issues for."""
+    from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+
+    return set(
+        ExternalReference.objects.filter(
+            user=user,
+            integration="mal_sync",
+            external_namespace=MAPPING_IGNORE_NAMESPACE,
+            review_status=ExternalReferenceReviewStatus.IGNORED.value,
+        ).values_list("matched_item_id", flat=True)
+    )
+
+
+def ignored_mappings(user):
+    """Return {item_id, title} for every anime ignored for MAL mapping issues."""
+    from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+
+    references = (
+        ExternalReference.objects.filter(
+            user=user,
+            integration="mal_sync",
+            external_namespace=MAPPING_IGNORE_NAMESPACE,
+            review_status=ExternalReferenceReviewStatus.IGNORED.value,
+        )
+        .select_related("matched_item")
+        .order_by("matched_item__title")
+    )
+    return [
+        {"item_id": reference.matched_item_id, "title": reference.matched_item.title}
+        for reference in references
+        if reference.matched_item is not None
+    ]
+
+
+def set_mapping_ignored(user, item_id, *, ignored):
+    """Ignore or restore a grouped anime's MAL mapping issues.
+
+    Returns True if the item was found and the change was applied.
+    """
+    from app.models import Item
+    from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+
+    lookup = {
+        "user": user,
+        "integration": "mal_sync",
+        "source_account": "",
+        "external_namespace": MAPPING_IGNORE_NAMESPACE,
+        "external_identity": str(item_id),
+        "media_type": MediaTypes.TV.value,
+    }
+    if not ignored:
+        ExternalReference.objects.filter(**lookup).delete()
+        return True
+
+    item = Item.objects.filter(
+        pk=item_id, library_media_type=MediaTypes.ANIME.value,
+    ).first()
+    if item is None:
+        return False
+    ExternalReference.objects.update_or_create(
+        **lookup,
+        defaults={
+            "matched_item": item,
+            "review_status": ExternalReferenceReviewStatus.IGNORED.value,
+        },
+    )
+    return True
+
+
 def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=None):
     """Project grouped anime watches into transient MAL entries, one per cour."""
     from app.models import TV, Anime, Episode, Item, WatchState
@@ -346,10 +421,13 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             review_status="corrected",
         )
     }
+    ignored_ids = ignored_mapping_item_ids(user)
     entries = {}
     for show_index, show in enumerate(shows, start=1):
         if progress_callback:
             progress_callback(show_index, len(shows), show.item.title)
+        if show.item_id in ignored_ids:
+            continue
         unmapped = []
         unmapped_episodes = []
         season_counts = {}
@@ -500,8 +578,10 @@ def full_sync_entries(
     Manga = apps.get_model(app_label="app", model_name="manga")  # noqa: N806
 
     included_statuses = set()
-    if mal_account is None or mal_account.sync_filter_watched:
-        included_statuses.update({Status.COMPLETED.value, Status.IN_PROGRESS.value})
+    if mal_account is None or mal_account.sync_filter_completed:
+        included_statuses.add(Status.COMPLETED.value)
+    if mal_account is None or mal_account.sync_filter_in_progress:
+        included_statuses.add(Status.IN_PROGRESS.value)
     if mal_account is None or mal_account.sync_filter_dropped:
         included_statuses.add(Status.DROPPED.value)
 
@@ -583,6 +663,11 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
     from episode history and can't be raised without fabricating watches, so
     it is left to the existing mapping/episode tooling instead.
 
+    Also adopts a MAL rating when Floppy has none recorded and
+    mal_account.pull_ratings_enabled is on - never overwrites an existing
+    Floppy rating, since that one is user-entered and MAL's isn't
+    authoritative over it.
+
     Returns the list of corrected rows for reporting.
     """
     from app.models import Anime, Manga
@@ -609,19 +694,25 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
             current = remote.get(str(media.item.media_id))
             if not current:
                 continue
+            update_fields = []
             remote_progress = current.get(response_field)
-            if not isinstance(remote_progress, int) or remote_progress <= (
+            if isinstance(remote_progress, int) and remote_progress > (
                 media.progress or 0
             ):
-                continue
-            update_fields = ["progress"]
-            media.progress = remote_progress
-            mapped_status = MAL_STATUS_TO_FLOPPY[media_type].get(current.get("status"))
-            if mapped_status and mapped_status != media.status:
-                media.status = mapped_status
-                update_fields.append("status")
-            media.save(update_fields=update_fields)
-            corrected.append(media)
+                update_fields.append("progress")
+                media.progress = remote_progress
+                mapped_status = MAL_STATUS_TO_FLOPPY[media_type].get(current.get("status"))
+                if mapped_status and mapped_status != media.status:
+                    media.status = mapped_status
+                    update_fields.append("status")
+            if mal_account.pull_ratings_enabled and media.score is None:
+                remote_score = current.get("score")
+                if isinstance(remote_score, int) and remote_score > 0:
+                    media.score = remote_score
+                    update_fields.append("score")
+            if update_fields:
+                media.save(update_fields=update_fields)
+                corrected.append(media)
     return corrected
 
 
@@ -716,7 +807,7 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
         progress_callback(90, "Comparing local and MyAnimeList entries")
     for media in entries:
         media_type = media.item.media_type
-        desired = status_payload(media)
+        desired = status_payload(media, mal_account)
         current = remote_statuses[media_type].get(str(media.item.media_id))
         changes = []
         for field, new_value in desired.items():
@@ -759,7 +850,7 @@ def push_status(media, mal_account):
         mal_account: The user's MALAccount to push through.
     """
     media_type = media.item.media_type
-    data = status_payload(media)
+    data = status_payload(media, mal_account)
 
     access_token = get_valid_access_token(mal_account)
     headers = {"Authorization": f"Bearer {access_token}"}

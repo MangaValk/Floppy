@@ -1442,19 +1442,42 @@ def mal_sync_filters_save(request):
         messages.error(request, "Connect a MyAnimeList account first.")
         return redirect("mal_export")
 
-    mal_account.sync_filter_watched = request.POST.get("watched") == "on"
+    mal_account.sync_filter_completed = request.POST.get("completed") == "on"
+    mal_account.sync_filter_in_progress = request.POST.get("in_progress") == "on"
     mal_account.sync_filter_dropped = request.POST.get("dropped") == "on"
     mal_account.sync_filter_rated_only = request.POST.get("rated_only") == "on"
+    mal_account.sync_ratings_enabled = request.POST.get("sync_ratings") == "on"
+    mal_account.pull_higher_progress_enabled = request.POST.get("pull_higher_progress") == "on"
+    mal_account.pull_ratings_enabled = request.POST.get("pull_ratings") == "on"
     mal_account.save(
         update_fields=[
-            "sync_filter_watched",
+            "sync_filter_completed",
+            "sync_filter_in_progress",
             "sync_filter_dropped",
             "sync_filter_rated_only",
+            "sync_ratings_enabled",
+            "pull_higher_progress_enabled",
+            "pull_ratings_enabled",
             "updated_at",
         ]
     )
     messages.success(request, "MyAnimeList sync filters saved.")
     return redirect("mal_export")
+
+
+@require_POST
+def mal_mapping_ignore(request):
+    """Ignore or restore a grouped anime's MAL mapping issues."""
+    try:
+        item_id = int(request.POST["item_id"])
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse({"error": "Choose a valid anime."}, status=400)
+
+    ignored = request.POST.get("ignored") == "true"
+    found = mal_sync.set_mapping_ignored(request.user, item_id, ignored=ignored)
+    if not found and ignored:
+        return JsonResponse({"error": "Tracked anime not found."}, status=404)
+    return JsonResponse({"ignored": ignored})
 
 
 @require_POST

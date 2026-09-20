@@ -570,9 +570,13 @@ class MALAccount(models.Model):
         default=True,
         help_text="Push status/progress/score to MyAnimeList as each entry is edited",
     )
-    sync_filter_watched = models.BooleanField(
+    sync_filter_completed = models.BooleanField(
         default=True,
-        help_text="Include Completed/In Progress entries in a full sync to MyAnimeList",
+        help_text="Include Completed entries in a full sync to MyAnimeList",
+    )
+    sync_filter_in_progress = models.BooleanField(
+        default=True,
+        help_text="Include In Progress entries in a full sync to MyAnimeList",
     )
     sync_filter_dropped = models.BooleanField(
         default=True,
@@ -581,6 +585,18 @@ class MALAccount(models.Model):
     sync_filter_rated_only = models.BooleanField(
         default=False,
         help_text="Only include entries that have a score set in a full sync to MyAnimeList",
+    )
+    sync_ratings_enabled = models.BooleanField(
+        default=True,
+        help_text="Include the score/rating when pushing status to MyAnimeList",
+    )
+    pull_higher_progress_enabled = models.BooleanField(
+        default=True,
+        help_text="Adopt MyAnimeList's progress locally when it's ahead of Floppy's own record",
+    )
+    pull_ratings_enabled = models.BooleanField(
+        default=True,
+        help_text="Adopt a MyAnimeList rating locally when Floppy doesn't have one recorded",
     )
     full_sync_status = models.CharField(
         max_length=16,

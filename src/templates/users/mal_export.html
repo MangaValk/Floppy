@@ -10,6 +10,7 @@
 
 {% block settings_content %}
   {{ mal_sync_initial|json_script:"mal-sync-initial" }}
+  {{ mal_ignored_mappings|json_script:"mal-ignored-initial" }}
   <div class="space-y-6"
        x-data="{
          activeModal: null,
@@ -36,6 +37,7 @@
          malPreviewController: null,
          malSyncStatus: JSON.parse(document.getElementById('mal-sync-initial').textContent),
          malSyncPollTimer: null,
+         ignoredMappings: JSON.parse(document.getElementById('mal-ignored-initial').textContent),
          init() {
            if (this.malSyncStatus) { this.refreshMalSyncStatus(); }
          },
@@ -210,6 +212,47 @@
          },
          formatMalValue(value) {
            return value === null || value === undefined ? gettext('Not set') : String(value).replaceAll('_', ' ');
+         },
+         async ignoreMapping(entry) {
+           this.mappingSaveError = '';
+           try {
+             const body = new URLSearchParams({ item_id: entry.item_id, ignored: 'true' });
+             const response = await fetch('{% url "mal_mapping_ignore" %}', {
+               method: 'POST', body,
+               headers: {
+                 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+               }
+             });
+             const data = await response.json();
+             if (!response.ok) { throw new Error(data.error || gettext('Could not ignore this anime.')); }
+             this.malMappingIssues = this.malMappingIssues.filter(item => item.item_id !== entry.item_id);
+             if (this.malSyncStatus?.mapping_issues) {
+               this.malSyncStatus.mapping_issues = this.malSyncStatus.mapping_issues.filter(item => item.item_id !== entry.item_id);
+             }
+             this.ignoredMappings.push({ item_id: entry.item_id, title: entry.title });
+           } catch (error) {
+             this.mappingSaveError = error.message || gettext('Could not ignore this anime.');
+           }
+         },
+         async restoreMapping(entry) {
+           this.mappingSaveError = '';
+           try {
+             const body = new URLSearchParams({ item_id: entry.item_id, ignored: 'false' });
+             const response = await fetch('{% url "mal_mapping_ignore" %}', {
+               method: 'POST', body,
+               headers: {
+                 'X-Requested-With': 'XMLHttpRequest',
+                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+               }
+             });
+             const data = await response.json();
+             if (!response.ok) { throw new Error(data.error || gettext('Could not restore this anime.')); }
+             this.ignoredMappings = this.ignoredMappings.filter(item => item.item_id !== entry.item_id);
+             await this.previewMalSync(false);
+           } catch (error) {
+             this.mappingSaveError = error.message || gettext('Could not restore this anime.');
+           }
          }
        }">
 
@@ -227,12 +270,23 @@
       <button type="button" role="tab" id="mal-mapping-tab" aria-controls="mal-mapping-panel"
               :aria-selected="activeTab === 'mapping'"
               @click="activeTab = 'mapping'"
+              @keydown.arrow-right.prevent="activeTab = 'ignored'; $refs.ignoredTab.focus()"
               @keydown.arrow-left.prevent="activeTab = 'sync'; $refs.syncTab.focus()"
               x-ref="mappingTab"
               :class="activeTab === 'mapping' ? 'border-current text-[var(--color-link)]' : 'border-transparent text-[var(--color-text-muted)]'"
               class="border-b-2 py-3 text-sm font-medium cursor-pointer">
         {% translate "Mapping Issues" %}
         <span x-text="'(' + mappingIssues().length + ')'"></span>
+      </button>
+      <button type="button" role="tab" id="mal-ignored-tab" aria-controls="mal-ignored-panel"
+              :aria-selected="activeTab === 'ignored'"
+              @click="activeTab = 'ignored'"
+              @keydown.arrow-left.prevent="activeTab = 'mapping'; $refs.mappingTab.focus()"
+              x-ref="ignoredTab"
+              :class="activeTab === 'ignored' ? 'border-current text-[var(--color-link)]' : 'border-transparent text-[var(--color-text-muted)]'"
+              class="border-b-2 py-3 text-sm font-medium cursor-pointer">
+        {% translate "Ignored" %}
+        <span x-text="'(' + ignoredMappings.length + ')'"></span>
       </button>
     </div>
 
@@ -258,7 +312,13 @@
       </p>
       <template x-for="(entry, index) in mappingIssues()" :key="index">
         <div class="border-b border-[var(--color-surface-border)] pb-3 space-y-1 text-sm">
-          <strong class="break-words" x-text="entry.title"></strong>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <strong class="break-words" x-text="entry.title"></strong>
+            <button type="button" @click="ignoreMapping(entry)"
+                    class="px-2 py-1 text-xs border border-[var(--color-surface-border)] rounded-md cursor-pointer text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]">
+              {% translate "Ignore" %}
+            </button>
+          </div>
           <p class="break-words text-[var(--color-warning-text)]" x-text="entry.reason"></p>
           <div class="space-y-2 pt-2">
             <template x-for="season in entry.seasons || []" :key="season.season">
@@ -283,6 +343,23 @@
               </div>
             </template>
           </div>
+        </div>
+      </template>
+    </section>
+
+    <section id="mal-ignored-panel" role="tabpanel" aria-labelledby="mal-ignored-tab"
+             x-show="activeTab === 'ignored'" x-cloak class="space-y-4">
+      <h2 class="text-lg font-semibold">{% translate "Ignored anime" %}</h2>
+      <p x-show="!ignoredMappings.length" class="text-sm text-[var(--color-text-muted)]">
+        {% translate "No anime has been ignored." %}
+      </p>
+      <template x-for="(entry, index) in ignoredMappings" :key="index">
+        <div class="border-b border-[var(--color-surface-border)] pb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <strong class="break-words" x-text="entry.title"></strong>
+          <button type="button" @click="restoreMapping(entry)"
+                  class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md cursor-pointer">
+            {% translate "Move back" %}
+          </button>
         </div>
       </template>
     </section>
@@ -469,10 +546,17 @@
           {% csrf_token %}
           <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
             <input type="checkbox"
-                   name="watched"
-                   {% if mal_account.sync_filter_watched %}checked{% endif %}
+                   name="completed"
+                   {% if mal_account.sync_filter_completed %}checked{% endif %}
                    class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
-            {% translate "Watched (Completed and In Progress)" %}
+            {% translate "Completed" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="in_progress"
+                   {% if mal_account.sync_filter_in_progress %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "In Progress" %}
           </label>
           <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
             <input type="checkbox"
@@ -487,6 +571,27 @@
                    {% if mal_account.sync_filter_rated_only %}checked{% endif %}
                    class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
             {% translate "Only entries with a rating" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="sync_ratings"
+                   {% if mal_account.sync_ratings_enabled %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Sync ratings/scores to MyAnimeList" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="pull_higher_progress"
+                   {% if mal_account.pull_higher_progress_enabled %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Adopt MyAnimeList's progress when it's higher than Floppy's" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="pull_ratings"
+                   {% if mal_account.pull_ratings_enabled %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Adopt a MyAnimeList rating when Floppy doesn't have one" %}
           </label>
           <button type="submit"
                   class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm cursor-pointer">

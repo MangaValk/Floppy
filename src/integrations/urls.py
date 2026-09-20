@@ -218,6 +218,11 @@ urlpatterns = [
         name="mal_episode_mapping_save",
     ),
     path(
+        "sync/mal/mapping-ignore",
+        views.mal_mapping_ignore,
+        name="mal_mapping_ignore",
+    ),
+    path(
         "sync/mal/mapping-search",
         views.mal_mapping_search,
         name="mal_mapping_search",
