@@ -486,6 +486,28 @@ class PullHigherMALProgress(TestCase):
         self.assertEqual(anime.progress, 10)
         self.assertEqual(anime.status, Status.IN_PROGRESS.value)
 
+    def test_planned_remote_status_is_pulled_when_floppy_has_no_progress(self, *_mocks):
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.IN_PROGRESS.value, progress=0,
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {
+                    "status": "plan_to_watch", "num_episodes_watched": 0,
+                }},
+                "manga": {},
+            },
+        )
+
+        anime.refresh_from_db()
+        self.assertEqual([media.pk for media in corrected], [anime.pk])
+        self.assertEqual(anime.progress, 0)
+        self.assertEqual(anime.status, Status.PLANNING.value)
+
     def test_grouped_anime_is_never_touched(self, *_mocks):
         """Migrated (grouped) rows are excluded; progress can't be fabricated."""
         with patch("integrations.tasks.sync_mal_status.delay"):
@@ -795,12 +817,109 @@ class PreviewFullSync(TestCase):
                     "mal_id": "42",
                     "not_on_list": False,
                     "changes": [
-                        {"field": "Status", "from": "watching", "to": "dropped"},
-                        {"field": "Score", "from": 7, "to": 8},
+                        {
+                            "target": "mal", "target_label": "MyAnimeList",
+                            "field": "Status", "from": "watching", "to": "dropped",
+                        },
+                        {
+                            "target": "mal", "target_label": "MyAnimeList",
+                            "field": "Score", "from": 7, "to": 8,
+                        },
                     ],
                 }
             ],
         )
+
+    @patch("integrations.mal_sync.services.api_request")
+    def test_preview_marks_planned_status_as_floppy_change(self, mock_request):
+        Anime.objects.filter(pk=self.anime.pk).update(
+            status=Status.IN_PROGRESS.value,
+            progress=0,
+            score=None,
+        )
+        mock_request.side_effect = [
+            {
+                "data": [
+                    {
+                        "node": {"id": 42},
+                        "list_status": {
+                            "status": "plan_to_watch",
+                            "num_episodes_watched": 0,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+            {
+                "data": [
+                    {
+                        "node": {"id": 99},
+                        "list_status": {
+                            "status": "completed",
+                            "num_chapters_read": 0,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+        ]
+
+        preview = mal_sync.preview_full_sync(self.user, self.account)
+
+        self.assertEqual(preview[0]["changes"], [
+            {
+                "target": "floppy", "target_label": "Floppy",
+                "field": "Status", "from": Status.IN_PROGRESS.value,
+                "to": Status.PLANNING.value,
+            }
+        ])
+
+    @patch("integrations.mal_sync.services.api_request")
+    def test_preview_marks_missing_rating_as_floppy_change(self, mock_request):
+        Anime.objects.filter(pk=self.anime.pk).update(
+            status=Status.IN_PROGRESS.value,
+            progress=10,
+            score=None,
+        )
+        mock_request.side_effect = [
+            {
+                "data": [
+                    {
+                        "node": {"id": 42},
+                        "list_status": {
+                            "status": "watching",
+                            "num_episodes_watched": 10,
+                            "score": 8,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+            {
+                "data": [
+                    {
+                        "node": {"id": 99},
+                        "list_status": {
+                            "status": "completed",
+                            "num_chapters_read": 0,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+        ]
+
+        preview = mal_sync.preview_full_sync(self.user, self.account)
+
+        self.assertEqual(preview[0]["changes"], [
+            {
+                "target": "floppy", "target_label": "Floppy",
+                "field": "Score", "from": None, "to": 8,
+            }
+        ])
 
     @patch("integrations.mal_sync.services.api_request")
     def test_marks_entries_missing_from_mal(self, mock_request):

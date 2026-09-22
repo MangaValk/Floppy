@@ -653,6 +653,34 @@ def _fetch_list_statuses(media_type, mal_account):
     return statuses
 
 
+def _local_pull_updates(media_type, media, current, mal_account):
+    """Return local field updates that should be adopted from MAL before pushing."""
+    if not current:
+        return {}
+
+    updates = {}
+    _sent_field, response_field = PROGRESS_RESPONSE_FIELDS[media_type]
+    remote_progress = current.get(response_field)
+    mapped_status = MAL_STATUS_TO_FLOPPY[media_type].get(current.get("status"))
+    local_progress = media.progress or 0
+    if isinstance(remote_progress, int) and remote_progress > local_progress:
+        updates["progress"] = remote_progress
+        if mapped_status and mapped_status != media.status:
+            updates["status"] = mapped_status
+    elif (
+        local_progress == 0
+        and mapped_status == Status.PLANNING.value
+        and mapped_status != media.status
+    ):
+        updates["status"] = mapped_status
+
+    if mal_account.pull_ratings_enabled and media.score is None:
+        remote_score = current.get("score")
+        if isinstance(remote_score, int) and remote_score > 0:
+            updates["score"] = remote_score
+    return updates
+
+
 def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
     """Adopt MAL's progress locally wherever it is ahead of Floppy's own record.
 
@@ -683,7 +711,6 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
         (MediaTypes.ANIME.value, Anime),
         (MediaTypes.MANGA.value, Manga),
     ):
-        _sent_field, response_field = PROGRESS_RESPONSE_FIELDS[media_type]
         remote = remote_statuses.get(media_type) or {}
         rows = model.objects.filter(
             user=user,
@@ -692,25 +719,11 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
         ).select_related("item")
         for media in rows:
             current = remote.get(str(media.item.media_id))
-            if not current:
-                continue
-            update_fields = []
-            remote_progress = current.get(response_field)
-            if isinstance(remote_progress, int) and remote_progress > (
-                media.progress or 0
-            ):
-                update_fields.append("progress")
-                media.progress = remote_progress
-                mapped_status = MAL_STATUS_TO_FLOPPY[media_type].get(current.get("status"))
-                if mapped_status and mapped_status != media.status:
-                    media.status = mapped_status
-                    update_fields.append("status")
-            if mal_account.pull_ratings_enabled and media.score is None:
-                remote_score = current.get("score")
-                if isinstance(remote_score, int) and remote_score > 0:
-                    media.score = remote_score
-                    update_fields.append("score")
-            if update_fields:
+            updates = _local_pull_updates(media_type, media, current, mal_account)
+            if updates:
+                for field, value in updates.items():
+                    setattr(media, field, value)
+                update_fields = list(updates)
                 media.save(update_fields=update_fields)
                 corrected.append(media)
     return corrected
@@ -810,6 +823,31 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
         desired = status_payload(media, mal_account)
         current = remote_statuses[media_type].get(str(media.item.media_id))
         changes = []
+        local_updates = _local_pull_updates(media_type, media, current, mal_account)
+        for field, new_value in local_updates.items():
+            changes.append(
+                {
+                    "target": "floppy",
+                    "target_label": "Floppy",
+                    "field": (
+                        field_labels[PROGRESS_RESPONSE_FIELDS[media_type][0]]
+                        if field == "progress" else field_labels[field]
+                    ),
+                    "from": getattr(media, field),
+                    "to": new_value,
+                }
+            )
+            if field == "status":
+                status_map = (
+                    ANIME_STATUS_TO_MAL
+                    if media_type == MediaTypes.ANIME.value
+                    else MANGA_STATUS_TO_MAL
+                )
+                desired["status"] = status_map[new_value]
+            elif field == "progress":
+                desired[PROGRESS_RESPONSE_FIELDS[media_type][0]] = new_value
+            elif field == "score" and mal_account.sync_ratings_enabled:
+                desired["score"] = round(new_value)
         for field, new_value in desired.items():
             remote_field = (
                 PROGRESS_RESPONSE_FIELDS[media_type][1]
@@ -820,6 +858,8 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
             if old_value != new_value:
                 changes.append(
                     {
+                        "target": "mal",
+                        "target_label": "MyAnimeList",
                         "field": field_labels[field],
                         "from": old_value,
                         "to": new_value,
