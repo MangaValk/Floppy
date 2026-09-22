@@ -62,6 +62,8 @@ MAL_STATUS_TO_FLOPPY = {
     MediaTypes.MANGA.value: {value: key for key, value in MANGA_STATUS_TO_MAL.items()},
 }
 
+ZERO_PROGRESS_STATUS_PULLS = {Status.PLANNING.value, Status.PAUSED.value}
+
 # Namespace used on ExternalReference to remember grouped anime the user has
 # chosen to stop seeing mapping issues for (see mal_mapping_ignore in views.py).
 MAPPING_IGNORE_NAMESPACE = "grouped_anime_ignore"
@@ -669,7 +671,7 @@ def _local_pull_updates(media_type, media, current, mal_account):
             updates["status"] = mapped_status
     elif (
         local_progress == 0
-        and mapped_status == Status.PLANNING.value
+        and mapped_status in ZERO_PROGRESS_STATUS_PULLS
         and mapped_status != media.status
     ):
         updates["status"] = mapped_status
@@ -865,6 +867,7 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
                         "to": new_value,
                     }
                 )
+        changes.sort(key=lambda change: (change["target"] != "floppy", change["field"]))
 
         if changes:
             preview.append(
@@ -877,6 +880,12 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
                 }
             )
 
+    preview.sort(
+        key=lambda entry: (
+            entry["changes"][0]["target"] != "floppy",
+            entry["title"].casefold(),
+        )
+    )
     if progress_callback:
         progress_callback(100, "Preview ready")
     return preview
