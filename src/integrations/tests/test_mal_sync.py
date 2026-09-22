@@ -530,6 +530,92 @@ class PullHigherMALProgress(TestCase):
         self.assertEqual(anime.progress, 0)
         self.assertEqual(anime.status, Status.PAUSED.value)
 
+    def test_dropped_remote_status_is_pulled_when_floppy_has_no_progress(self, *_mocks):
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.IN_PROGRESS.value, progress=0,
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {
+                    "status": "dropped", "num_episodes_watched": 0,
+                }},
+                "manga": {},
+            },
+        )
+
+        anime.refresh_from_db()
+        self.assertEqual([media.pk for media in corrected], [anime.pk])
+        self.assertEqual(anime.progress, 0)
+        self.assertEqual(anime.status, Status.DROPPED.value)
+
+    def test_planned_remote_status_with_progress_becomes_in_progress(self, *_mocks):
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.PLANNING.value, progress=0,
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {
+                    "status": "plan_to_watch", "num_episodes_watched": 3,
+                }},
+                "manga": {},
+            },
+        )
+
+        anime.refresh_from_db()
+        self.assertEqual([media.pk for media in corrected], [anime.pk])
+        self.assertEqual(anime.progress, 3)
+        self.assertEqual(anime.status, Status.IN_PROGRESS.value)
+
+    def test_manga_zero_progress_statuses_are_pulled(self, *_mocks):
+        statuses = {
+            "100": ("plan_to_read", Status.PLANNING.value),
+            "101": ("on_hold", Status.PAUSED.value),
+            "102": ("dropped", Status.DROPPED.value),
+        }
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            for media_id in statuses:
+                Manga.objects.create(
+                    user=self.user,
+                    item=Item.objects.create(
+                        media_id=media_id,
+                        source=Sources.MAL.value,
+                        media_type=MediaTypes.MANGA.value,
+                        title=f"Manga {media_id}",
+                    ),
+                    status=Status.IN_PROGRESS.value,
+                    progress=0,
+                )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {},
+                "manga": {
+                    media_id: {"status": mal_status, "num_chapters_read": 0}
+                    for media_id, (mal_status, _status) in statuses.items()
+                },
+            },
+        )
+
+        corrected_ids = {media.item.media_id for media in corrected}
+        local_statuses = {
+            media.item.media_id: media.status
+            for media in Manga.objects.filter(user=self.user).select_related("item")
+        }
+        self.assertEqual(corrected_ids, set(statuses))
+        self.assertEqual(
+            local_statuses,
+            {media_id: status for media_id, (_mal_status, status) in statuses.items()},
+        )
+
     def test_grouped_anime_is_never_touched(self, *_mocks):
         """Migrated (grouped) rows are excluded; progress can't be fabricated."""
         with patch("integrations.tasks.sync_mal_status.delay"):
@@ -841,11 +927,11 @@ class PreviewFullSync(TestCase):
                     "changes": [
                         {
                             "target": "mal", "target_label": "MyAnimeList",
-                            "field": "Score", "from": 7, "to": 8,
+                            "field": "Status", "from": "watching", "to": "dropped",
                         },
                         {
                             "target": "mal", "target_label": "MyAnimeList",
-                            "field": "Status", "from": "watching", "to": "dropped",
+                            "field": "Score", "from": 7, "to": 8,
                         },
                     ],
                 }
@@ -942,6 +1028,106 @@ class PreviewFullSync(TestCase):
                 "field": "Status", "from": Status.IN_PROGRESS.value,
                 "to": Status.PAUSED.value,
             }
+        ])
+
+    @patch("integrations.mal_sync.services.api_request")
+    def test_preview_marks_dropped_status_as_floppy_change(self, mock_request):
+        Anime.objects.filter(pk=self.anime.pk).update(
+            status=Status.IN_PROGRESS.value,
+            progress=0,
+            score=None,
+        )
+        mock_request.side_effect = [
+            {
+                "data": [
+                    {
+                        "node": {"id": 42},
+                        "list_status": {
+                            "status": "dropped",
+                            "num_episodes_watched": 0,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+            {
+                "data": [
+                    {
+                        "node": {"id": 99},
+                        "list_status": {
+                            "status": "completed",
+                            "num_chapters_read": 0,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+        ]
+
+        preview = mal_sync.preview_full_sync(self.user, self.account)
+
+        self.assertEqual(preview[0]["changes"], [
+            {
+                "target": "floppy", "target_label": "Floppy",
+                "field": "Status", "from": Status.IN_PROGRESS.value,
+                "to": Status.DROPPED.value,
+            }
+        ])
+
+    @patch("integrations.mal_sync.services.api_request")
+    def test_preview_normalizes_planned_status_with_progress(self, mock_request):
+        Anime.objects.filter(pk=self.anime.pk).update(
+            status=Status.DROPPED.value,
+            progress=0,
+            score=None,
+        )
+        mock_request.side_effect = [
+            {
+                "data": [
+                    {
+                        "node": {"id": 42},
+                        "list_status": {
+                            "status": "plan_to_watch",
+                            "num_episodes_watched": 3,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+            {
+                "data": [
+                    {
+                        "node": {"id": 99},
+                        "list_status": {
+                            "status": "completed",
+                            "num_chapters_read": 0,
+                            "score": 0,
+                        },
+                    }
+                ],
+                "paging": {},
+            },
+        ]
+
+        preview = mal_sync.preview_full_sync(self.user, self.account)
+
+        self.assertEqual(preview[0]["changes"], [
+            {
+                "target": "floppy", "target_label": "Floppy",
+                "field": "Status", "from": Status.DROPPED.value,
+                "to": Status.IN_PROGRESS.value,
+            },
+            {
+                "target": "floppy", "target_label": "Floppy",
+                "field": "Episodes watched", "from": 0, "to": 3,
+            },
+            {
+                "target": "mal", "target_label": "MyAnimeList",
+                "field": "Status", "from": "plan_to_watch", "to": "watching",
+            },
         ])
 
     @patch("integrations.mal_sync.services.api_request")

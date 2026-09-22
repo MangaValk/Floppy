@@ -62,7 +62,17 @@ MAL_STATUS_TO_FLOPPY = {
     MediaTypes.MANGA.value: {value: key for key, value in MANGA_STATUS_TO_MAL.items()},
 }
 
-ZERO_PROGRESS_STATUS_PULLS = {Status.PLANNING.value, Status.PAUSED.value}
+ZERO_PROGRESS_STATUS_PULLS = {
+    Status.PLANNING.value,
+    Status.PAUSED.value,
+    Status.DROPPED.value,
+}
+PREVIEW_FIELD_SORT_ORDER = {
+    "Status": 0,
+    "Episodes watched": 1,
+    "Chapters read": 1,
+    "Score": 2,
+}
 
 # Namespace used on ExternalReference to remember grouped anime the user has
 # chosen to stop seeing mapping issues for (see mal_mapping_ignore in views.py).
@@ -667,8 +677,15 @@ def _local_pull_updates(media_type, media, current, mal_account):
     local_progress = media.progress or 0
     if isinstance(remote_progress, int) and remote_progress > local_progress:
         updates["progress"] = remote_progress
-        if mapped_status and mapped_status != media.status:
-            updates["status"] = mapped_status
+        if mapped_status == Status.PLANNING.value:
+            if media.status != Status.IN_PROGRESS.value:
+                updates["status"] = Status.IN_PROGRESS.value
+        elif mapped_status and mapped_status != media.status:
+            updates["status"] = (
+                Status.IN_PROGRESS.value
+                if mapped_status == Status.PLANNING.value
+                else mapped_status
+            )
     elif (
         local_progress == 0
         and mapped_status in ZERO_PROGRESS_STATUS_PULLS
@@ -867,7 +884,13 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
                         "to": new_value,
                     }
                 )
-        changes.sort(key=lambda change: (change["target"] != "floppy", change["field"]))
+        changes.sort(
+            key=lambda change: (
+                change["target"] != "floppy",
+                PREVIEW_FIELD_SORT_ORDER.get(change["field"], 99),
+                change["field"],
+            )
+        )
 
         if changes:
             preview.append(
