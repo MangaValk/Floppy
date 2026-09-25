@@ -1893,6 +1893,7 @@ def mal_export(request):
         "mal_export_schedule": schedule,
         "mal_sync_initial": mal_sync.full_sync_report(mal_account) if mal_account else None,
         "mal_ignored_mappings": mal_sync.ignored_mappings(user) if mal_account else [],
+        "mal_manual_mappings": mal_sync.manual_episode_mappings(user) if mal_account else [],
     }
     return render(request, "users/mal_export.html", context)
 

@@ -527,8 +527,9 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                     ),
                     set(),
                     metadata.get("max_progress"),
+                    show.status == Status.PLANNING.value and show.progress == 0,
                 )
-            _, watched_numbers, _ = entries[mal_id]
+            _, watched_numbers, _, _ = entries[mal_id]
             if watched:
                 watched_numbers.add(episode_number)
 
@@ -557,8 +558,8 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             })
 
     result = []
-    for media, watched_numbers, total in entries.values():
-        media.progress = len(watched_numbers)
+    for media, watched_numbers, total, reset_progress in entries.values():
+        media.progress = 0 if reset_progress else len(watched_numbers)
         if total:
             # An overlapping mapping can produce more distinct episode
             # numbers than the MAL entry actually has. MAL doesn't reject an
@@ -574,6 +575,38 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             )
         result.append(media)
     return result
+
+
+def manual_episode_mappings(user):
+    """Return user-created grouped-anime MAL mappings, one row per season and MAL entry."""
+    from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+
+    groups = {}
+    references = ExternalReference.objects.filter(
+        user=user,
+        integration="mal_sync",
+        external_namespace="grouped_anime_episode",
+        review_status=ExternalReferenceReviewStatus.CORRECTED.value,
+    ).order_by("metadata__series_title", "metadata__season_number", "metadata__episode_number")
+    for reference in references:
+        key = (
+            reference.metadata.get("series_title", ""),
+            reference.metadata.get("season_number"),
+            reference.episode_mapping.get("mal_id"),
+        )
+        group = groups.setdefault(key, {
+            "key": ":".join(str(part) for part in key),
+            "title": key[0],
+            "season": key[1],
+            "mal_id": key[2],
+            "reference_ids": [],
+            "episodes": [],
+            "mal_episodes": [],
+        })
+        group["reference_ids"].append(reference.pk)
+        group["episodes"].append(reference.metadata.get("episode_number"))
+        group["mal_episodes"].append(reference.episode_mapping.get("episode"))
+    return list(groups.values())
 
 
 def full_sync_entries(

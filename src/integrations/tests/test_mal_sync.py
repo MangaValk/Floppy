@@ -1565,6 +1565,31 @@ class GroupedMALSync(TestCase):
             3: {"mal_id": 500, "episode": 6},
         })
 
+    def test_manual_mappings_are_grouped_and_revertable(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 1,
+            "scope": "season", "mal_id": 500, "mal_episode": 4,
+        })
+        mappings = response.json()["manual_mappings"]
+        self.assertEqual(len(mappings), 1)
+        self.assertEqual(mappings[0]["episodes"], [1, 2, 3])
+        self.assertEqual(mappings[0]["mal_episodes"], [4, 5, 6])
+
+        other = _make_user(username="revert-other")
+        self.client.force_login(other)
+        denied = self.client.post(reverse("mal_episode_mapping_revert"), {
+            "reference_id": mappings[0]["reference_ids"],
+        })
+        self.assertEqual(denied.status_code, 404)
+
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("mal_episode_mapping_revert"), {
+            "reference_id": mappings[0]["reference_ids"],
+        })
+        self.assertEqual(response.json(), {"reverted": True})
+        self.assertEqual(mal_sync.manual_episode_mappings(self.user), [])
+
     @patch("app.providers.mal.search")
     def test_mapping_wizard_searches_mal_anime(self, search):
         self.client.force_login(self.user)
@@ -1676,7 +1701,10 @@ class GroupedMALSync(TestCase):
         Episode.objects.bulk_create([Episode(item=item, related_season=self.season)])
         preview = mal_sync.preview_full_sync(self.user, self.account)
         self.assertEqual([entry["mal_id"] for entry in preview], ["43"])
-        self.assertIn({"field": "Episodes watched", "from": 1, "to": 2}, preview[0]["changes"])
+        self.assertIn({
+            "target": "mal", "target_label": "MyAnimeList",
+            "field": "Episodes watched", "from": 1, "to": 2,
+        }, preview[0]["changes"])
 
         tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
         self.assertEqual(remote["43"]["num_episodes_watched"], 2)
@@ -1737,6 +1765,37 @@ class GroupedMALSync(TestCase):
         self.assertEqual(
             {entry.item.media_id: entry.progress for entry in entries},
             {"42": 2, "43": 2},
+        )
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-4": "1-4"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_planning_show_with_no_progress_ignores_stale_watch_states(self, metadata):
+        """A show reset to plan-to-watch with 0 progress must not push old watches.
+
+        Regression: a show manually set back to planning kept its WatchState
+        rows, so the preview offered to move MAL to watching with those counts.
+        """
+        from app.models import WatchState
+
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 4}
+        Episode.objects.filter(related_season=self.season)._raw_delete("default")
+        TV.objects.filter(pk=self.show.pk).update(status=Status.PLANNING.value)
+        stale_item = Item.objects.create(
+            media_id="100", source="tmdb", media_type="episode",
+            library_media_type="anime", season_number=1,
+            episode_number=4, title="Episode 4",
+        )
+        WatchState.objects.bulk_create([
+            WatchState(user=self.user, item=stale_item, watched=True),
+        ])
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(
+            [(entry.progress, entry.status) for entry in entries],
+            [(0, Status.PLANNING.value)],
         )
 
     @patch("integrations.tasks.sync_mal_status.delay")

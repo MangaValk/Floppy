@@ -1607,7 +1607,35 @@ def mal_episode_mapping_save(request):
             "metadata", "updated_at",
         ],
     )
-    return JsonResponse({"saved": True, "mapped": len(references)})
+    return JsonResponse({
+        "saved": True,
+        "mapped": len(references),
+        "manual_mappings": mal_sync.manual_episode_mappings(request.user),
+    })
+
+
+@require_POST
+def mal_episode_mapping_revert(request):
+    """Delete user-created grouped episode mappings so automatic mapping resumes."""
+    from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+
+    try:
+        reference_ids = [int(value) for value in request.POST.getlist("reference_id")]
+    except (TypeError, ValueError):
+        reference_ids = []
+    if not reference_ids:
+        return JsonResponse({"error": "Choose a valid mapping."}, status=400)
+
+    deleted, _ = ExternalReference.objects.filter(
+        pk__in=reference_ids,
+        user=request.user,
+        integration="mal_sync",
+        external_namespace="grouped_anime_episode",
+        review_status=ExternalReferenceReviewStatus.CORRECTED.value,
+    ).delete()
+    if not deleted:
+        return JsonResponse({"error": "Manual mapping not found."}, status=404)
+    return JsonResponse({"reverted": True})
 
 
 @require_GET
