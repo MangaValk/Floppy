@@ -18,6 +18,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required, login_required
 from django.core import signing
+from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -43,6 +44,7 @@ from app.db_retry import run_retryable_db_operation
 from app.log_safety import exception_summary
 from app.models import TV, Item, MediaTypes, Movie, Sources
 from app.providers import credentials, services
+from app.redis_diagnosis import queue_failure_message
 from integrations import (
     audiobookshelf_cover as abs_cover_proxy,
 )
@@ -63,6 +65,7 @@ from integrations import plex as plex_api
 from integrations import plex_cover as plex_cover_proxy
 from integrations.gpodder_api import GPodderAuthError, GPodderClientError
 from integrations.imports import anilist, helpers, mdblist, simkl, stremio, trakt
+from integrations.imports import plex as plex_import
 from integrations.imports.audiobookshelf import (
     AudiobookshelfAuthError,
     AudiobookshelfClient,
@@ -72,6 +75,7 @@ from integrations.imports.koreader import (
     KoreaderClient,
     KoreaderClientError,
 )
+from integrations.imports.mylar import MylarClient
 from integrations.imports.radarr import RadarrClient
 from integrations.imports.sonarr import SonarrClient
 from integrations.imports.storyteller import (
@@ -111,6 +115,7 @@ from integrations.models import (
     KoreaderDocumentLink,
     LastFMAccount,
     MDBListAccount,
+    MylarInstance,
     PlexAccount,
     PlexWebhookShare,
     PocketCastsAccount,
@@ -129,6 +134,8 @@ from integrations.plex_watchlist import (
     WATCHLIST_TASK_NAME,
 )
 from integrations.pocketcasts_api import PocketCastsAuthError
+from integrations.safe_fetch import send_to_self_hosted
+from integrations.source_sync import remove_collection_source_state
 from integrations.state import outbound
 from integrations.upload_staging import (
     build_staged_zip,
@@ -145,6 +152,7 @@ ARR_SYNC_INTERVAL_HOURS = 2
 RADARR_RECURRING_TASK_NAME = "Import from Radarr (Recurring)"
 JELLYFIN_PLAYBACK_REPORTING_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 SONARR_RECURRING_TASK_NAME = "Import from Sonarr (Recurring)"
+MYLAR_RECURRING_TASK_NAME = "Import from Mylar3 (Recurring)"
 GPODDER_RECURRING_TASK_NAME = "Import from GPodder (Recurring)"
 TRAKT_DEVICE_SESSION_KEY = "trakt_device_auth"
 
@@ -190,12 +198,9 @@ def _queue_staged_task_or_message(
             staged_paths=staged_paths,
             **kwargs,
         )
-    except Exception:
+    except Exception as error:
         logger.exception("Could not queue background import task")
-        messages.error(
-            request,
-            "The import could not be queued. Check the worker and try again.",
-        )
+        messages.error(request, _import_queue_failure_message(error))
         return False
 
 
@@ -203,13 +208,20 @@ def _queue_task_or_message(request, task, *args, **kwargs):
     """Queue a task and turn broker failures into a user message instead of a 500."""
     try:
         return task.delay(*args, **kwargs)
-    except Exception:
+    except Exception as error:
         logger.exception("Could not queue background import task")
-        messages.error(
-            request,
-            "The import could not be queued. Check the worker and try again.",
-        )
+        messages.error(request, _import_queue_failure_message(error))
         return False
+
+
+def _import_queue_failure_message(error):
+    """Name an unreachable Redis broker instead of blaming the worker (#1263)."""
+    return queue_failure_message(
+        error,
+        "The import could not be queued.",
+        "Check the worker and try again.",
+        settings.CELERY_BROKER_URL,
+    )
 
 
 def _queue_task_quietly(task, *args, **kwargs):
@@ -1075,6 +1087,9 @@ def plex_disconnect(request):
 
     def _disconnect():
         _disable_plex_watchlist_schedule(request.user)
+        account = PlexAccount.objects.filter(user=request.user).first()
+        if account:
+            plex_import.set_mark_watched_sync(account, enabled=False)
         PlexWebhookShare.objects.filter(owner=request.user).delete()
         PlexAccount.objects.filter(user=request.user).delete()
 
@@ -2106,6 +2121,58 @@ def import_trakt_export_file(request):
     return _integration_redirect(request, connected_slug="trakt")
 
 
+@require_POST
+def import_wetrakr(request):
+    """View for importing a WeTrakr data export: the .zip or its loose .csv files.
+
+    Loose .csv uploads are repackaged into a staged zip so the Celery task
+    always receives a single path.
+    """
+    uploads = request.FILES.getlist("wetrakr_export")
+    if not uploads:
+        messages.error(request, "A WeTrakr export file is required.")
+        return _integration_redirect(request)
+
+    staged_files = _stage_uploads_or_message(request, uploads, "WeTrakr export")
+    if staged_files is None:
+        return _integration_redirect(request)
+
+    if len(staged_files) == 1 and staged_payload_is_zip(staged_files[0]):
+        archive_path = staged_files[0]
+    else:
+        payloads = [
+            (upload.name, path)
+            for upload, path in zip(uploads, staged_files, strict=True)
+        ]
+        try:
+            archive_path = str(build_staged_zip(payloads))
+        except OSError:
+            logger.exception("Could not build staged WeTrakr export archive")
+            messages.error(
+                request,
+                "The WeTrakr export could not be prepared. Check available disk space and try again.",
+            )
+            return _integration_redirect(request)
+        finally:
+            for path in staged_files:
+                discard_staged_upload(path)
+
+    if _queue_staged_task_or_message(
+        request,
+        tasks.import_wetrakr_export,
+        user_id=request.user.id,
+        file=archive_path,
+        mode=request.POST["mode"],
+        staged_paths=(archive_path,),
+    ) is False:
+        return _integration_redirect(request, connected_slug="wetrakr")
+    messages.info(
+        request,
+        "The task to import your WeTrakr data export has been queued.",
+    )
+    return _integration_redirect(request, connected_slug="wetrakr")
+
+
 def _is_trakt_export_payload(name, path):
     """Whether an upload is part of the JSON/zip export rather than the legacy CSV."""
     return name.lower().endswith((".zip", ".json")) or staged_payload_is_zip(path)
@@ -2258,9 +2325,16 @@ def radarr_disconnect(request):
             _periodic_task_filter_for_instance(instance.id),
             task=RADARR_RECURRING_TASK_NAME,
         ).delete()
-        CollectionSourceState.objects.filter(
+        states = CollectionSourceState.objects.filter(
             user=request.user, source="radarr", source_instance_id=instance.id
-        ).delete()
+        ).select_related("item")
+        for state in states:
+            remove_collection_source_state(
+                user=request.user,
+                item=state.item,
+                source="radarr",
+                source_instance_id=instance.id,
+            )
         instance.delete()
 
     _run_with_lock_retry("disconnect Radarr", _disconnect)
@@ -2281,6 +2355,97 @@ def import_radarr(request):
     _ensure_arr_schedule(instance, RADARR_RECURRING_TASK_NAME, "Radarr")
     if queued is not False:
         messages.info(request, "Radarr import queued.")
+    return redirect("import_data")
+
+
+@require_POST
+def mylar_connect(request):
+    """Connect a new Mylar3 instance using base URL + API key."""
+    base_url = request.POST.get("base_url", "").strip()
+    api_key = request.POST.get("api_key", "").strip()
+    name = request.POST.get("name", "").strip()
+    if not base_url or not api_key:
+        messages.error(request, "Mylar3 base URL and API key are required.")
+        return _integration_redirect(request)
+
+    try:
+        MylarClient(base_url, api_key).healthcheck()
+    except helpers.MediaImportError as exc:
+        messages.error(request, f"Failed to connect to Mylar3: {exc}")
+        return _integration_redirect(request)
+
+    try:
+        instance = _run_with_lock_retry(
+            "create Mylar3 instance",
+            lambda: MylarInstance.objects.create(
+                user=request.user,
+                name=name,
+                base_url=base_url,
+                api_key=helpers.encrypt(api_key),
+            ),
+        )
+    except IntegrityError:
+        messages.error(
+            request, "You already have a Mylar3 instance connected at this URL."
+        )
+        return _integration_redirect(request)
+
+    _ensure_arr_schedule(instance, MYLAR_RECURRING_TASK_NAME, "Mylar3")
+    if _queue_task_or_message(request,
+        tasks.import_mylar, user_id=request.user.id, mode="new", instance_id=instance.id
+    ) is not False:
+        messages.success(
+            request,
+            "Connected Mylar3. Initial import queued and recurring sync enabled.",
+        )
+    return _integration_redirect(request, connected_slug="mylar")
+
+
+@require_POST
+def mylar_disconnect(request):
+    """Disconnect one Mylar3 instance."""
+    from django_celery_beat.models import PeriodicTask
+
+    instance = get_object_or_404(
+        MylarInstance, pk=request.POST.get("instance_id"), user=request.user
+    )
+
+    def _disconnect():
+        PeriodicTask.objects.filter(
+            _periodic_task_filter_for_instance(instance.id),
+            task=MYLAR_RECURRING_TASK_NAME,
+        ).delete()
+        # Through the reconciling helper, so copies only Mylar3 created go too.
+        states = CollectionSourceState.objects.filter(
+            user=request.user, source="mylar", source_instance_id=instance.id
+        ).select_related("item")
+        for state in states:
+            remove_collection_source_state(
+                user=request.user,
+                item=state.item,
+                source="mylar",
+                source_instance_id=instance.id,
+            )
+        instance.delete()
+
+    _run_with_lock_retry("disconnect Mylar3", _disconnect)
+    messages.info(request, "Disconnected Mylar3.")
+    return redirect("import_data")
+
+
+@require_POST
+def import_mylar(request):
+    """Queue Mylar3 import and ensure recurring schedule exists."""
+    instance = get_object_or_404(
+        MylarInstance, pk=request.POST.get("instance_id"), user=request.user
+    )
+
+    queued = _queue_task_or_message(request,
+        tasks.import_mylar, user_id=request.user.id, mode="new", instance_id=instance.id
+    )
+    _ensure_arr_schedule(instance, MYLAR_RECURRING_TASK_NAME, "Mylar3")
+    if queued is not False:
+        messages.info(request, "Mylar3 import queued.")
     return redirect("import_data")
 
 
@@ -2341,9 +2506,16 @@ def sonarr_disconnect(request):
             _periodic_task_filter_for_instance(instance.id),
             task=SONARR_RECURRING_TASK_NAME,
         ).delete()
-        CollectionSourceState.objects.filter(
+        states = CollectionSourceState.objects.filter(
             user=request.user, source="sonarr", source_instance_id=instance.id
-        ).delete()
+        ).select_related("item")
+        for state in states:
+            remove_collection_source_state(
+                user=request.user,
+                item=state.item,
+                source="sonarr",
+                source_instance_id=instance.id,
+            )
         instance.delete()
 
     _run_with_lock_retry("disconnect Sonarr", _disconnect)
@@ -2409,6 +2581,7 @@ def jellyfin_connect(request):
         "jellyfin_username": current_user.get("Name", ""),
         "connection_broken": False,
         "last_error_message": "",
+        "last_pull_error_message": "",
     }
     if existing_account is None or identity_changed:
         # A different server/user invalidates any cached pull state: a
@@ -2512,7 +2685,9 @@ def jellyfin_push_now(request):
 def jellyfin_pull_now(request):
     """Queue an immediate automatic Jellyfin history pull."""
     account = getattr(request.user, "jellyfin_account", None)
-    if not account or not account.is_connected:
+    # A broken account is still queued: the pull re-probes the key and clears
+    # the flag when it works again.
+    if not account or not account.base_url or not account.api_key:
         messages.error(request, "Connect Jellyfin before importing history.")
         return redirect("integrations")
 
@@ -2687,6 +2862,10 @@ def import_audiobookshelf(request):
 
 
 AUDIOBOOKSHELF_COVER_TIMEOUT = 15
+# After one failed cover fetch, the account's remaining covers skip ABS for this
+# long. Otherwise every poster on a page holds a web worker for the full
+# timeout while the server is down (#1307).
+AUDIOBOOKSHELF_COVER_BACKOFF_SECONDS = 60
 # Plain raster types only - an upstream ABS server (attacker-controlled, or
 # just compromised) returning e.g. text/html or image/svg+xml would have it
 # served as active content from Floppy's own origin to anyone holding the
@@ -2843,15 +3022,27 @@ def audiobookshelf_cover(request, token):
         )
         return _placeholder_image_response()
 
+    backoff_key = f"abs_cover_backoff:{account_id}"
+    if cache.get(backoff_key):
+        logger.debug(
+            "Audiobookshelf cover skipped: server recently unreachable "
+            "account=%s item=%s",
+            account_id,
+            library_item_id,
+        )
+        return _placeholder_image_response()
+
     cover_url = f"{account.base_url.rstrip('/')}/api/items/{library_item_id}/cover"
     try:
-        upstream = requests.get(
+        upstream = send_to_self_hosted(
+            requests.get,
             cover_url,
             headers={"Authorization": f"Bearer {api_token}"},
             timeout=AUDIOBOOKSHELF_COVER_TIMEOUT,
             stream=True,
         )
     except requests.RequestException as error:
+        cache.set(backoff_key, 1, AUDIOBOOKSHELF_COVER_BACKOFF_SECONDS)
         logger.warning(
             "Audiobookshelf cover unavailable: request failed "
             "account=%s item=%s error=%s",
@@ -2904,13 +3095,26 @@ def audiobookshelf_cover(request, token):
 
         body = bytearray()
         oversized = False
-        for chunk in upstream.iter_content(chunk_size=64 * 1024):
-            if not chunk:
-                continue
-            body.extend(chunk)
-            if len(body) > image_cache.MAX_IMAGE_BYTES:
-                oversized = True
-                break
+        try:
+            for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                body.extend(chunk)
+                if len(body) > image_cache.MAX_IMAGE_BYTES:
+                    oversized = True
+                    break
+        except requests.RequestException as error:
+            # With stream=True a server that stalls after the headers fails
+            # here rather than at send time, so it gets the same backoff.
+            cache.set(backoff_key, 1, AUDIOBOOKSHELF_COVER_BACKOFF_SECONDS)
+            logger.warning(
+                "Audiobookshelf cover unavailable: body read failed "
+                "account=%s item=%s error=%s",
+                account_id,
+                library_item_id,
+                exception_summary(error),
+            )
+            return _placeholder_image_response()
     finally:
         upstream.close()
 

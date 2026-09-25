@@ -113,6 +113,7 @@ from app.tasks_anime_library_repair import (  # noqa: E402
     deduplicate_watched_anime_task,
     repair_duplicated_anime_libraries_task,
 )
+from app.tasks_backdrops import warm_backdrops_task  # noqa: E402, F401
 from app.tasks_backfill_state import (  # noqa: E402
     EXTERNAL_IDS_BACKFILL_VERSION,
     GENRE_BACKFILL_VERSION,
@@ -202,8 +203,10 @@ from app.tasks_igdb_ratings import (  # noqa: E402
 from app.tasks_imdb import refresh_imdb_game_credits_from_datasets  # noqa: E402
 from app.tasks_interactive import (  # noqa: E402
     continue_statistics_refresh_task,  # noqa: F401
+    reconcile_statistics_sync_task,  # noqa: F401
     refresh_statistics_cache_task,  # noqa: F401
     resolve_playback_image,  # noqa: F401
+    statistics_sync_task,  # noqa: F401
 )
 from app.tasks_mal import sync_mal_ratings_from_api  # noqa: E402
 from app.tasks_metadata_cache import (  # noqa: E402
@@ -219,6 +222,10 @@ from app.tasks_music import (  # noqa: E402
     populate_album_tracks_batch,
     prefetch_album_covers_batch,
     prefetch_artist_images_batch,
+)
+from app.tasks_opencritic import (  # noqa: E402
+    backfill_opencritic_scores,  # noqa: F401
+    refresh_item_opencritic_score,  # noqa: F401
 )
 from app.tasks_podcast import (  # noqa: E402
     PODCAST_WEBSITE_BACKFILL_VERSION,

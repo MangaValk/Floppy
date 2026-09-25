@@ -19,6 +19,7 @@ from simple_history.utils import bulk_create_with_history
 import app
 from app import providers
 from app.db_retry import run_retryable_db_operation
+from app.history_cache_utils import history_deferred_item_fields
 from app.models import Episode, MediaTypes, Status
 from app.services.completion import normalize_completed_entry
 from integrations import import_progress
@@ -29,6 +30,14 @@ logger = logging.getLogger(__name__)
 
 class MediaImportError(Exception):
     """Custom exception for import errors."""
+
+
+class ConnectionAuthError(MediaImportError):
+    """The provider rejected our credentials (401/403).
+
+    The one import failure that marks an account ``connection_broken``; see
+    ``integrations.connection_health``.
+    """
 
 
 class MediaImportUnexpectedError(Exception):
@@ -80,6 +89,12 @@ def find_item_across_buckets(preferred_bucket=None, **identity):
     return candidates[0]
 
 
+# Importers read identity fields off the preloaded items, never these. Loading
+# them for a whole library (``watch_providers`` is ~146 KiB a title) ran a large
+# Trakt export import out of memory before it wrote anything (#1252).
+PRELOAD_DEFERRED_ITEM_FIELDS = history_deferred_item_fields("item")
+
+
 def get_existing_media(user):
     """Get all existing media for the user to check against during import."""
     excluded_types = [MediaTypes.SEASON.value, MediaTypes.EPISODE.value]
@@ -89,7 +104,11 @@ def get_existing_media(user):
     for media_type in valid_types:
         media_model = apps.get_model(app_label="app", model_name=media_type)
 
-        for media in media_model.objects.filter(user=user).select_related("item"):
+        for media in (
+            media_model.objects.filter(user=user)
+            .select_related("item")
+            .defer(*PRELOAD_DEFERRED_ITEM_FIELDS)
+        ):
             existing[media_type][media.item.source][media.item.media_id] = media
 
     counts = [
@@ -114,14 +133,20 @@ def get_existing_children(user):
         MediaTypes.SEASON.value: defaultdict(dict),
         MediaTypes.EPISODE.value: defaultdict(dict),
     }
-    for season in app.models.Season.objects.filter(user=user).select_related("item"):
+    for season in (
+        app.models.Season.objects.filter(user=user)
+        .select_related("item")
+        .defer(*PRELOAD_DEFERRED_ITEM_FIELDS)
+    ):
         item = season.item
         existing[MediaTypes.SEASON.value][item.source][
             (item.media_id, item.season_number)
         ] = season
-    for episode in app.models.Episode.objects.filter(
-        related_season__user=user,
-    ).select_related("item"):
+    for episode in (
+        app.models.Episode.objects.filter(related_season__user=user)
+        .select_related("item")
+        .defer(*PRELOAD_DEFERRED_ITEM_FIELDS)
+    ):
         item = episode.item
         existing[MediaTypes.EPISODE.value][item.source][
             (item.media_id, item.season_number, item.episode_number)
@@ -546,6 +571,7 @@ def bulk_create_media(bulk_media_list, user, *, backfill_completed=True):
         bulk_media = _deduplicate_unique_user_item_rows(model, bulk_media)
 
         import_run_id = import_progress.get_current_import_run_id()
+        import_source = ""
         if import_run_id:
             import_source = (
                 ImportRun.objects.filter(id=import_run_id)
@@ -614,13 +640,26 @@ def bulk_create_media(bulk_media_list, user, *, backfill_completed=True):
             logger.info("Updating references for podcasts to existing episodes")
             update_podcast_references(bulk_media)
 
-        def create_media(bulk_media=bulk_media, model=model):
+        # Imports are written as the user, so the reason is what tells an
+        # imported status apart from one the user set (#1133).
+        change_reason = (
+            f"{import_source.replace('_', ' ').capitalize()} import"
+            if import_source
+            else "Import"
+        )
+
+        def create_media(
+            bulk_media=bulk_media,
+            model=model,
+            change_reason=change_reason,
+        ):
             return bulk_create_with_history(
                 bulk_media,
                 model,
                 batch_size=500,
                 default_user=user,
                 default_date=timezone.now(),
+                default_change_reason=change_reason,
             )
 
         created_media = retry_on_lock(create_media)

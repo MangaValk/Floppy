@@ -29,9 +29,10 @@ from app.models import (
     Status,
 )
 from app.providers import services
-from integrations import audiobookshelf_cover, import_progress
+from integrations import audiobookshelf_cover, connection_health, import_progress
 from integrations.imports.helpers import MediaImportError, decrypt_or_raise
 from integrations.models import AudiobookshelfAccount
+from integrations.safe_fetch import send_to_self_hosted
 
 logger = logging.getLogger(__name__)
 HTTP_BAD_REQUEST = 400
@@ -86,7 +87,8 @@ class AudiobookshelfClient:
         attempt = 0
         while True:
             try:
-                response = requests.get(
+                response = send_to_self_hosted(
+                    requests.get,
                     url,
                     headers={"Authorization": f"Bearer {self.token}"},
                     timeout=20,
@@ -142,11 +144,7 @@ class AudiobookshelfImporter:
         try:
             token = decrypt_or_raise(self.account.api_token)
         except MediaImportError as error:
-            self.account.connection_broken = True
-            self.account.last_error_message = str(error)
-            self.account.save(
-                update_fields=["connection_broken", "last_error_message", "updated_at"],
-            )
+            connection_health.record_failure(self.account, str(error), auth=True)
             raise
 
         self.client = AudiobookshelfClient(self.account.base_url, token)
@@ -159,16 +157,17 @@ class AudiobookshelfImporter:
         try:
             me = self.client.get_me()
         except AudiobookshelfAuthError as error:
-            self.account.connection_broken = True
-            self.account.last_error_message = str(error)
-            self.account.save(
-                update_fields=[
-                    "connection_broken",
-                    "last_error_message",
-                    "updated_at",
-                ],
-            )
+            connection_health.record_failure(self.account, str(error), auth=True)
             raise MediaImportError(str(error)) from error
+        except requests.exceptions.RequestException as error:
+            # An unreachable or unresponsive server is not a rejected token, so
+            # the account is not marked broken (see connection-health.md).
+            msg = (
+                "Audiobookshelf server did not respond "
+                f"({exception_summary(error)})"
+            )
+            connection_health.record_failure(self.account, msg, auth=False)
+            raise MediaImportError(msg) from error
 
         progress_entries = me.get("mediaProgress") or []
         last_sync_ms = self.account.last_sync_ms or 0

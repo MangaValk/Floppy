@@ -14,7 +14,7 @@ from django.db import models
 from django.utils import timezone
 
 from app.providers import services
-from integrations import mal_sync
+from integrations import connection_health, mal_sync
 from integrations.models import STALE_FULL_SYNC_AGE, MALAccount, MALFullSyncStatus
 
 logger = logging.getLogger(__name__)
@@ -59,19 +59,10 @@ def preview_mal_sync(self, user_id):
 
 def _mark_connection_broken(mal_account, message):
     """Disable sync and record why, matching the LastFM/Koito account pattern."""
-    mal_account.connection_broken = True
     mal_account.sync_enabled = False
-    mal_account.last_error_message = str(message)[:500]
     mal_account.last_failed_at = timezone.now()
-    mal_account.save(
-        update_fields=[
-            "connection_broken",
-            "sync_enabled",
-            "last_error_message",
-            "last_failed_at",
-            "updated_at",
-        ],
-    )
+    mal_account.save(update_fields=["sync_enabled", "last_failed_at", "updated_at"])
+    connection_health.record_failure(mal_account, message, auth=True)
 
 
 @shared_task(

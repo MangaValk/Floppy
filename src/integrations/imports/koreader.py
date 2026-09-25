@@ -7,6 +7,7 @@ import logging
 import re
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
+from functools import partial
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -21,9 +22,10 @@ from app import helpers as app_helpers
 from app.log_safety import exception_summary
 from app.models import MediaTypes, Sources, Status
 from app.providers import services
-from integrations import import_progress
+from integrations import connection_health, import_progress
 from integrations.imports.helpers import MediaImportError, decrypt_or_raise
 from integrations.models import KoreaderAccount, KoreaderDocumentLink
+from integrations.safe_fetch import send_to_self_hosted
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +90,8 @@ class KoreaderClient:
         return f"{self.server_url}/{path.lstrip('/')}"
 
     def _request(self, method: str, path: str, **kwargs):
-        response = requests.request(
-            method,
+        response = send_to_self_hosted(
+            partial(requests.request, method),
             self._url(path),
             headers=self._headers(),
             timeout=kwargs.pop("timeout", API_TIMEOUT),
@@ -318,15 +320,7 @@ class KoreaderImporter:
         return dict(imported_counts), "\n".join(dict.fromkeys(self.warnings))
 
     def _mark_broken(self, message: str):
-        self.account.connection_broken = True
-        self.account.last_error_message = message
-        self.account.save(
-            update_fields=[
-                "connection_broken",
-                "last_error_message",
-                "updated_at",
-            ],
-        )
+        connection_health.record_failure(self.account, message, auth=True)
 
     def _should_skip_finished_link(self, link: KoreaderDocumentLink) -> bool:
         if not self.account.skip_finished_books:

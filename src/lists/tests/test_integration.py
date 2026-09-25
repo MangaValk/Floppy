@@ -136,6 +136,17 @@ class IntegrationTest(StaticLiveServerTestCase):
         button.scroll_into_view_if_needed()
         button.dispatch_event("click")
 
+    def wait_for_htmx_settle(self, locator):
+        """Wait until htmx has wired the content it just swapped into ``locator``.
+
+        htmx processes a swap's new ``hx-*`` attributes in its settle step,
+        ``defaultSettleDelay`` (20 ms) after the content appears, and marks the
+        target ``htmx-settling`` until then. A click in that window lands on a
+        button with no ``hx-post`` bound yet and is dropped without a request,
+        so a test that clicks as soon as the text is visible must wait here.
+        """
+        expect(locator).not_to_have_class(re.compile(r"\bhtmx-(swapping|settling)\b"))
+
     def search_and_submit(self, query):
         """Run a global search via the submit button.
 
@@ -166,7 +177,7 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
         self.search_and_submit("perfect blue")
         self.click_card_lists_action()
-        expect(self.page.locator("#lists-anime-437")).to_contain_text(
+        expect(self.page.locator('[id^="lists-anime-437-"]')).to_contain_text(
             "You haven't created any lists yet.",
         )
 
@@ -186,10 +197,11 @@ class IntegrationTest(StaticLiveServerTestCase):
         self.page.locator("li").filter(has_text=re.compile(r"^Anime$")).click()
         self.search_and_submit("perfect blue")
         self.click_card_lists_action()
-        expect(self.page.locator("#lists-anime-437")).to_contain_text("Lists test Add")
+        expect(self.page.locator('[id^="lists-anime-437-"]')).to_contain_text("Lists test Add")
+        self.wait_for_htmx_settle(self.page.locator('[id^="lists-anime-437-"]'))
         self.page.get_by_role("button", name="Add item to test", exact=True).click()
-        expect(self.page.locator("#lists-anime-437")).to_contain_text("Remove")
-        self.page.locator("#lists-anime-437").get_by_role("button").first.click()
+        expect(self.page.locator('[id^="lists-anime-437-"]')).to_contain_text("Remove")
+        self.page.locator('[id^="lists-anime-437-"]').get_by_role("button").first.click()
 
         # Edit list
         self.page.get_by_role("link", name="Lists").click()
@@ -277,7 +289,7 @@ class IntegrationTest(StaticLiveServerTestCase):
             page.locator(
                 '.media-card-overlay button[title="Add to custom lists"]',
             ).first.dispatch_event("click")
-            modal = page.locator("#lists-anime-437")
+            modal = page.locator('[id^="lists-anime-437-"]')
             expect(modal).to_contain_text("Remove")
             toggle_button = modal.locator(
                 f'button[aria-label="Remove item from {custom_list.name}"]'

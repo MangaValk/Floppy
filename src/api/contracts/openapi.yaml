@@ -3088,6 +3088,12 @@ components:
           type: number
           format: double
           nullable: true
+        scored_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the score was last set, changed or cleared; null when
+            never scored or when the rating predates this field.
         progress:
           type: number
           format: double
@@ -3125,6 +3131,7 @@ components:
       - progress
       - progressed_at
       - score
+      - scored_at
       - source
       - start_date
       - status
@@ -3388,10 +3395,34 @@ components:
           type: string
           format: date-time
           nullable: true
+        title:
+          type: string
+          nullable: true
+          description: The episode's own name; null when unknown, never the show's
+            title.
+        episode_code:
+          type: string
+          nullable: true
+          description: SxxEyy code, as in history entries; null without a season number.
+        image:
+          type: string
+          nullable: true
+        ids:
+          type: object
+          additionalProperties:
+            type: string
+        url:
+          type: string
+          nullable: true
       required:
       - air_date
+      - episode_code
       - episode_number
+      - ids
+      - image
       - season_number
+      - title
+      - url
     Pagination:
       type: object
       description: Stable limit/offset response metadata.
@@ -3613,6 +3644,12 @@ components:
           type: number
           format: double
           nullable: true
+        scored_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the score was last set, changed or cleared; null when
+            never scored or when the rating predates this field.
         status:
           type: integer
           nullable: true
@@ -3680,6 +3717,7 @@ components:
       - progress_unit
       - progressed_at
       - score
+      - scored_at
       - show
       - source
       - start_date

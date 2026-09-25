@@ -296,10 +296,10 @@ class PocketCastsImporter:
                     self.user.username,
                 )
             except Exception:
+                # Don't fail yet - let _ensure_valid_token handle it. A rejected
+                # login already marked the account broken; anything else (a
+                # timeout, a 5xx) says nothing about the credentials.
                 logger.exception("Failed to login when access token was missing")
-                # Mark as broken but don't fail yet - let _ensure_valid_token handle it
-                self.account.connection_broken = True
-                self.account.save()
         # If we have a refresh token but no access token (and no credentials), try to refresh immediately
         elif not has_access_token and has_refresh_token:
             logger.info(
@@ -313,12 +313,11 @@ class PocketCastsImporter:
                     self.user.username,
                 )
             except Exception:
+                # Don't fail yet - let _ensure_valid_token handle it. A rejected
+                # refresh already marked the account broken.
                 logger.exception(
                     "Failed to refresh token when access token was missing"
                 )
-                # Mark as broken but don't fail yet - let _ensure_valid_token handle it
-                self.account.connection_broken = True
-                self.account.save()
 
         # Allow import even if connection_broken - we'll attempt refresh/login in _ensure_valid_token
 
@@ -707,7 +706,9 @@ class PocketCastsImporter:
                 self.user.username,
             )
             schedule_history_refresh(self.user.id)
-            statistics_cache.schedule_all_ranges_refresh(self.user.id)
+            statistics_cache.invalidate_all_statistics_days(
+                self.user.id, reason="pocketcasts_import"
+            )
 
         return imported_counts, "\n".join(self.warnings) if self.warnings else ""
 
@@ -868,8 +869,10 @@ class PocketCastsImporter:
                 except requests.HTTPError as e:
                     # If refresh fails with 401, _refresh_token will handle fallback to login if credentials exist
                     # For legacy accounts without credentials, disconnect
+                    # ``Response.__bool__`` is ``response.ok``, so an error
+                    # response is falsy: compare against None, not truthiness.
                     if (
-                        e.response
+                        e.response is not None
                         and e.response.status_code == requests.codes.unauthorized
                     ) and not has_credentials:
                         self._disconnect_account("Refresh token is invalid or expired")
