@@ -414,8 +414,11 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
     from integrations.models import ExternalReference
     from integrations.webhooks import anime_mappings
 
+    # A statusless show isn't tracked (see Media.status), so like a statusless
+    # flat entry it never syncs, even when it still has watched episodes.
     shows = TV.objects.filter(
         user=user, item__library_media_type=MediaTypes.ANIME.value,
+        status__isnull=False,
     )
     if tv is not None:
         shows = shows.filter(pk=tv.pk)

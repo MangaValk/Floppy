@@ -1798,6 +1798,21 @@ class GroupedMALSync(TestCase):
             [(0, Status.PLANNING.value)],
         )
 
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_statusless_show_is_not_synced_despite_watched_episodes(self, metadata):
+        """A show with no status isn't tracked, so its watches must not reach MAL."""
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 3}
+        TV.objects.filter(pk=self.show.pk).update(status=None)
+
+        issues = []
+        entries = mal_sync.grouped_sync_entries(self.user, mapping_issues=issues)
+
+        self.assertEqual(entries, [])
+        self.assertEqual(issues, [])
+
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_bulk_side_effects_queue_grouped_sync_once(self, delay):
         from app.signals import flush_media_change_side_effects
