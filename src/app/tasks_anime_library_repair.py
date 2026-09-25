@@ -22,9 +22,6 @@ logger = logging.getLogger(__name__)
 # Buckets that mean "this is not in the Anime library".
 NON_ANIME_TV_BUCKETS = ("", "tv")
 
-# A group of 1 row has nothing to merge; only 2+ rows are duplicates.
-MIN_DUPLICATE_GROUP_SIZE = 2
-
 
 def _provider_identities(anime_item):
     """Return the (provider, series_id) pairs a flat anime Item points at."""
@@ -199,77 +196,6 @@ def repair_duplicated_anime_libraries_task(batch_size: int = 25):
         "skipped": skipped,
         "unresolved": unresolved,
     }
-
-
-def duplicate_active_anime_groups(user=None):
-    """Yield lists of 2+ Anime rows sharing (user, item) that are not all completed.
-
-    Several completed rows for one show are intentional rewatch history and
-    are left alone, since a script can't tell them apart from an accidental
-    duplicate. But a mix of a completed row and a non-completed one (e.g. a
-    12/12 completed row alongside a stray 11/12 one), or several non-completed
-    rows, is never a second intentional state - a show is only ever actively
-    "in progress" (or planning/paused/dropped) once at a time.
-    """
-    from collections import defaultdict
-
-    from app.models import Anime
-    from app.models.choices import Status
-
-    queryset = Anime.objects.select_related("item")
-    if user is not None:
-        queryset = queryset.filter(user=user)
-
-    groups = defaultdict(list)
-    for anime in queryset.iterator(chunk_size=200):
-        groups[(anime.user_id, anime.item_id)].append(anime)
-
-    for rows in groups.values():
-        if len(rows) < MIN_DUPLICATE_GROUP_SIZE:
-            continue
-        if all(row.status == Status.COMPLETED.value for row in rows):
-            continue
-        yield rows
-
-
-def _merge_duplicate_active_group(rows):
-    """Keep the row with the highest progress from a duplicate group."""
-    keeper = max(rows, key=lambda row: (row.progress or 0, row.pk))
-    for row in rows:
-        if row.pk != keeper.pk:
-            row.delete()
-    return keeper
-
-
-@shared_task(name="Deduplicate watched anime")
-def deduplicate_watched_anime_task(user_id: int):
-    """Fold duplicate Anime rows for the same show into the highest progress one.
-
-    Skips groups where every row is completed, since that's intentional
-    rewatch history a script can't tell apart from an accidental duplicate.
-    Any other duplicate group - including a completed row mixed with a lower,
-    stale non-completed one - is folded down to its highest progress row.
-    """
-    from django.contrib.auth import get_user_model
-
-    user = get_user_model().objects.filter(pk=user_id).first()
-    if user is None:
-        return {"merged": 0, "skipped": 0, "unresolved": []}
-
-    merged = 0
-    unresolved = []
-
-    for rows in duplicate_active_anime_groups(user=user):
-        title = rows[0].item.title
-        try:
-            _merge_duplicate_active_group(rows)
-        except Exception:
-            unresolved.append(title)
-            logger.warning("Dedup crashed for anime %r", title, exc_info=True)
-            continue
-        merged += 1
-
-    return {"merged": merged, "skipped": len(unresolved), "unresolved": unresolved}
 
 
 def anime_rows_needing_conversion(user):

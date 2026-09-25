@@ -76,20 +76,6 @@
       </div>
     {% endif %}
 
-    <div class="bg-[var(--color-surface)] rounded-lg p-6">
-      <h2 class="text-xl font-semibold mb-1">{% translate "Anime Library Maintenance" %}</h2>
-      <p class="text-[var(--color-text-muted)] text-sm mb-4">
-        {% translate "If a show ended up tracked twice (e.g. one in-progress row and a stray duplicate), keep only the one with the highest watched episode. Completed rewatches are never touched." %}
-      </p>
-      <form method="post" action="{% url 'deduplicate_watched_anime' %}">
-        {% csrf_token %}
-        <button type="submit"
-                class="px-3 py-1.5 text-sm rounded-md bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer">
-          {% translate "Deduplicate watched anime" %}
-        </button>
-      </form>
-    </div>
-
     {% for group in credential_groups %}
       <div class="bg-[var(--color-surface)] rounded-lg p-6">
         <div class="flex items-center mb-1">

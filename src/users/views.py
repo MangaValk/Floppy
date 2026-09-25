@@ -1363,21 +1363,6 @@ def convert_anime_library(request):
     return redirect("preferences")
 
 
-@login_required
-@require_POST
-def deduplicate_watched_anime(request):
-    """Fold duplicate active-tracking anime rows into the highest progress one."""
-    from app.tasks_anime_library_repair import deduplicate_watched_anime_task
-
-    deduplicate_watched_anime_task.delay(request.user.id)
-    messages.success(
-        request,
-        "Deduplicating your anime. This runs in the background; completed "
-        "rewatches are never touched, only duplicate in-progress entries.",
-    )
-    return redirect("metadata_settings")
-
-
 @require_GET
 def integrations(request):
     """Render the integrations settings page."""

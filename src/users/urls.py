@@ -93,11 +93,6 @@ urlpatterns = [
         views.convert_anime_library,
         name="convert_anime_library",
     ),
-    path(
-        "settings/metadata/deduplicate-anime",
-        views.deduplicate_watched_anime,
-        name="deduplicate_watched_anime",
-    ),
     path("settings/integrations", views.integrations, name="integrations"),
     path("settings/rss", views.rss_settings, name="rss_settings"),
     path(
