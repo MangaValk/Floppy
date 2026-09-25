@@ -1825,7 +1825,11 @@ def mal_full_sync_preview(request):
         return JsonResponse({
             "pending": True,
             "progress": info.get("percent", 0),
-            "message": info.get("message", "Preparing preview"),
+            "message": info.get(
+                "message",
+                "Waiting for the background worker to finish its current task"
+                if job.state == "PENDING" else "Preparing preview",
+            ),
         }, status=202)
     if job.failed():
         return JsonResponse({"error": "Preview worker failed. Check the worker logs."}, status=502)

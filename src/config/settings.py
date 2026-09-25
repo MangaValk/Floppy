@@ -1649,6 +1649,10 @@ CELERY_TASK_ROUTES = {
     },
     "Sync IMDB ratings from datasets": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Sync MAL ratings from API": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
+    # A user is watching a spinner for this. It makes many provider calls, so
+    # it stays off the single-slot interactive worker, but it must not queue
+    # behind metadata backfills on the background worker.
+    "Preview sync to MyAnimeList": {"priority": CELERY_TASK_PRIORITY_INTERACTIVE},
     "Warm Discover API Cache": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Warm Discover Startup Tabs": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Warm History Day Cache Coverage": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
