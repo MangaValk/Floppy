@@ -304,6 +304,16 @@ def _resolve_mal_from_provider_link(provider, provider_media_id, season_number, 
     return str(link.item.media_id), mapped_episode
 
 
+def per_item_sync_active(user_id):
+    """Return whether saves should queue a per-item push for this user."""
+    return MALAccount.objects.filter(
+        user_id=user_id,
+        sync_enabled=True,
+        per_item_sync_enabled=True,
+        connection_broken=False,
+    ).exists()
+
+
 def queue_grouped_sync(user_id, item):
     """Queue current grouped progress after commit for connected, opted-in users."""
     from app.models import TV
@@ -311,12 +321,7 @@ def queue_grouped_sync(user_id, item):
 
     if item is None or item.library_media_type != MediaTypes.ANIME.value:
         return
-    if not MALAccount.objects.filter(
-        user_id=user_id,
-        sync_enabled=True,
-        per_item_sync_enabled=True,
-        connection_broken=False,
-    ).exists():
+    if not per_item_sync_active(user_id):
         return
     shows = TV.objects.filter(user_id=user_id, item__library_media_type="anime")
     if item.media_type == MediaTypes.TV.value:

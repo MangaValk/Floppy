@@ -177,16 +177,23 @@ class Media(models.Model):
         """Queue an async push of this entry's status to MyAnimeList, if applicable.
 
         No-ops for entries not sourced from MAL (e.g. AniList-backed anime or
-        MangaUpdates-backed manga). Bulk imports bypass save() entirely, so
+        MangaUpdates-backed manga) and for users without an active per-item
+        MAL connection. The push waits for the save to commit, so the worker
+        never reads the previous state. Bulk imports bypass save() entirely, so
         this only fires for interactive edits and webhook-driven updates -
         never as a side effect of importing.
         """
         if self.item.source != Sources.MAL.value:
             return
 
+        from integrations.mal_sync import per_item_sync_active
         from integrations.tasks import sync_mal_status
 
-        sync_mal_status.delay(media_type=media_type, media_id=self.pk)
+        if not per_item_sync_active(self.user_id):
+            return
+        transaction.on_commit(
+            lambda: sync_mal_status.delay(media_type=media_type, media_id=self.pk),
+        )
 
     def _get_local_max_progress(self):
         """Return locally-derived runtime minutes for music/podcast without provider calls."""

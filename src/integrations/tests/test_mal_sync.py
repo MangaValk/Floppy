@@ -94,6 +94,7 @@ class MALSyncModelHooks(TestCase):
             media_type=MediaTypes.ANIME.value,
             title="Test TMDB-sourced Anime",
         )
+        self.account = make_mal_account(self.user)
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_status_change_queues_anime_sync(self, mock_delay, *_mocks):
@@ -106,7 +107,8 @@ class MALSyncModelHooks(TestCase):
         mock_delay.reset_mock()
 
         anime.status = Status.PAUSED.value
-        anime.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            anime.save()
 
         mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
 
@@ -122,7 +124,8 @@ class MALSyncModelHooks(TestCase):
         mock_delay.reset_mock()
 
         anime.progress = 2
-        anime.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            anime.save()
 
         mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
 
@@ -137,7 +140,8 @@ class MALSyncModelHooks(TestCase):
         mock_delay.reset_mock()
 
         manga.score = Decimal("8.0")
-        manga.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            manga.save()
 
         mock_delay.assert_called_once_with(media_type="manga", media_id=manga.pk)
 
@@ -152,7 +156,8 @@ class MALSyncModelHooks(TestCase):
         mock_delay.reset_mock()
 
         anime.notes = "spoiler-free thoughts"
-        anime.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            anime.save()
 
         mock_delay.assert_not_called()
 
@@ -167,18 +172,20 @@ class MALSyncModelHooks(TestCase):
         mock_delay.reset_mock()
 
         anime.status = Status.PAUSED.value
-        anime.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            anime.save()
 
         mock_delay.assert_not_called()
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_creating_with_initial_status_queues_sync(self, mock_delay, *_mocks):
         """Adding a new MAL-backed entry queues a sync too, not just later edits."""
-        anime = Anime.objects.create(
-            user=self.user,
-            item=self.mal_anime_item,
-            status=Status.PAUSED.value,
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            anime = Anime.objects.create(
+                user=self.user,
+                item=self.mal_anime_item,
+                status=Status.PAUSED.value,
+            )
 
         mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
 
@@ -200,8 +207,37 @@ class MALSyncModelHooks(TestCase):
         mock_delay.reset_mock()
 
         anime.status = Status.COMPLETED.value
-        anime.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            anime.save()
 
+        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
+
+    @patch("integrations.tasks.sync_mal_status.delay")
+    def test_no_queue_without_per_item_sync(self, mock_delay, *_mocks):
+        """Users without an active MAL connection never queue a push."""
+        self.account.delete()
+        with self.captureOnCommitCallbacks(execute=True):
+            Anime.objects.create(
+                user=self.user,
+                item=self.mal_anime_item,
+                status=Status.PAUSED.value,
+            )
+
+        mock_delay.assert_not_called()
+
+    @patch("integrations.tasks.sync_mal_status.delay")
+    def test_push_waits_for_the_save_to_commit(self, mock_delay, *_mocks):
+        """The worker must not read the entry before its save commits."""
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            anime = Anime.objects.create(
+                user=self.user,
+                item=self.mal_anime_item,
+                status=Status.PAUSED.value,
+            )
+
+        mock_delay.assert_not_called()
+        for callback in callbacks:
+            callback()
         mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
 
 
