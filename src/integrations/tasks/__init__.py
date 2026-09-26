@@ -119,10 +119,7 @@ _EXPORT_MODULES = {
         ),
         "integrations.tasks._media_imports",
     ),
-    **dict.fromkeys(
-        ("refresh_plex_sections",),
-        "integrations.tasks._plex_sections",
-    ),
+    "refresh_plex_sections": "integrations.tasks._plex_sections",
     **dict.fromkeys(
         (
             "_aggregate_tv_show_collection_metadata",
