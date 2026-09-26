@@ -10,7 +10,7 @@ import secrets
 import zoneinfo
 from datetime import datetime, timedelta
 from http import HTTPStatus
-from urllib.parse import unquote
+from urllib.parse import unquote, urlencode
 
 import croniter
 import requests
@@ -1409,13 +1409,15 @@ def mal_oauth(request):
     state_token = secrets.token_urlsafe(32)
     request.session[state_token] = state
 
-    url = mal_sync.AUTHORIZE_URL
-    mal_client_id = mal_sync.client_id(request.user)
-    return redirect(
-        f"{url}?response_type=code&client_id={mal_client_id}"
-        f"&redirect_uri={redirect_uri}&state={state_token}"
-        f"&code_challenge={code_verifier}&code_challenge_method=plain",
-    )
+    query = urlencode({
+        "response_type": "code",
+        "client_id": mal_sync.client_id(request.user),
+        "redirect_uri": redirect_uri,
+        "state": state_token,
+        "code_challenge": code_verifier,
+        "code_challenge_method": "plain",
+    })
+    return redirect(f"{mal_sync.AUTHORIZE_URL}?{query}")
 
 
 @require_GET
@@ -1459,9 +1461,16 @@ def mal_callback(request):
 @require_POST
 def mal_disconnect(request):
     """Disconnect the user's MyAnimeList account."""
+    from django_celery_beat.models import PeriodicTask
+
     from integrations.models import MALAccount
 
     MALAccount.objects.filter(user=request.user).delete()
+    # The schedule would otherwise keep firing against a missing account.
+    PeriodicTask.objects.filter(
+        _periodic_task_filter_for_user(request.user.id),
+        task=tasks.MAL_FULL_SYNC_TASK_NAME,
+    ).delete()
     messages.success(request, "Disconnected from MyAnimeList.")
     return _integration_redirect(request)
 

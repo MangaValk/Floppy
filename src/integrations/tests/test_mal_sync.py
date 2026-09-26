@@ -3,6 +3,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import requests
 from django.conf import settings
@@ -12,6 +13,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings, tag
 from django.urls import reverse
 from django.utils import timezone
+from django_celery_beat.models import PeriodicTask
 
 from app.models import (
     TV,
@@ -273,6 +275,9 @@ class MALOAuthConnectView(TestCase):
         state_entries = [v for v in self.client.session.values() if isinstance(v, dict)]
         self.assertEqual(len(state_entries), 1)
         self.assertIn("code_verifier", state_entries[0])
+        query = parse_qs(urlparse(response.url).query)
+        self.assertEqual(query["redirect_uri"], [state_entries[0]["redirect_uri"]])
+        self.assertEqual(query["code_challenge"], [state_entries[0]["code_verifier"]])
 
     @patch("app.helpers.supports_oauth_redirect", return_value=False)
     def test_connect_blocked_on_http_only_instance(self, *_mocks):
@@ -385,6 +390,22 @@ class MALDisconnectToggleViews(TestCase):
         """Disconnecting deletes the MALAccount row."""
         self.client.post(reverse("mal_disconnect"))
         self.assertFalse(MALAccount.objects.filter(user=self.user).exists())
+
+    def test_disconnect_removes_the_scheduled_sync(self):
+        """A schedule must not outlive the account it syncs."""
+        self.client.post(
+            reverse("mal_export_schedule_save"),
+            {"frequency": "daily", "time": "03:00"},
+        )
+        self.assertTrue(
+            PeriodicTask.objects.filter(task=tasks.MAL_FULL_SYNC_TASK_NAME).exists(),
+        )
+
+        self.client.post(reverse("mal_disconnect"))
+
+        self.assertFalse(
+            PeriodicTask.objects.filter(task=tasks.MAL_FULL_SYNC_TASK_NAME).exists(),
+        )
 
     def test_toggle_off_then_on(self):
         """The sync toggle can turn syncing off and back on."""
