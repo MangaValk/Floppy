@@ -840,15 +840,6 @@ Options:
 | `--auto-migrate` | Apply the pending migrations, then check again. |
 | `--timeout SECONDS` | Bound the database storage check (default 600 seconds). Startup does not use a fixed bound. It stops its own check only when the check stops making progress; see `docs/architecture/sqlite-recovery-decisions.md`. |
 
-The startup entrypoint's own bound is separate from this flag: raising
-`--timeout` for a manual `floppy_preflight` run does not change how long the
-actual container startup waits before it parks on the SQLite recovery page. If
-the log shows `SQLite integrity check exceeded its 600s timeout` (or the
-recovery page says "The SQLite startup check timed out"), the fix is to set
-`FLOPPY_SQLITE_INTEGRITY_TIMEOUT` (seconds) in the container's environment and
-restart it - for example, `FLOPPY_SQLITE_INTEGRITY_TIMEOUT=1800` for a large
-database that legitimately needs longer than 600 seconds to scan.
-
 The command reads only. `--auto-migrate` is the one exception, and it is for an
 operator at a terminal. Containers do not need it, because the startup sequence
 already applies migrations and retries them.
