@@ -1653,6 +1653,9 @@ CELERY_TASK_ROUTES = {
     # it stays off the single-slot interactive worker, but it must not queue
     # behind metadata backfills on the background worker.
     "Preview sync to MyAnimeList": {"priority": CELERY_TASK_PRIORITY_INTERACTIVE},
+    # A per-item push is one quick API call that follows a watch or an edit.
+    # At default priority it starved behind back-to-back statistics syncs.
+    "Sync status to MyAnimeList": {"priority": CELERY_TASK_PRIORITY_INTERACTIVE},
     "Warm Discover API Cache": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Warm Discover Startup Tabs": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Warm History Day Cache Coverage": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
