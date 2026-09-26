@@ -1562,14 +1562,35 @@ def mal_episode_mapping_save(request):
     if min(item_id, season, episode, mal_id, mal_episode) < 1:
         return JsonResponse({"error": "Episode and MAL numbers must be positive."}, status=400)
 
+    from app.models import Episode, WatchState
+
     show = TV.objects.filter(
         user=request.user,
         item_id=item_id,
         item__library_media_type=MediaTypes.ANIME.value,
-        seasons__item__season_number=season,
-        seasons__episodes__item__episode_number=episode,
-    ).first()
-    if show is None:
+    ).select_related("item").first()
+    # The same two sources grouped_sync_entries reads, so every episode it
+    # reports as a mapping issue can be fixed here.
+    tracked_episodes = set()
+    if show is not None:
+        tracked_episodes = set(
+            Episode.objects.filter(
+                related_season__related_tv=show,
+                related_season__order_archived=False,
+                item__season_number=season,
+            ).values_list("item__episode_number", flat=True)
+        ) | set(
+            WatchState.objects.filter(
+                user=request.user,
+                item__media_type=MediaTypes.EPISODE.value,
+                item__library_media_type=MediaTypes.ANIME.value,
+                item__source=show.tracking_source,
+                item__media_id=show.tracking_media_id,
+                item__season_number=season,
+            ).values_list("item__episode_number", flat=True)
+        )
+        tracked_episodes.discard(None)
+    if episode not in tracked_episodes:
         return JsonResponse({"error": "Tracked anime episode not found."}, status=404)
 
     scope = request.POST.get("scope", "episode")
@@ -1577,18 +1598,7 @@ def mal_episode_mapping_save(request):
         return JsonResponse({"error": "Unsupported mapping scope."}, status=400)
     source_episodes = [episode]
     if scope == "season":
-        source_episodes = list(
-            show.seasons.filter(
-                item__season_number=season,
-                order_archived=False,
-            )
-            .values_list("episodes__item__episode_number", flat=True)
-            .exclude(episodes__item__episode_number__isnull=True)
-            .distinct()
-            .order_by("episodes__item__episode_number")
-        )
-        if not source_episodes:
-            return JsonResponse({"error": "No tracked episodes found for this season."}, status=400)
+        source_episodes = sorted(tracked_episodes)
 
     references = []
     for mapping_offset, source_episode in enumerate(source_episodes):

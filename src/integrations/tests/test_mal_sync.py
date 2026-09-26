@@ -1560,10 +1560,14 @@ class GroupedMALSync(TestCase):
         self.assertEqual(entries[0].status, Status.COMPLETED.value)
 
     def test_season_mapping_is_sequential_across_source_number_gaps(self):
+        from app.models import WatchState
+
         Episode.objects.filter(
             related_season=self.season,
             item__episode_number=2,
         ).delete()
+        # A true gap: no Episode row and no watch state either.
+        WatchState.objects.filter(user=self.user, item__episode_number=2).delete()
         self.client.force_login(self.user)
         response = self.client.post(reverse("mal_episode_mapping_save"), {
             "item_id": self.show_item.pk,
@@ -1632,6 +1636,32 @@ class GroupedMALSync(TestCase):
             2: {"mal_id": 500, "episode": 5},
             3: {"mal_id": 500, "episode": 6},
         })
+
+    def test_watch_state_only_episode_can_be_mapped(self):
+        """Every episode reported as a mapping issue must be fixable, even with no Episode row."""
+        from app.models import WatchState
+
+        fourth_episode_item = Item.objects.create(
+            media_id="100", source="tmdb", media_type="episode",
+            library_media_type="anime", season_number=1,
+            episode_number=4, title="Episode 4",
+        )
+        WatchState.objects.bulk_create([
+            WatchState(user=self.user, item=fourth_episode_item, watched=True),
+        ])
+        self.client.force_login(self.user)
+
+        single = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 4,
+            "mal_id": 500, "mal_episode": 4,
+        })
+        season = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 1,
+            "scope": "season", "mal_id": 500, "mal_episode": 1,
+        })
+
+        self.assertEqual(single.status_code, 200)
+        self.assertEqual(season.json()["mapped"], 4)
 
     def test_manual_mappings_are_grouped_and_revertable(self):
         self.client.force_login(self.user)
