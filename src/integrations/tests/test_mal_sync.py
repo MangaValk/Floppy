@@ -8,6 +8,7 @@ import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from django.core.cache import cache
 from django.test import TestCase, override_settings, tag
 from django.urls import reverse
 from django.utils import timezone
@@ -1313,6 +1314,7 @@ class GroupedMALSync(TestCase):
     """Grouped episode progress is projected per MAL cour without duplicate rows."""
 
     def setUp(self):
+        cache.clear()
         self.user = _make_user()
         self.account = make_mal_account(self.user)
         self.show_item = Item.objects.create(
@@ -1420,7 +1422,7 @@ class GroupedMALSync(TestCase):
         )
         self.assertEqual(Anime.all_objects.filter(user=self.user).count(), 1)
 
-    @patch("integrations.tasks.sync_mal_status.delay")
+    @patch("integrations.tasks.sync_mal_status.apply_async")
     def test_watch_state_queues_grouped_sync_after_commit(self, delay):
         from app.services.watch_state import project_watch_state_for_change
 
@@ -1428,7 +1430,10 @@ class GroupedMALSync(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             project_watch_state_for_change(self.user, episode.item)
             delay.assert_not_called()
-        delay.assert_called_once_with(media_type="tv", media_id=self.show.pk)
+        delay.assert_called_once_with(
+            kwargs={"media_type": "tv", "media_id": self.show.pk},
+            countdown=mal_sync.GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
+        )
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={})
     def test_mapping_issues_persist_and_survive_page_reload(self):
@@ -1712,7 +1717,7 @@ class GroupedMALSync(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["episodes"], [])
 
-    @patch("integrations.tasks.sync_mal_status.delay")
+    @patch("integrations.tasks.sync_mal_status.apply_async")
     def test_per_item_toggle_prevents_grouped_queue(self, delay):
         self.account.per_item_sync_enabled = False
         self.account.save(update_fields=["per_item_sync_enabled"])
@@ -1876,7 +1881,7 @@ class GroupedMALSync(TestCase):
         self.assertEqual(entries, [])
         self.assertEqual(issues, [])
 
-    @patch("integrations.tasks.sync_mal_status.delay")
+    @patch("integrations.tasks.sync_mal_status.apply_async")
     def test_bulk_side_effects_queue_grouped_sync_once(self, delay):
         from app.signals import flush_media_change_side_effects
 
@@ -1886,7 +1891,10 @@ class GroupedMALSync(TestCase):
                 changed_media_type="episode", reason="episode_change",
             )
             delay.assert_not_called()
-        delay.assert_called_once_with(media_type="tv", media_id=self.show.pk)
+        delay.assert_called_once_with(
+            kwargs={"media_type": "tv", "media_id": self.show.pk},
+            countdown=mal_sync.GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
+        )
 
     @patch("integrations.mal_sync.grouped_sync_entries")
     def test_mapping_outage_fails_full_sync_without_leaving_it_queued(self, entries):
@@ -1927,6 +1935,15 @@ class GroupedMALSync(TestCase):
         entries = mal_sync.grouped_sync_entries(self.user)
 
         self.assertEqual({entry.item.media_id: entry.progress for entry in entries}, {"42": 2, "43": 1})
+
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_repeated_triggers_push_a_show_once(self, delay):
+        """One watch fires several signals; the show is still pushed once."""
+        for _ in range(3):
+            with self.captureOnCommitCallbacks(execute=True):
+                mal_sync.queue_grouped_sync(self.user.pk, self.show_item)
+                mal_sync.queue_grouped_sync(self.user.pk, self.season.item)
+        delay.assert_called_once()
 
 
 class SyncMALStatusTask(TestCase):

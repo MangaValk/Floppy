@@ -83,7 +83,8 @@ Rewatches do not count as additional episodes. Unmapped episodes are skipped;
 sync does not guess a MAL title from a show name or season number.
 
 Episode watch-state changes, show/season edits, and bulk episode actions queue
-automatic sync after commit when per-item sync is enabled. Full sync continues
+automatic sync after commit when per-item sync is enabled. Triggers for the
+same show within five seconds collapse into one push, sent after that window. Full sync continues
 to respect the account's status and rating filters. Preview requests unfiltered
 MAL lists so provider-filtered titles are not repeatedly reported as missing.
 

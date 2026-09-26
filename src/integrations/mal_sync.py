@@ -17,6 +17,7 @@ from datetime import timedelta
 
 import requests
 from django.apps import apps
+from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
@@ -33,6 +34,9 @@ API_BASE_URL = "https://api.myanimelist.net/v2"
 
 # Refresh slightly before the real expiry so a push never races an expiring token.
 EXPIRY_LEEWAY = timedelta(minutes=2)
+
+# Triggers for one grouped show inside this window collapse into one push.
+GROUPED_SYNC_DEBOUNCE_SECONDS = 5
 
 ANIME_STATUS_TO_MAL = {
     Status.COMPLETED.value: "completed",
@@ -335,12 +339,21 @@ def queue_grouped_sync(user_id, item):
         )
     else:
         return
-    for show_id in shows.values_list("pk", flat=True).distinct():
-        transaction.on_commit(
-            lambda show_id=show_id: sync_mal_status.delay(
-                media_type="tv", media_id=show_id,
-            ),
+    def send(show_id):
+        # A watch fires several triggers (watch state, episode, season). The
+        # first one reserves the window; the push runs after it closes, so it
+        # reads every change that committed inside it and is sent only once.
+        if not cache.add(
+            f"mal_grouped_sync:{show_id}", 1, timeout=GROUPED_SYNC_DEBOUNCE_SECONDS,
+        ):
+            return
+        sync_mal_status.apply_async(
+            kwargs={"media_type": "tv", "media_id": show_id},
+            countdown=GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
         )
+
+    for show_id in shows.values_list("pk", flat=True).distinct():
+        transaction.on_commit(lambda show_id=show_id: send(show_id))
 
 
 def ignored_mapping_item_ids(user):
