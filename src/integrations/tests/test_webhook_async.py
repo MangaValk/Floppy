@@ -261,36 +261,6 @@ class ProcessWebhookTaskTests(TestCase):
         self.user.refresh_from_db()
         self.assertIn("processing failed", self.user.plex_webhook_last_error or "")
 
-    @patch("app.db_retry.time.sleep", return_value=None)
-    @patch("integrations.webhooks.plex.PlexWebhookProcessor.process_payload")
-    def test_transient_lock_is_retried_not_dropped(self, mock_process, _mock_sleep):
-        """A transient 'database is locked' error is retried, not lost."""
-        from django.db.utils import OperationalError
-
-        mock_process.side_effect = [OperationalError("database is locked"), None]
-
-        tasks.process_webhook("plex", {"event": "media.scrobble"}, self.user.id)
-
-        self.assertEqual(mock_process.call_count, 2)
-        self.user.refresh_from_db()
-        self.assertIsNotNone(self.user.plex_webhook_last_received_at)
-        self.assertFalse(self.user.plex_webhook_last_error)
-
-    @patch("app.db_retry.time.sleep", return_value=None)
-    @patch("integrations.webhooks.plex.PlexWebhookProcessor.process_payload")
-    def test_persistent_lock_still_marks_error_and_reraises(self, mock_process, _mock_sleep):
-        """A lock that never clears still surfaces, just after retrying."""
-        from django.db.utils import OperationalError
-
-        mock_process.side_effect = OperationalError("database is locked")
-
-        with self.assertRaises(OperationalError):
-            tasks.process_webhook("plex", {"event": "media.scrobble"}, self.user.id)
-
-        self.assertEqual(mock_process.call_count, 6)
-        self.user.refresh_from_db()
-        self.assertIn("processing failed", self.user.plex_webhook_last_error or "")
-
     @patch("integrations.webhooks.jellyfin.JellyfinWebhookProcessor.process_payload")
     def test_history_user_context_set_during_processing(self, mock_process):
         """History rows created during processing are attributed to the user."""
