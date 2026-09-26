@@ -43,6 +43,13 @@ the mapping gives no TMDB or TVDB identity for: nothing can be resolved or
 classified, so the flat row is the only shape available and the reason is
 logged.
 
+The one exception to stickiness is opt-in. With **Track scrobbled anime per
+episode** (`User.group_scrobbled_anime`, on the Sync to Trackers page) turned on, a
+played episode that routes to a flat MAL entry is instead logged against the
+entry's TMDB season in the grouped shape. An existing flat entry is converted
+first with the same migration as marking an episode by hand. If the mapping has
+no TMDB season, or the migration refuses, the flat entry is updated as before.
+
 `anime_library_mode` is a display setting on top of this. It decides which
 library surfaces grouped anime - Anime, TV Shows, or both - and never changes
 where a scrobble is stored.
