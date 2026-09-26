@@ -739,11 +739,7 @@ def _local_pull_updates(media_type, media, current, mal_account):
             if media.status != Status.IN_PROGRESS.value:
                 updates["status"] = Status.IN_PROGRESS.value
         elif mapped_status and mapped_status != media.status:
-            updates["status"] = (
-                Status.IN_PROGRESS.value
-                if mapped_status == Status.PLANNING.value
-                else mapped_status
-            )
+            updates["status"] = mapped_status
     elif (
         local_progress == 0
         and mapped_status in ZERO_PROGRESS_STATUS_PULLS

@@ -556,10 +556,11 @@ STALE_FULL_SYNC_AGE = timedelta(minutes=15)
 
 
 class MALAccount(models.Model):
-    """Store a user's MyAnimeList OAuth connection, used to push watch status.
+    """Store a user's MyAnimeList OAuth connection, used to sync watch status.
 
-    Send-only: Floppy pushes status/progress/score changes to MyAnimeList and
-    never pulls changes back from it (that's the separate MAL import).
+    Floppy pushes status/progress/score to MyAnimeList. A full sync can also
+    adopt higher MAL progress and missing ratings locally, when enabled
+    (pull_higher_progress_enabled, pull_ratings_enabled).
     """
 
     user = models.OneToOneField(

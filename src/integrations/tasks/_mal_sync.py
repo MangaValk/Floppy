@@ -1,7 +1,8 @@
-"""Celery tasks for pushing watch status to MyAnimeList.
+"""Celery tasks for syncing watch status with MyAnimeList.
 
-Send-only: these tasks push Floppy's status/progress/score to MyAnimeList and
-never pull changes back (that's the separate MAL import in integrations.imports.mal).
+These tasks push Floppy's status/progress/score to MyAnimeList. A full sync
+first adopts higher MAL progress and missing ratings when the account allows
+it; the full MAL import stays in integrations.imports.mal.
 """
 
 import logging

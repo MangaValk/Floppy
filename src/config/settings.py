@@ -1225,7 +1225,7 @@ MAL_NSFW = config("MAL_NSFW", default=False, cast=bool)
 # Only used to sync watch status back to MyAnimeList. Unlike MAL_API (search),
 # OAuth requires a redirect URI registered to a specific app, so this can't
 # ship a shared default the way IGDB_SECRET does - each user or instance
-# needs their own MyAnimeList API application (see docs/mal-sync.md).
+# needs their own MyAnimeList API application (see integrations.mal_sync).
 MAL_API_SECRET = config(
     "MAL_API_SECRET",
     default=secret(
