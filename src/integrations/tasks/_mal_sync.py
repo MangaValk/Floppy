@@ -5,6 +5,7 @@ never pull changes back (that's the separate MAL import in integrations.imports.
 """
 
 import logging
+from datetime import timedelta
 
 import requests
 from celery import shared_task
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 MAL_SYNC_TASK_NAME = "Sync status to MyAnimeList"
 MAL_FULL_SYNC_TASK_NAME = "Full sync to MyAnimeList"
+HEARTBEAT_INTERVAL = timedelta(minutes=1)
 
 
 @shared_task(name="Preview sync to MyAnimeList", ignore_result=False, bind=True)
@@ -63,6 +65,24 @@ def _mark_connection_broken(mal_account, message):
     mal_account.last_failed_at = timezone.now()
     mal_account.save(update_fields=["sync_enabled", "last_failed_at", "updated_at"])
     connection_health.record_failure(mal_account, message, auth=True)
+
+
+def _heartbeat(mal_account):
+    """Return a progress callback that keeps a long entry build from looking stale.
+
+    Building grouped anime entries can take minutes before the first push
+    saves progress; reconcile_stale_full_sync would otherwise fail a live sync.
+    """
+    last_beat = timezone.now()
+
+    def beat(*_args):
+        nonlocal last_beat
+        now = timezone.now()
+        if now - last_beat >= HEARTBEAT_INTERVAL:
+            MALAccount.objects.filter(pk=mal_account.pk).update(updated_at=now)
+            last_beat = now
+
+    return beat
 
 
 @shared_task(
@@ -208,6 +228,7 @@ def bulk_sync_mal_status(user_id):
         full_sync_status=MALFullSyncStatus.RUNNING,
         full_sync_started_at=timezone.now(),
         full_sync_completed_at=None,
+        updated_at=timezone.now(),
     )
     if not claimed:
         return
@@ -235,7 +256,12 @@ def bulk_sync_mal_status(user_id):
 
     mapping_issues = []
     try:
-        entries = mal_sync.full_sync_entries(user, mal_account, mapping_issues=mapping_issues)
+        entries = mal_sync.full_sync_entries(
+            user,
+            mal_account,
+            mapping_issues=mapping_issues,
+            progress_callback=_heartbeat(mal_account),
+        )
     except services.ProviderAPIError:
         mal_account.full_sync_status = MALFullSyncStatus.FAILED
         mal_account.full_sync_total = 0
@@ -425,6 +451,7 @@ def retry_failed_mal_status(user_id):
         full_sync_status=MALFullSyncStatus.RUNNING,
         full_sync_started_at=timezone.now(),
         full_sync_completed_at=None,
+        updated_at=timezone.now(),
     )
     if not claimed:
         return
@@ -433,7 +460,10 @@ def retry_failed_mal_status(user_id):
     mapping_issues = []
     try:
         entries = mal_sync.full_sync_entries(
-            user, mal_account, mapping_issues=mapping_issues,
+            user,
+            mal_account,
+            mapping_issues=mapping_issues,
+            progress_callback=_heartbeat(mal_account),
         )
     except services.ProviderAPIError:
         mal_account.full_sync_status = MALFullSyncStatus.FAILED

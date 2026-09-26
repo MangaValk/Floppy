@@ -2084,6 +2084,33 @@ class BulkSyncMALStatusTask(TestCase):
             tasks.bulk_sync_mal_status(user_id=self.user.pk)
         mock_push.assert_not_called()
 
+    def test_a_status_poll_during_the_entry_build_does_not_fail_the_sync(self):
+        """Claiming a sync refreshes the heartbeat, even on a long-idle account."""
+        account = make_mal_account(self.user, pull_higher_progress_enabled=False)
+        MALAccount.objects.filter(pk=account.pk).update(
+            updated_at=timezone.now() - timedelta(hours=1),
+        )
+        real_entries = mal_sync.full_sync_entries
+        polled = []
+
+        def poll_then_build(*args, **kwargs):
+            polled.append(
+                mal_sync.reconcile_stale_full_sync(
+                    MALAccount.objects.get(pk=account.pk),
+                ).full_sync_status,
+            )
+            return real_entries(*args, **kwargs)
+
+        with (
+            patch("integrations.mal_sync.full_sync_entries", side_effect=poll_then_build),
+            patch("integrations.mal_sync.push_status"),
+        ):
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        self.assertEqual(polled, ["running"])
+        account.refresh_from_db()
+        self.assertEqual(account.full_sync_status, "completed")
+
     def test_running_sync_is_not_overwritten_by_duplicate_task(self):
         account = make_mal_account(self.user)
         account.full_sync_status = "running"

@@ -1730,6 +1730,7 @@ def mal_full_sync(request):
             full_sync_results=[],
             full_sync_started_at=None,
             full_sync_completed_at=None,
+            updated_at=timezone.now(),
         )
         if not queued:
             messages.info(request, "A full MyAnimeList sync is already in progress.")
@@ -1762,7 +1763,10 @@ def mal_full_sync_retry_failed(request):
 
         queued = type(mal_account).objects.filter(pk=mal_account.pk).exclude(
             full_sync_status__in=[MALFullSyncStatus.QUEUED, MALFullSyncStatus.RUNNING],
-        ).update(full_sync_status=MALFullSyncStatus.QUEUED)
+        ).update(
+            full_sync_status=MALFullSyncStatus.QUEUED,
+            updated_at=timezone.now(),
+        )
         if not queued:
             messages.info(request, "A MyAnimeList sync is already in progress.")
             return _integration_redirect(request)
