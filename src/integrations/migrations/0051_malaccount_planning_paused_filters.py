@@ -5,8 +5,13 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
 
+    # Its number before the squash; a database that ran it records this one.
+    replaces = [
+        ('integrations', '0055_malaccount_planning_paused_filters'),
+    ]
+
     dependencies = [
-        ('integrations', '0054_merge_20260925_2341'),
+        ('integrations', '0050_malaccount'),
     ]
 
     operations = [
