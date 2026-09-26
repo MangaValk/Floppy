@@ -2810,6 +2810,14 @@ def update_jellyfin_webhook_events(request):
     return redirect("integrations")
 
 
+@require_POST
+def update_group_scrobbled_anime(request):
+    """Toggle converting flat MAL anime to per-episode tracking on scrobble."""
+    request.user.group_scrobbled_anime = request.POST.get("enabled") == "true"
+    request.user.save(update_fields=["group_scrobbled_anime"])
+    return redirect("mal_export")
+
+
 def _plex_library_values(account):
     """Return the library keys currently available through a Plex account."""
     if not account or not account.plex_token:

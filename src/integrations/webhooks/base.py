@@ -2376,9 +2376,10 @@ class BaseWebhookProcessor:
         )
 
         anibridge_data = anime_mappings.fetch_mapping_data()
-        for mapping_entry in anime_mappings.find_entries_for_mal_id(
+        mapping_entries = anime_mappings.find_entries_for_mal_id(
             anibridge_data, media_id
-        ):
+        )
+        for mapping_entry in mapping_entries:
             tmdb_id = mapping_entry.get("tmdb_id")
             tvdb_id = mapping_entry.get("tvdb_id")
             season_number = mapping_entry.get("season_number")
@@ -2415,6 +2416,15 @@ class BaseWebhookProcessor:
                     season_number=season_number,
                     episode_offset=episode_offset,
                 )
+
+        if (
+            user.group_scrobbled_anime
+            and self._is_played(payload)
+            and self._scrobble_to_grouped_anime(
+                anime_item, episode_number, mapping_entries, payload, user
+            )
+        ):
+            return True
 
         anime_instances = app.models.Anime.objects.filter(item=anime_item, user=user)
         current_instance = select_preferred_activity_entry(anime_instances)
@@ -2460,6 +2470,61 @@ class BaseWebhookProcessor:
                 status,
                 episode_number,
             )
+        return True
+
+    def _scrobble_to_grouped_anime(
+        self, anime_item, mal_episode_number, mapping_entries, payload, user
+    ):
+        """Log a MAL-mapped episode as grouped anime, converting a flat entry first.
+
+        Returns False when there is no TMDB season to log against or the
+        conversion is refused, so the caller keeps the flat entry.
+        """
+        from app.services import anime_migration
+
+        target = next(
+            (
+                entry
+                for entry in mapping_entries
+                if entry.get("tmdb_id") not in (None, "")
+                and entry.get("season_number") is not None
+            ),
+            None,
+        )
+        if target is None:
+            return False
+
+        if app.models.Anime.objects.filter(
+            user=user,
+            item=anime_item,
+            migrated_to_item__isnull=True,
+        ).exists():
+            try:
+                anime_migration.migrate_flat_anime_to_grouped(
+                    user,
+                    anime_item,
+                    Sources.TMDB.value,
+                )
+            except anime_migration.AnimeMigrationError as exc:
+                logger.warning(
+                    "Keeping MAL %s flat; per-episode conversion refused: %s",
+                    anime_item.media_id,
+                    exc,
+                )
+                return False
+            logger.info(
+                "Converted MAL %s to per-episode tracking on scrobble",
+                anime_item.media_id,
+            )
+
+        self._handle_tv_episode(
+            str(target["tmdb_id"]),
+            target["season_number"],
+            mal_episode_number + (target.get("episode_offset") or 0),
+            payload,
+            user,
+            library_media_type=MediaTypes.ANIME.value,
+        )
         return True
 
     def _queue_collection_metadata_update(self, payload, user, item):
