@@ -594,6 +594,14 @@ class MALAccount(models.Model):
         default=True,
         help_text="Include Dropped entries in a full sync to MyAnimeList",
     )
+    sync_filter_planning = models.BooleanField(
+        default=False,
+        help_text="Include Planning entries in a full sync to MyAnimeList",
+    )
+    sync_filter_paused = models.BooleanField(
+        default=False,
+        help_text="Include Paused entries in a full sync to MyAnimeList",
+    )
     sync_filter_rated_only = models.BooleanField(
         default=False,
         help_text="Only include entries that have a score set in a full sync to MyAnimeList",

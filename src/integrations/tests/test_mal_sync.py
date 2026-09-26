@@ -2377,6 +2377,17 @@ class FullSyncEntriesFilters(TestCase):
             },
         )
 
+    def test_planning_and_paused_can_be_opted_in(self):
+        self.account.sync_filter_planning = True
+        self.account.sync_filter_paused = True
+        self.account.save(update_fields=["sync_filter_planning", "sync_filter_paused"])
+
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertTrue(
+            {"Planning Anime", "Paused Anime"} <= {media.item.title for media in entries},
+        )
+
     def test_unchecking_completed_drops_completed_only(self):
         self.account.sync_filter_completed = False
         self.account.save(update_fields=["sync_filter_completed"])
@@ -2451,7 +2462,7 @@ class MALSyncFiltersView(TestCase):
         account = make_mal_account(self.user)
         response = self.client.post(
             reverse("mal_sync_filters_save"),
-            {"dropped": "on", "rated_only": "on"},
+            {"dropped": "on", "paused": "on", "rated_only": "on"},
             follow=True,
         )
 
@@ -2460,6 +2471,8 @@ class MALSyncFiltersView(TestCase):
         self.assertFalse(account.sync_filter_completed)
         self.assertFalse(account.sync_filter_in_progress)
         self.assertTrue(account.sync_filter_dropped)
+        self.assertFalse(account.sync_filter_planning)
+        self.assertTrue(account.sync_filter_paused)
         self.assertTrue(account.sync_filter_rated_only)
         self.assertFalse(account.sync_ratings_enabled)
         self.assertFalse(account.pull_higher_progress_enabled)

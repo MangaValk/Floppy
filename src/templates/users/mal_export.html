@@ -627,6 +627,20 @@
           </label>
           <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
             <input type="checkbox"
+                   name="planning"
+                   {% if mal_account.sync_filter_planning %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Planning" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
+                   name="paused"
+                   {% if mal_account.sync_filter_paused %}checked{% endif %}
+                   class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+            {% translate "Paused" %}
+          </label>
+          <label class="flex items-center text-sm text-[var(--color-text-secondary)]">
+            <input type="checkbox"
                    name="rated_only"
                    {% if mal_account.sync_filter_rated_only %}checked{% endif %}
                    class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">

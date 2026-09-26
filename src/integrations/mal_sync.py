@@ -650,6 +650,10 @@ def full_sync_entries(
         included_statuses.add(Status.IN_PROGRESS.value)
     if mal_account is None or mal_account.sync_filter_dropped:
         included_statuses.add(Status.DROPPED.value)
+    if mal_account is not None and mal_account.sync_filter_planning:
+        included_statuses.add(Status.PLANNING.value)
+    if mal_account is not None and mal_account.sync_filter_paused:
+        included_statuses.add(Status.PAUSED.value)
 
     filters = {
         "user": user,

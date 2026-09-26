@@ -1507,6 +1507,8 @@ def mal_sync_filters_save(request):
     mal_account.sync_filter_completed = request.POST.get("completed") == "on"
     mal_account.sync_filter_in_progress = request.POST.get("in_progress") == "on"
     mal_account.sync_filter_dropped = request.POST.get("dropped") == "on"
+    mal_account.sync_filter_planning = request.POST.get("planning") == "on"
+    mal_account.sync_filter_paused = request.POST.get("paused") == "on"
     mal_account.sync_filter_rated_only = request.POST.get("rated_only") == "on"
     mal_account.sync_ratings_enabled = request.POST.get("sync_ratings") == "on"
     mal_account.pull_higher_progress_enabled = request.POST.get("pull_higher_progress") == "on"
@@ -1516,6 +1518,8 @@ def mal_sync_filters_save(request):
             "sync_filter_completed",
             "sync_filter_in_progress",
             "sync_filter_dropped",
+            "sync_filter_planning",
+            "sync_filter_paused",
             "sync_filter_rated_only",
             "sync_ratings_enabled",
             "pull_higher_progress_enabled",
