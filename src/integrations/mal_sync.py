@@ -772,7 +772,16 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
             item__source=Sources.MAL.value,
             status__isnull=False,
         ).select_related("item")
+        # A rewatch is its own row; only the row full sync would push speaks
+        # for the MAL entry, so an in-progress rewatch is never overwritten.
+        best_rows = {}
         for media in rows:
+            current_best = best_rows.get(media.item_id)
+            if current_best is None or (media.progress or 0) > (
+                current_best.progress or 0
+            ):
+                best_rows[media.item_id] = media
+        for media in best_rows.values():
             current = remote.get(str(media.item.media_id))
             updates = _local_pull_updates(media_type, media, current, mal_account)
             if updates:

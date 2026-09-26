@@ -486,6 +486,33 @@ class PullHigherMALProgress(TestCase):
         self.assertEqual(anime.progress, 10)
         self.assertEqual(anime.status, Status.IN_PROGRESS.value)
 
+    def test_an_in_progress_rewatch_row_is_not_overwritten(self, *_mocks):
+        """Only the highest row speaks for the MAL entry; a rewatch keeps its count."""
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.COMPLETED.value, progress=24,
+            )
+            rewatch = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.IN_PROGRESS.value, progress=3,
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {
+                    "status": "completed", "num_episodes_watched": 24,
+                }},
+                "manga": {},
+            },
+        )
+
+        rewatch.refresh_from_db()
+        self.assertEqual(corrected, [])
+        self.assertEqual(rewatch.progress, 3)
+        self.assertEqual(rewatch.status, Status.IN_PROGRESS.value)
+
     def test_planned_remote_status_is_pulled_when_floppy_has_no_progress(self, *_mocks):
         with patch("integrations.tasks.sync_mal_status.delay"):
             anime = Anime.objects.create(
@@ -1921,6 +1948,24 @@ class SyncMALStatusTask(TestCase):
         with patch("integrations.mal_sync.push_status") as mock_push:
             tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
         mock_push.assert_called_once_with(self.anime, account)
+
+    def test_saving_a_rewatch_row_pushes_the_completed_row(self):
+        """A lower rewatch row must not replace a completed MAL entry."""
+        account = make_mal_account(self.user)
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            completed = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.COMPLETED.value, progress=12,
+            )
+            rewatch = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.IN_PROGRESS.value, progress=3,
+            )
+
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.sync_mal_status(media_type="anime", media_id=rewatch.pk)
+
+        mock_push.assert_called_once_with(completed, account)
 
     def test_noop_when_media_has_no_status(self):
         """Statusless imported media has no MAL list status to push."""

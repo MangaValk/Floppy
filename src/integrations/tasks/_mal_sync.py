@@ -123,6 +123,17 @@ def sync_mal_status(media_type, media_id):
             if media is None:
                 return
             media_type = "tv"
+        if media_type != "tv":
+            # Push the row full sync would push, so saving a rewatch row
+            # doesn't replace a completed MAL entry with the rewatch's count.
+            media = (
+                model.objects.filter(
+                    user=media.user, item=media.item, status__isnull=False,
+                )
+                .select_related("item")
+                .order_by("-progress", "pk")
+                .first()
+            ) or media
         entries = (
             mal_sync.grouped_sync_entries(media.user, tv=media)
             if media_type == "tv" else [media]
