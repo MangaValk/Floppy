@@ -45,6 +45,7 @@ from app.log_safety import exception_summary
 from app.models import TV, Item, MediaTypes, Movie, Sources
 from app.providers import credentials, services
 from app.redis_diagnosis import queue_failure_message
+from app.templatetags.app_tags import media_url
 from integrations import (
     audiobookshelf_cover as abs_cover_proxy,
 )
@@ -1872,6 +1873,9 @@ def mal_full_sync_preview(request):
     if job.failed():
         return JsonResponse({"error": "Preview worker failed. Check the worker logs."}, status=502)
     result = job.result
+    # The worker can't reverse() URLs (its URLconf is empty), so pages are linked here.
+    for entry in result.get("changes", []):
+        entry["url"] = media_url(entry.pop("link"))
     return JsonResponse(result, status=502 if "error" in result else 200)
 
 

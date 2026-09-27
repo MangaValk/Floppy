@@ -875,20 +875,27 @@ def entry_key(media):
     return f"{media.item.media_type}:{media.item.media_id}"
 
 
-def _detail_url(media):
-    """Return Floppy's detail page for a sync entry (the grouped show when there is one)."""
-    from app.templatetags.app_tags import media_url
+def _detail_link(media):
+    """Return `media_url` input for a sync entry's page (its grouped show when it has one).
 
+    The URL itself is built by the web request: this runs in a Celery worker,
+    whose URLconf is empty, so `reverse()` can't resolve pages here.
+    """
     show = getattr(media, "grouped_tv", None)
     if show is not None:
-        return media_url({
+        return {
             "media_type": MediaTypes.TV.value,
             "route_media_type": MediaTypes.ANIME.value,
             "source": show.item.source,
             "media_id": show.item.media_id,
             "title": show.item.title,
-        })
-    return media_url(media.item)
+        }
+    return {
+        "media_type": media.item.media_type,
+        "source": media.item.source,
+        "media_id": media.item.media_id,
+        "title": media.item.title,
+    }
 
 
 def pull_mal_entry(media, current):
@@ -1015,7 +1022,7 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
                 {
                     "key": entry_key(media),
                     "title": media.item.title,
-                    "url": _detail_url(media),
+                    "link": _detail_link(media),
                     "media_type": media_type.title(),
                     "mal_id": str(media.item.media_id),
                     "not_on_list": current is None,

@@ -999,7 +999,9 @@ class PreviewFullSync(TestCase):
             },
         ]
 
-        preview = mal_sync.preview_full_sync(self.user, self.account)
+        # Previews run in a Celery worker, whose URLconf is empty.
+        with override_settings(ROOT_URLCONF="config.celery_urls"):
+            preview = mal_sync.preview_full_sync(self.user, self.account)
 
         self.assertEqual(
             preview,
@@ -1007,15 +1009,12 @@ class PreviewFullSync(TestCase):
                 {
                     "key": "anime:42",
                     "title": "Changed Anime",
-                    "url": reverse(
-                        "media_details",
-                        kwargs={
-                            "source": "mal",
-                            "media_type": "anime",
-                            "media_id": "42",
-                            "title": "changed-anime",
-                        },
-                    ),
+                    "link": {
+                        "media_type": "anime",
+                        "source": "mal",
+                        "media_id": "42",
+                        "title": "Changed Anime",
+                    },
                     "media_type": "Anime",
                     "mal_id": "42",
                     "not_on_list": False,
@@ -3005,6 +3004,45 @@ class MALFullSyncView(TestCase):
         make_mal_account(other)
         self.client.force_login(other)
         self.assertEqual(self.client.get(reverse("mal_full_sync_preview"), {"token": token}).status_code, 404)
+
+    @patch("integrations.tasks.preview_mal_sync.delay")
+    def test_preview_result_links_each_title_to_its_page(self, delay):
+        """The web request turns the worker's link fields into a detail URL."""
+        make_mal_account(self.user)
+        delay.return_value.id = "preview-task"
+        token = self.client.post(reverse("mal_full_sync_preview")).json()["token"]
+        with patch("integrations.tasks.preview_mal_sync.AsyncResult") as result:
+            result.return_value.ready.return_value = True
+            result.return_value.failed.return_value = False
+            result.return_value.result = {
+                "changes": [{
+                    "key": "tv:1",
+                    "link": {
+                        "media_type": "tv",
+                        "route_media_type": "anime",
+                        "source": "tvdb",
+                        "media_id": "284131",
+                        "title": "Nanatsu no Taizai",
+                    },
+                }],
+                "mapping_issues": [],
+                "count": 1,
+            }
+            completed = self.client.get(reverse("mal_full_sync_preview"), {"token": token})
+        change = completed.json()["changes"][0]
+        self.assertNotIn("link", change)
+        self.assertEqual(
+            change["url"],
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": "tvdb",
+                    "media_type": "anime",
+                    "media_id": "284131",
+                    "title": "nanatsu-no-taizai",
+                },
+            ),
+        )
 
     @patch("integrations.mal_sync.preview_full_sync", side_effect=ValueError("bad mapping"))
     def test_preview_worker_returns_safe_error(self, preview):
