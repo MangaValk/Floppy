@@ -725,7 +725,13 @@ def _fetch_list_statuses(media_type, mal_account):
 
 
 def _local_pull_updates(media_type, media, current, mal_account):
-    """Return local field updates that should be adopted from MAL before pushing."""
+    """Return local field updates that should be adopted from MAL before pushing.
+
+    Progress (and the status that follows it) is only pulled when the account
+    allows it, and never for a grouped show: its progress is its episode
+    history, which can't be raised without inventing watches. The preview and
+    the full sync both use this, so the preview shows only what a sync applies.
+    """
     if not current:
         return {}
 
@@ -734,7 +740,15 @@ def _local_pull_updates(media_type, media, current, mal_account):
     remote_progress = current.get(response_field)
     mapped_status = MAL_STATUS_TO_FLOPPY[media_type].get(current.get("status"))
     local_progress = media.progress or 0
-    if isinstance(remote_progress, int) and remote_progress > local_progress:
+    pull_progress = (
+        mal_account.pull_higher_progress_enabled
+        and getattr(media, "grouped_tv", None) is None
+    )
+    if (
+        pull_progress
+        and isinstance(remote_progress, int)
+        and remote_progress > local_progress
+    ):
         updates["progress"] = remote_progress
         if mapped_status == Status.PLANNING.value:
             if media.status != Status.IN_PROGRESS.value:
@@ -742,7 +756,8 @@ def _local_pull_updates(media_type, media, current, mal_account):
         elif mapped_status and mapped_status != media.status:
             updates["status"] = mapped_status
     elif (
-        local_progress == 0
+        pull_progress
+        and local_progress == 0
         and mapped_status in ZERO_PROGRESS_STATUS_PULLS
         and mapped_status != media.status
     ):
@@ -753,6 +768,21 @@ def _local_pull_updates(media_type, media, current, mal_account):
         if isinstance(remote_score, int) and remote_score > 0:
             updates["score"] = remote_score
     return updates
+
+
+def pull_grouped_rating(media, current, mal_account):
+    """Adopt MAL's rating on a grouped show that has none, as the preview offers.
+
+    `pull_higher_mal_progress` only covers flat rows; a grouped entry is a
+    transient per-cour projection, so its rating lands on the show.
+    """
+    show = getattr(media, "grouped_tv", None)
+    if show is None:
+        return
+    updates = _local_pull_updates(media.item.media_type, media, current, mal_account)
+    if "score" in updates:
+        media.score = show.score = updates["score"]
+        show.save(update_fields=["score"])
 
 
 def pull_higher_mal_progress(user, mal_account, remote_statuses=None, only=None):

@@ -2235,6 +2235,57 @@ class BulkSyncMALStatusTask(TestCase):
             (Status.DROPPED.value, 5, 7),
         )
 
+    def test_rating_pull_runs_without_progress_pull(self):
+        """A rating the preview offers is pulled even when progress pulls are off."""
+        make_mal_account(self.user, pull_higher_progress_enabled=False)
+        remote = {
+            "anime": {
+                "1": {"status": "watching", "num_episodes_watched": 9, "score": 8},
+            },
+            "manga": {},
+        }
+        with (
+            patch(
+                "integrations.mal_sync._fetch_list_statuses",
+                side_effect=lambda media_type, _account: remote[media_type],
+            ),
+            patch("integrations.mal_sync.push_status"),
+            patch("integrations.tasks.sync_mal_status.delay"),
+        ):
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        self.anime.refresh_from_db()
+        self.assertEqual((self.anime.score, self.anime.progress), (8, 0))
+
+    def test_grouped_show_takes_the_mal_rating(self):
+        """A grouped entry's pulled rating lands on its show."""
+        account = make_mal_account(self.user)
+        show = MagicMock(score=None)
+        media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
+        media.grouped_tv = show
+
+        mal_sync.pull_grouped_rating(
+            media, {"status": "watching", "num_episodes_watched": 9, "score": 7}, account,
+        )
+
+        self.assertEqual(show.score, 7)
+        show.save.assert_called_once_with(update_fields=["score"])
+
+    def test_grouped_entry_never_offers_a_progress_pull(self):
+        """Grouped progress is episode history, so only a rating can be pulled."""
+        account = make_mal_account(self.user)
+        media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
+        media.grouped_tv = MagicMock()
+
+        updates = mal_sync._local_pull_updates(
+            MediaTypes.ANIME.value,
+            media,
+            {"status": "completed", "num_episodes_watched": 12, "score": 7},
+            account,
+        )
+
+        self.assertEqual(updates, {"score": 7})
+
     def test_a_status_poll_during_the_entry_build_does_not_fail_the_sync(self):
         """Claiming a sync refreshes the heartbeat, even on a long-idle account."""
         account = make_mal_account(self.user, pull_higher_progress_enabled=False)

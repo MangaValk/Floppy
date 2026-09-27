@@ -241,13 +241,16 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
         return
 
     remote_statuses = {}
+    pulls_enabled = (
+        mal_account.pull_higher_progress_enabled or mal_account.pull_ratings_enabled
+    )
     try:
-        if mal_account.pull_higher_progress_enabled or pull:
+        if pulls_enabled or pull:
             remote_statuses = {
                 media_type: mal_sync._fetch_list_statuses(media_type, mal_account)
                 for media_type in ("anime", "manga")
             }
-        if mal_account.pull_higher_progress_enabled:
+        if pulls_enabled:
             mal_sync.pull_higher_mal_progress(
                 user, mal_account, remote_statuses, only=selected,
             )
@@ -329,13 +332,15 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
             "mal_id": str(media.item.media_id),
         }
         try:
+            current = remote_statuses.get(media.item.media_type, {}).get(
+                str(media.item.media_id),
+            )
             if mal_sync.entry_key(media) in pull:
-                current = remote_statuses.get(media.item.media_type, {}).get(
-                    str(media.item.media_id),
-                )
                 mal_sync.pull_mal_entry(media, current)
                 result["reason"] = "Pulled from MyAnimeList"
             else:
+                if pulls_enabled:
+                    mal_sync.pull_grouped_rating(media, current, mal_account)
                 mal_sync.push_status(media, mal_account)
                 result["reason"] = ""
             synced += 1
