@@ -180,13 +180,19 @@ def sync_mal_status(media_type, media_id):
 
 
 @shared_task(name=MAL_FULL_SYNC_TASK_NAME)
-def bulk_sync_mal_status(user_id):
+def bulk_sync_mal_status(user_id, selected=None, pull=None):
     """Push every MAL-backed anime/manga entry's current status to MyAnimeList.
 
     Runs on demand (the "Sync All Now" button) rather than per save() - useful
     right after connecting an account with an existing library, or after a
     bulk import/restore, since those bypass save() and never queue a sync.
+
+    `selected` limits the run to those `mal_sync.entry_key` values (None means
+    every entry); entries whose key is in `pull` take MyAnimeList's values
+    instead of pushing Floppy's.
     """
+    selected = None if selected is None else set(selected)
+    pull = set(pull or ())
     try:
         user = get_user_model().objects.select_related("mal_account").get(pk=user_id)
     except get_user_model().DoesNotExist:
@@ -234,13 +240,17 @@ def bulk_sync_mal_status(user_id):
     if not claimed:
         return
 
+    remote_statuses = {}
     try:
-        if mal_account.pull_higher_progress_enabled:
+        if mal_account.pull_higher_progress_enabled or pull:
             remote_statuses = {
                 media_type: mal_sync._fetch_list_statuses(media_type, mal_account)
                 for media_type in ("anime", "manga")
             }
-            mal_sync.pull_higher_mal_progress(user, mal_account, remote_statuses)
+        if mal_account.pull_higher_progress_enabled:
+            mal_sync.pull_higher_mal_progress(
+                user, mal_account, remote_statuses, only=selected,
+            )
     except mal_sync.MALAuthError as error:
         _mark_connection_broken(mal_account, error)
         mal_account.full_sync_status = MALFullSyncStatus.FAILED
@@ -263,6 +273,10 @@ def bulk_sync_mal_status(user_id):
             mapping_issues=mapping_issues,
             progress_callback=_heartbeat(mal_account),
         )
+        if selected is not None:
+            entries = [
+                media for media in entries if mal_sync.entry_key(media) in selected
+            ]
     except services.ProviderAPIError:
         mal_account.full_sync_status = MALFullSyncStatus.FAILED
         mal_account.full_sync_total = 0
@@ -315,10 +329,17 @@ def bulk_sync_mal_status(user_id):
             "mal_id": str(media.item.media_id),
         }
         try:
-            mal_sync.push_status(media, mal_account)
+            if mal_sync.entry_key(media) in pull:
+                current = remote_statuses.get(media.item.media_type, {}).get(
+                    str(media.item.media_id),
+                )
+                mal_sync.pull_mal_entry(media, current)
+                result["reason"] = "Pulled from MyAnimeList"
+            else:
+                mal_sync.push_status(media, mal_account)
+                result["reason"] = ""
             synced += 1
             result["outcome"] = "succeeded"
-            result["reason"] = ""
         except mal_sync.MALAuthError as error:
             failed += 1
             result["outcome"] = "failed"

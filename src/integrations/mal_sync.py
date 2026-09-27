@@ -550,6 +550,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                     metadata.get("max_progress"),
                     show.status == Status.PLANNING.value and show.progress == 0,
                 )
+                entries[mal_id][0].grouped_tv = show
             _, watched_numbers, _, _ = entries[mal_id]
             if watched:
                 watched_numbers.add(episode_number)
@@ -754,7 +755,7 @@ def _local_pull_updates(media_type, media, current, mal_account):
     return updates
 
 
-def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
+def pull_higher_mal_progress(user, mal_account, remote_statuses=None, only=None):
     """Adopt MAL's progress locally wherever it is ahead of Floppy's own record.
 
     Full sync only ever pushed Floppy's state outward, so a higher count
@@ -768,6 +769,8 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
     mal_account.pull_ratings_enabled is on - never overwrites an existing
     Floppy rating, since that one is user-entered and MAL's isn't
     authoritative over it.
+
+    `only` limits the corrections to those `entry_key` values (None means all).
 
     Returns the list of corrected rows for reporting.
     """
@@ -800,6 +803,8 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None):
             ):
                 best_rows[media.item_id] = media
         for media in best_rows.values():
+            if only is not None and entry_key(media) not in only:
+                continue
             current = remote.get(str(media.item.media_id))
             updates = _local_pull_updates(media_type, media, current, mal_account)
             if updates:
@@ -863,6 +868,56 @@ def full_sync_report(mal_account):
         "started_at": mal_account.full_sync_started_at,
         "completed_at": mal_account.full_sync_completed_at,
     }
+
+
+def entry_key(media):
+    """Return the key a preview row and a selective full sync share for an entry."""
+    return f"{media.item.media_type}:{media.item.media_id}"
+
+
+def _detail_url(media):
+    """Return Floppy's detail page for a sync entry (the grouped show when there is one)."""
+    from app.templatetags.app_tags import media_url
+
+    show = getattr(media, "grouped_tv", None)
+    if show is not None:
+        return media_url({
+            "media_type": MediaTypes.TV.value,
+            "route_media_type": MediaTypes.ANIME.value,
+            "source": show.item.source,
+            "media_id": show.item.media_id,
+            "title": show.item.title,
+        })
+    return media_url(media.item)
+
+
+def pull_mal_entry(media, current):
+    """Overwrite Floppy's values for one entry with its MyAnimeList list status.
+
+    Raises MALSyncMismatchError when the entry isn't on the MyAnimeList list.
+    A grouped show only takes status and score: its progress is its episode
+    history, which can't be raised without inventing watches.
+    """
+    if not current:
+        msg = "Not on your MyAnimeList list, so there was nothing to pull."
+        raise MALSyncMismatchError(msg)
+    media_type = media.item.media_type
+    remote_score = current.get("score")
+    values = {
+        "status": MAL_STATUS_TO_FLOPPY[media_type].get(current.get("status")),
+        "score": remote_score if isinstance(remote_score, int) and remote_score > 0 else None,
+    }
+    if values["status"] is None:
+        del values["status"]
+    target = getattr(media, "grouped_tv", None)
+    if target is None:
+        target = media
+        remote_progress = current.get(PROGRESS_RESPONSE_FIELDS[media_type][1])
+        if isinstance(remote_progress, int):
+            values["progress"] = remote_progress
+    for field, value in values.items():
+        setattr(target, field, value)
+    target.save(update_fields=list(values))
 
 
 def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=None):
@@ -958,7 +1013,9 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
         if changes:
             preview.append(
                 {
+                    "key": entry_key(media),
                     "title": media.item.title,
+                    "url": _detail_url(media),
                     "media_type": media_type.title(),
                     "mal_id": str(media.item.media_id),
                     "not_on_list": current is None,

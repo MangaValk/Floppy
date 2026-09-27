@@ -1005,7 +1005,17 @@ class PreviewFullSync(TestCase):
             preview,
             [
                 {
+                    "key": "anime:42",
                     "title": "Changed Anime",
+                    "url": reverse(
+                        "media_details",
+                        kwargs={
+                            "source": "mal",
+                            "media_type": "anime",
+                            "media_id": "42",
+                            "title": "changed-anime",
+                        },
+                    ),
                     "media_type": "Anime",
                     "mal_id": "42",
                     "not_on_list": False,
@@ -2188,6 +2198,44 @@ class BulkSyncMALStatusTask(TestCase):
             tasks.bulk_sync_mal_status(user_id=self.user.pk)
         mock_push.assert_not_called()
 
+    def test_selected_limits_the_push_to_those_entries(self):
+        """Only the entries picked in the review are pushed."""
+        make_mal_account(self.user, pull_higher_progress_enabled=False)
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.bulk_sync_mal_status(user_id=self.user.pk, selected=["manga:2"])
+        self.assertEqual(
+            [call.args[0].item.media_id for call in mock_push.call_args_list],
+            ["2"],
+        )
+
+    def test_pull_takes_mal_values_instead_of_pushing(self):
+        """A pulled entry adopts MyAnimeList's status, progress and score."""
+        make_mal_account(self.user, pull_higher_progress_enabled=False)
+        remote = {
+            "anime": {
+                "1": {"status": "dropped", "num_episodes_watched": 5, "score": 7},
+            },
+            "manga": {},
+        }
+        with (
+            patch(
+                "integrations.mal_sync._fetch_list_statuses",
+                side_effect=lambda media_type, _account: remote[media_type],
+            ),
+            patch("integrations.mal_sync.push_status") as mock_push,
+            patch("integrations.tasks.sync_mal_status.delay"),
+        ):
+            tasks.bulk_sync_mal_status(
+                user_id=self.user.pk, selected=["anime:1"], pull=["anime:1"],
+            )
+
+        mock_push.assert_not_called()
+        self.anime.refresh_from_db()
+        self.assertEqual(
+            (self.anime.status, self.anime.progress, self.anime.score),
+            (Status.DROPPED.value, 5, 7),
+        )
+
     def test_a_status_poll_during_the_entry_build_does_not_fail_the_sync(self):
         """Claiming a sync refreshes the heartbeat, even on a long-idle account."""
         account = make_mal_account(self.user, pull_higher_progress_enabled=False)
@@ -2717,7 +2765,9 @@ class MALFullSyncView(TestCase):
             response = self.client.post(
                 reverse("mal_full_sync"), {"confirmed": "true"}, follow=True
             )
-        mock_delay.assert_called_once_with(user_id=self.user.pk)
+        mock_delay.assert_called_once_with(
+            user_id=self.user.pk, selected=None, pull=[],
+        )
         self.assertContains(response, "started in the background")
         account = MALAccount.objects.get(user=self.user)
         self.assertEqual(account.full_sync_status, "queued")
@@ -2750,7 +2800,9 @@ class MALFullSyncView(TestCase):
                 reverse("mal_full_sync"), {"confirmed": "true"}, follow=True
             )
 
-        mock_delay.assert_called_once_with(user_id=self.user.pk)
+        mock_delay.assert_called_once_with(
+            user_id=self.user.pk, selected=None, pull=[],
+        )
         self.assertContains(response, "started in the background")
         account.refresh_from_db()
         self.assertEqual(account.full_sync_status, "queued")

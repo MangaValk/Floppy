@@ -19,6 +19,8 @@
          scheduleFrequency: 'daily',
          scheduleTime: '03:00',
          malSyncChanges: [],
+         malSyncSelected: {},
+         malSyncPull: {},
          malMappingIssues: [],
          hasMappingPreview: false,
          malSyncPreviewLoading: false,
@@ -46,6 +48,10 @@
          destroy() { window.clearTimeout(this.malSyncPollTimer); this.malPreviewController?.abort(); },
          syncResults() { return (this.malSyncStatus?.results || []).filter(entry => entry.outcome !== 'skipped'); },
          mappingIssues() { return this.hasMappingPreview ? this.malMappingIssues : (this.malSyncStatus?.mapping_issues || []); },
+         malSelectedKeys() { return this.malSyncChanges.map(entry => entry.key).filter(key => this.malSyncSelected[key]); },
+         malPullKeys() { return this.malSelectedKeys().filter(key => this.malSyncPull[key]); },
+         malAllSelected() { return this.malSyncChanges.length > 0 && this.malSelectedKeys().length === this.malSyncChanges.length; },
+         toggleAllMalSync(checked) { this.malSyncSelected = Object.fromEntries(this.malSyncChanges.map(entry => [entry.key, checked])); },
          previewEntries(target) {
            return this.malSyncChanges.flatMap(entry => {
              const changes = entry.changes.filter(change => change.target === target);
@@ -116,6 +122,8 @@
                continue;
              }
              this.malSyncChanges = data.changes || [];
+             this.malSyncPull = {};
+             this.toggleAllMalSync(true);
              this.malMappingIssues = data.mapping_issues || [];
              this.hasMappingPreview = true;
              break;
@@ -917,9 +925,18 @@
 
         <div x-show="!malSyncPreviewLoading && malSyncChanges.length"
              class="space-y-3">
-          <p class="text-sm text-[var(--color-text-secondary)]"
-             x-text="interpolate(ngettext('%s title will change', '%s titles will change', malSyncChanges.length), [malSyncChanges.length])">
-          </p>
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-sm text-[var(--color-text-secondary)]"
+               x-text="interpolate(ngettext('%s title will change', '%s titles will change', malSyncChanges.length), [malSyncChanges.length])">
+            </p>
+            <label class="flex items-center text-sm text-[var(--color-text-secondary)] cursor-pointer">
+              <input type="checkbox"
+                     :checked="malAllSelected()"
+                     @change="toggleAllMalSync($event.target.checked)"
+                     class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+              {% translate "Select all" %}
+            </label>
+          </div>
           <template x-for="group in [{ target: 'floppy', label: gettext('Pull into Floppy') }, { target: 'mal', label: gettext('Push to MyAnimeList') }]"
                     :key="group.target">
             <section x-show="previewEntries(group.target).length" class="space-y-2">
@@ -929,7 +946,17 @@
                         :key="group.target + '-' + entry.media_type + '-' + entry.mal_id">
                 <div class="border border-[var(--color-surface-border)] rounded-md p-3">
                   <div class="flex items-center justify-between gap-3 mb-2">
-                    <strong class="text-sm text-[var(--color-text)]" x-text="entry.title"></strong>
+                    <label class="flex items-center gap-2 min-w-0">
+                      <input type="checkbox"
+                             x-model="malSyncSelected[entry.key]"
+                             :aria-label="entry.title"
+                             class="rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0">
+                      <a :href="entry.url"
+                         target="_blank"
+                         rel="noopener"
+                         class="text-sm font-semibold text-[var(--color-link)] hover:underline truncate"
+                         x-text="entry.title"></a>
+                    </label>
                     <span class="text-xs text-[var(--color-text-muted)]"
                           x-text="entry.media_type"></span>
                   </div>
@@ -947,6 +974,14 @@
                       </div>
                     </template>
                   </div>
+                  <label x-show="group.target === 'mal' && !entry.not_on_list"
+                         class="flex items-center mt-2 text-xs text-[var(--color-text-secondary)] cursor-pointer">
+                    <input type="checkbox"
+                           x-model="malSyncPull[entry.key]"
+                           :disabled="!malSyncSelected[entry.key]"
+                           class="mr-2 rounded bg-[var(--color-surface)] border-gray-600 text-indigo-600 focus:outline-none focus:ring-indigo-500 focus:ring-offset-0 disabled:opacity-50">
+                    {% translate "Pull from MyAnimeList into Floppy instead" %}
+                  </label>
                 </div>
               </template>
             </section>
@@ -963,8 +998,15 @@
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}">
             <input type="hidden" name="confirmed" value="true">
+            <input type="hidden" name="selective" value="true">
+            <template x-for="key in malSelectedKeys()" :key="'selected-' + key">
+              <input type="hidden" name="selected" :value="key">
+            </template>
+            <template x-for="key in malPullKeys()" :key="'pull-' + key">
+              <input type="hidden" name="pull" :value="key">
+            </template>
             <button type="submit"
-                    :disabled="malSyncPreviewLoading || malSyncPreviewError || !malSyncChanges.length"
+                    :disabled="malSyncPreviewLoading || malSyncPreviewError || !malSelectedKeys().length"
                     class="w-full px-3 py-2 text-sm rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
               {% translate "Confirm Sync" %}
             </button>

@@ -1758,7 +1758,18 @@ def mal_full_sync(request):
         if not queued:
             messages.info(request, "A full MyAnimeList sync is already in progress.")
             return _integration_redirect(request)
-        tasks.bulk_sync_mal_status.delay(user_id=request.user.pk)
+        # The review form always posts `selective`; without it (older pages,
+        # scripts) every entry syncs as before.
+        selected = (
+            request.POST.getlist("selected")
+            if request.POST.get("selective") == "true"
+            else None
+        )
+        tasks.bulk_sync_mal_status.delay(
+            user_id=request.user.pk,
+            selected=selected,
+            pull=request.POST.getlist("pull"),
+        )
         messages.success(
             request,
             "Full sync to MyAnimeList started in the background. This can "
