@@ -1410,6 +1410,55 @@ class GroupedMALSync(TestCase):
         self.assertEqual(entries[0].status, Status.COMPLETED.value)
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:1482": {"1-3": "1-3"}},
+        "tmdb_show:100:s2": {"mal:1482": {"1-2": "4-5"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_season_less_identity_link_does_not_restart_later_seasons(self, metadata):
+        """A show-level MAL identity link carries no per-season episode offset.
+
+        Regression for D.Gray-man: one MAL entry spans TMDB seasons 1 and 2,
+        and a season-less TMDB identity link mapped S2E1 onto MAL episode 1,
+        so season 2 watches collapsed into season 1's numbers.
+        """
+        metadata.return_value = {"title": "D.Gray-man", "max_progress": 10}
+        ItemProviderLink.objects.create(
+            item=Item.objects.create(
+                media_id="1482", source=Sources.MAL.value,
+                media_type=MediaTypes.ANIME.value, title="D.Gray-man",
+            ),
+            provider=Sources.TMDB.value,
+            provider_media_id="100",
+            provider_media_type=MediaTypes.TV.value,
+            season_number=None,
+        )
+        season_2 = Season(
+            user=self.user, related_tv=self.show, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="100", source="tmdb", media_type="season",
+                library_media_type="anime", season_number=2, title="Season 2",
+            ),
+        )
+        Season.objects.bulk_create([season_2])
+        Episode.objects.bulk_create([
+            Episode(
+                related_season=season_2,
+                item=Item.objects.create(
+                    media_id="100", source="tmdb", media_type="episode",
+                    library_media_type="anime", season_number=2,
+                    episode_number=number, title=f"Episode {number}",
+                ),
+            )
+            for number in (1, 2)
+        ])
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].item.media_id, "1482")
+        self.assertEqual(entries[0].progress, 5)
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:33035": {"1-3": "1-3"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")

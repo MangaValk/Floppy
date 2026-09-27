@@ -268,6 +268,10 @@ def _resolve_mal_from_provider_link(provider, provider_media_id, season_number, 
     episode offset - unlike AniBridge's external mapping data, it cannot be
     ambiguous for shows with recap or alternate-numbering episodes, so it is
     tried first.
+
+    Only season-scoped links count. A season-less link is a show-level
+    identity (this MAL entry belongs to that TMDB show), not an episode
+    alignment: applying it to every season maps S2E1 onto MAL episode 1.
     """
     from app.models import ItemProviderLink
 
@@ -286,19 +290,6 @@ def _resolve_mal_from_provider_link(provider, provider_media_id, season_number, 
         .select_related("item")
         .first()
     )
-    if link is None:
-        link = (
-            ItemProviderLink.objects.filter(
-                provider=provider,
-                provider_media_type=MediaTypes.TV.value,
-                provider_media_id=str(provider_media_id),
-                season_number__isnull=True,
-                item__source=Sources.MAL.value,
-                item__media_type=MediaTypes.ANIME.value,
-            )
-            .select_related("item")
-            .first()
-        )
     if link is None:
         return None, None
 
