@@ -108,6 +108,11 @@ list values. For grouped anime, only status and score are pulled, because its
 progress comes from episode history. Scheduled and scripted full syncs, which
 post no selection, still sync every entry.
 
+The "Pull into Floppy" list only offers what a sync applies. Pulling progress
+needs "pull higher progress" and never applies to grouped anime; pulling a
+missing rating needs "pull ratings" and does apply to grouped anime, landing on
+the show.
+
 Preview runs as a read-only Celery task on the background queue. The page starts
 it with a CSRF-protected POST and polls with an expiring, user-bound token, so
 large libraries do not have to finish within a web/proxy request timeout. The
