@@ -101,6 +101,13 @@ an "Anime with mapping issues" list naming unresolved episode coordinates.
 Preview also shows these issues before confirmation. A new full sync replaces
 the previous report; per-item sync does not erase it.
 
+Each preview title links to its Floppy detail page and has a checkbox; only
+checked titles are synced. A checked title can instead be set to pull from
+MyAnimeList, which overwrites Floppy's status, progress and score with the MAL
+list values. For grouped anime, only status and score are pulled, because its
+progress comes from episode history. Scheduled and scripted full syncs, which
+post no selection, still sync every entry.
+
 Preview runs as a read-only Celery task on the background queue. The page starts
 it with a CSRF-protected POST and polls with an expiring, user-bound token, so
 large libraries do not have to finish within a web/proxy request timeout. The
