@@ -419,7 +419,7 @@ def set_mapping_ignored(user, item_id, *, ignored):
 
 def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=None):
     """Project grouped anime watches into transient MAL entries, one per cour."""
-    from app.models import TV, Anime, Episode, Item, WatchState
+    from app.models import TV, Anime, Episode, Item, Season, WatchState
     from integrations.models import ExternalReference
     from integrations.webhooks import anime_mappings
 
@@ -492,6 +492,36 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 score if score is not None else show.score,
             )
 
+        has_history = bool(coordinates)
+        if not has_history and show.status == Status.PLANNING.value:
+            # A Planning show with nothing watched still belongs on MAL: find
+            # its entry through the first episode of its first season. Other
+            # statuses without history stay skipped, since their empty
+            # progress would push "plan to watch" over the real MAL entry.
+            first_season = min(
+                Season.objects.filter(
+                    related_tv=show,
+                    order_archived=False,
+                    item__season_number__gte=1,
+                ).values_list("item__season_number", flat=True),
+                default=1,
+            )
+            coordinates = {
+                None: (
+                    Item(
+                        source=show.tracking_source,
+                        media_id=show.tracking_media_id,
+                        media_type=MediaTypes.EPISODE.value,
+                        season_number=first_season,
+                        episode_number=1,
+                        title=show.item.title,
+                    ),
+                    False,
+                    show.score,
+                ),
+            }
+        mapped_any = False
+
         for item, watched, score in coordinates.values():
             if item.season_number is None or item.episode_number is None:
                 unmapped.append(item.title)
@@ -527,6 +557,9 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                     item.episode_number,
                 )
             if not mal_id or not episode_number or episode_number < 1:
+                if not has_history:
+                    # Not a tracked episode, so there is nothing to fix.
+                    continue
                 unmapped.append(f"S{item.season_number:02}E{item.episode_number:02}")
                 unmapped_episodes.append({
                     "season": item.season_number,
@@ -535,6 +568,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 season_count["unmapped"].append(item.episode_number)
                 continue
             mal_id = str(mal_id)
+            mapped_any = True
             if mal_id not in entries:
                 metadata = mal_metadata(mal_id)
                 entries[mal_id] = (
@@ -559,7 +593,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             if watched:
                 watched_numbers.add(episode_number)
 
-        if mapping_issues is not None and (unmapped or not coordinates):
+        if mapping_issues is not None and (unmapped or not mapped_any):
             mapping_issues.append({
                 "title": show.item.title,
                 "media_type": "Anime",

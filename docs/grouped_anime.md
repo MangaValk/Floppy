@@ -88,6 +88,9 @@ using the AniBridge episode mappings also used by webhooks. Preview and full
 sync use current grouped progress instead of stale migrated flat Anime rows.
 Rewatches do not count as additional episodes. Unmapped episodes are skipped;
 sync does not guess a MAL title from a show name or season number.
+A Planning show with nothing watched is matched through episode 1 of its first
+season and synced as plan to watch; other shows without episode history are
+skipped.
 
 Episode watch-state changes, show/season edits, and bulk episode actions queue
 automatic sync after commit when per-item sync is enabled. Triggers for the

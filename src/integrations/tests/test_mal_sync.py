@@ -2017,6 +2017,57 @@ class GroupedMALSync(TestCase):
         "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_show_with_no_watch_history_syncs_as_planning(self, metadata):
+        """A Planning show with nothing watched still gets its MAL entry.
+
+        Regression: with no episode history there was nothing to resolve a
+        MAL title from, so the show was never added to MAL as plan to watch
+        and was reported as a mapping issue on every sync.
+        """
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 3}
+        Episode.objects.filter(related_season=self.season)._raw_delete("default")
+        TV.objects.filter(pk=self.show.pk).update(status=Status.PLANNING.value)
+
+        issues = []
+        entries = mal_sync.grouped_sync_entries(self.user, mapping_issues=issues)
+
+        self.assertEqual(
+            [(entry.item.media_id, entry.progress, entry.status) for entry in entries],
+            [("42", 0, Status.PLANNING.value)],
+        )
+        self.assertEqual(issues, [])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={})
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_unmappable_show_with_no_history_reports_no_fixable_episode(self, metadata):
+        """An unresolved show with nothing watched offers no episode to fix."""
+        Episode.objects.filter(related_season=self.season)._raw_delete("default")
+        TV.objects.filter(pk=self.show.pk).update(status=Status.PLANNING.value)
+
+        issues = []
+        entries = mal_sync.grouped_sync_entries(self.user, mapping_issues=issues)
+
+        self.assertEqual(entries, [])
+        self.assertEqual(len(issues), 1)
+        self.assertEqual((issues[0]["episodes"], issues[0]["seasons"]), ([], []))
+        self.assertIn("No episode history", issues[0]["reason"])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_completed_show_with_no_history_is_not_pushed_as_planning(self, metadata):
+        """Only a Planning show is synced without episode history."""
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 3}
+        Episode.objects.filter(related_season=self.season)._raw_delete("default")
+        TV.objects.filter(pk=self.show.pk).update(status=Status.COMPLETED.value)
+
+        self.assertEqual(mal_sync.grouped_sync_entries(self.user), [])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
     def test_statusless_show_is_not_synced_despite_watched_episodes(self, metadata):
         """A show with no status isn't tracked, so its watches must not reach MAL."""
         metadata.return_value = {"title": "Mapped Anime", "max_progress": 3}
