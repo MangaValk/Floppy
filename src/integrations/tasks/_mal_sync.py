@@ -275,6 +275,10 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None, queued=False):
         return
 
     if not mal_account.sync_enabled or mal_account.connection_broken:
+        if not queued:
+            # A scheduled run keeps the last real report instead of
+            # replacing it on every tick while sync is off.
+            return
         mal_account.full_sync_status = MALFullSyncStatus.FAILED
         mal_account.full_sync_results = [
             {
@@ -285,12 +289,18 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None, queued=False):
                 "reason": "Sync was disabled or the account needs to be reconnected.",
             }
         ]
+        mal_account.full_sync_total = 0
+        mal_account.full_sync_processed = 0
+        mal_account.full_sync_succeeded = 0
         mal_account.full_sync_failed = 1
         mal_account.full_sync_completed_at = timezone.now()
         mal_account.save(
             update_fields=[
                 "full_sync_status",
                 "full_sync_results",
+                "full_sync_total",
+                "full_sync_processed",
+                "full_sync_succeeded",
                 "full_sync_failed",
                 "full_sync_completed_at",
                 "updated_at",

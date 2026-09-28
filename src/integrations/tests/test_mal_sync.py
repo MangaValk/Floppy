@@ -3141,12 +3141,39 @@ class BulkSyncMALStatusTask(TestCase):
         account.save(update_fields=["full_sync_status"])
 
         with patch("integrations.mal_sync.push_status") as mock_push:
-            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+            tasks.bulk_sync_mal_status(user_id=self.user.pk, queued=True)
 
         mock_push.assert_not_called()
         account.refresh_from_db()
         self.assertEqual(account.full_sync_status, "failed")
         self.assertIn("disabled", account.full_sync_results[0]["reason"])
+        self.assertEqual(
+            (account.full_sync_total, account.full_sync_succeeded, account.full_sync_failed),
+            (0, 0, 1),
+        )
+
+    def test_scheduled_sync_keeps_the_last_report_while_sync_is_off(self):
+        """Regression: every scheduled tick replaced the report with a single
+        failure row but kept the old counts, showing e.g. 40 succeeded, 1 failed.
+        """
+        account = make_mal_account(self.user, sync_enabled=False)
+        report = [{
+            "title": "A", "media_type": "Anime", "mal_id": "1",
+            "outcome": "succeeded", "reason": "",
+        }]
+        account.full_sync_status = "completed"
+        account.full_sync_succeeded = 1
+        account.full_sync_results = report
+        account.save(update_fields=[
+            "full_sync_status", "full_sync_succeeded", "full_sync_results",
+        ])
+
+        tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        account.refresh_from_db()
+        self.assertEqual(
+            (account.full_sync_status, account.full_sync_results), ("completed", report),
+        )
 
     def test_pull_higher_progress_disabled_skips_the_correction(self):
         """Turning the setting off skips fetching/adopting MAL's remote progress."""
