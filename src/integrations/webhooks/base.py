@@ -2510,7 +2510,9 @@ class BaseWebhookProcessor:
                     anime_item,
                     Sources.TMDB.value,
                 )
-            except anime_migration.AnimeMigrationError as exc:
+            # A refused conversion, or TMDB being unreachable for its
+            # preflight, keeps the flat entry so the play is still recorded.
+            except (anime_migration.AnimeMigrationError, ProviderAPIError) as exc:
                 logger.warning(
                     "Keeping MAL %s flat; per-episode conversion refused: %s",
                     anime_item.media_id,

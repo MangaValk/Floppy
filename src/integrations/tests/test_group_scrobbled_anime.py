@@ -136,6 +136,29 @@ class GroupScrobbledAnimeTests(TestCase):
         self.assertEqual(self.anime.progress, 4)
 
 
+    @patch("app.services.anime_migration.migrate_flat_anime_to_grouped")
+    def test_tmdb_outage_during_conversion_falls_back_to_flat(self, migrate, *_):
+        """Regression: TMDB failing in the conversion preflight aborted the
+        scrobble, so the play was recorded nowhere.
+        """
+        from unittest.mock import MagicMock
+
+        from app.providers.services import ProviderAPIError
+
+        migrate.side_effect = ProviderAPIError(
+            "tmdb", MagicMock(response=MagicMock(status_code=503)),
+        )
+        self.user.group_scrobbled_anime = True
+        self.user.save(update_fields=["group_scrobbled_anime"])
+
+        result, handle_tv = self._scrobble()
+
+        self.assertTrue(result)
+        handle_tv.assert_not_called()
+        self.anime.refresh_from_db()
+        self.assertEqual(self.anime.progress, 4)
+
+
 class GroupScrobbledAnimeToggleTests(TestCase):
     """The Sync to Trackers page toggles the setting."""
 
