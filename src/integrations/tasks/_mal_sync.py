@@ -241,6 +241,7 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
         return
 
     remote_statuses = {}
+    list_error = None
     pulls_enabled = (
         mal_account.pull_higher_progress_enabled or mal_account.pull_ratings_enabled
     )
@@ -262,7 +263,11 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
             update_fields=["full_sync_status", "full_sync_completed_at", "updated_at"],
         )
         return
-    except services.ProviderAPIError:
+    except services.ProviderAPIError as error:
+        if not remote_statuses:
+            # Selected pulls fail with this error below, not as "not on
+            # your list".
+            list_error = error
         logger.warning(
             "Could not fetch MyAnimeList lists to check for a higher recorded "
             "progress before pushing; continuing without the correction",
@@ -340,7 +345,7 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
                 str(media.item.media_id),
             )
             if is_pull:
-                mal_sync.pull_mal_entry(media, current)
+                mal_sync.pull_mal_entry(media, current, list_error=list_error)
                 result["reason"] = "Pulled from MyAnimeList"
             else:
                 if pulls_enabled:

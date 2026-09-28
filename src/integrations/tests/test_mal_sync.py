@@ -2324,6 +2324,27 @@ class BulkSyncMALStatusTask(TestCase):
         account = MALAccount.objects.get(user=self.user)
         self.assertEqual(account.full_sync_results[-1]["direction"], "pull")
 
+    def test_pull_reports_the_list_fetch_error(self):
+        """A pull that couldn't load the MAL list says so.
+
+        Regression: the fetch error was swallowed, so every selected pull
+        failed as "Not on your MyAnimeList list" instead.
+        """
+        make_mal_account(self.user, pull_higher_progress_enabled=False)
+        error = ProviderAPIError("MAL", MagicMock(response=MagicMock(status_code=503)))
+        with (
+            patch("integrations.mal_sync._fetch_list_statuses", side_effect=error),
+            patch("integrations.mal_sync.push_status"),
+            patch("integrations.tasks.sync_mal_status.delay"),
+        ):
+            tasks.bulk_sync_mal_status(
+                user_id=self.user.pk, selected=["anime:1"], pull=["anime:1"],
+            )
+
+        result = MALAccount.objects.get(user=self.user).full_sync_results[-1]
+        self.assertEqual(result["outcome"], "failed")
+        self.assertIn("503", result["reason"])
+
     def test_rating_pull_runs_without_progress_pull(self):
         """A rating the preview offers is pulled even when progress pulls are off."""
         make_mal_account(self.user, pull_higher_progress_enabled=False)

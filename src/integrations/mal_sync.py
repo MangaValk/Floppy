@@ -932,13 +932,16 @@ def _detail_link(media):
     }
 
 
-def pull_mal_entry(media, current):
+def pull_mal_entry(media, current, list_error=None):
     """Overwrite Floppy's values for one entry with its MyAnimeList list status.
 
-    Raises MALSyncMismatchError when the entry isn't on the MyAnimeList list.
-    A grouped show only takes status and score: its progress is its episode
-    history, which can't be raised without inventing watches.
+    Raises list_error, when loading the MyAnimeList list failed, and
+    MALSyncMismatchError when the entry isn't on the list. A grouped show
+    only takes status and score: its progress is its episode history, which
+    can't be raised without inventing watches.
     """
+    if list_error is not None:
+        raise list_error
     if not current:
         msg = "Not on your MyAnimeList list, so there was nothing to pull."
         raise MALSyncMismatchError(msg)
