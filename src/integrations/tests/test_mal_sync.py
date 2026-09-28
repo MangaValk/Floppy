@@ -2209,6 +2209,44 @@ class GroupedMALSync(TestCase):
             countdown=mal_sync.GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
         )
 
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_bulk_side_effects_queue_every_show_in_a_mixed_batch(self, delay):
+        """Regression: a batch with one show's item and another show's
+        episode only queued the first show.
+        """
+        from app.signals import flush_media_change_side_effects
+
+        other_item = Item.objects.create(
+            media_id="200", source="tmdb", media_type="tv",
+            library_media_type="anime", title="Other Anime",
+        )
+        other_show = TV(user=self.user, item=other_item, status=Status.IN_PROGRESS.value)
+        TV.objects.bulk_create([other_show])
+        other_season = Season(
+            user=self.user, related_tv=other_show, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="200", source="tmdb", media_type="season",
+                library_media_type="anime", season_number=1, title="Season 1",
+            ),
+        )
+        Season.objects.bulk_create([other_season])
+        other_episode = Item.objects.create(
+            media_id="200", source="tmdb", media_type="episode",
+            library_media_type="anime", season_number=1, episode_number=1,
+            title="Episode 1",
+        )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            flush_media_change_side_effects(
+                owner=self.user, items=[self.show_item, other_episode],
+                changed_media_type="episode", reason="episode_change",
+            )
+
+        self.assertEqual(
+            sorted(call.kwargs["kwargs"]["media_id"] for call in delay.call_args_list),
+            sorted([self.show.pk, other_show.pk]),
+        )
+
     @patch("integrations.mal_sync.grouped_sync_entries")
     def test_mapping_outage_fails_full_sync_without_leaving_it_queued(self, entries):
         entries.side_effect = ProviderAPIError("mal", requests.RequestException())

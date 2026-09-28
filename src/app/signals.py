@@ -721,8 +721,12 @@ def flush_media_change_side_effects(
         from integrations.mal_sync import queue_grouped_sync
         from lists.tasks import sync_smart_lists_for_items_task
 
-        grouped_items = [item for item in normalized_items if item.media_type == "tv"]
-        for item in grouped_items or normalized_items:
+        # One trigger per show: its seasons and episodes share the show's
+        # provider id, and the show item itself resolves most directly.
+        per_show = {}
+        for item in sorted(normalized_items, key=lambda item: item.media_type != "tv"):
+            per_show.setdefault((item.source, item.media_id), item)
+        for item in per_show.values():
             queue_grouped_sync(owner.id, item)
 
         sync_smart_lists_for_items_task.delay(owner.id, list(seen_item_ids))
