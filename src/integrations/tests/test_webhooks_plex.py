@@ -2625,6 +2625,31 @@ class PlexWebhookTests(TestCase):
         self.assertEqual(tv.score, 8)
         self.assertIsNone(anime.score)
 
+    def test_season_rating_no_flat_entry_covers_takes_the_tv_path(self):
+        """Regression: a season-2 rating beside a flat season-1 MAL entry
+        matched no title and was dropped instead of rating the season.
+        """
+        from integrations.webhooks.plex import PlexWebhookProcessor
+
+        anime_item = Item.objects.create(
+            media_id="35078", source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value, title="Mitsuboshi Colors", image="",
+        )
+        ItemProviderLink.objects.create(
+            item=anime_item, provider=Sources.TMDB.value,
+            provider_media_type=MediaTypes.TV.value, provider_media_id="76134",
+            season_number=1,
+        )
+        Anime.objects.create(
+            item=anime_item, user=self.user, status=Status.IN_PROGRESS.value, progress=8,
+        )
+
+        handled = PlexWebhookProcessor()._apply_flat_anime_rating(
+            self.user, "76134", 8, season_number=2,
+        )
+
+        self.assertFalse(handled)
+
     @patch("app.providers.tmdb.tv")
     def test_show_rating_reaches_a_rewatched_flat_mal_anime(self, _mock_tv):
         """A rewatch row doesn't make the title ambiguous.

@@ -954,7 +954,10 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
         )
         # A rewatch is another row for the same title, not another title.
         item_ids = {anime.item_id for anime in entries}
-        if len(item_ids) != 1:
+        if not item_ids:
+            # No flat entry covers this season: rate it the normal TV way.
+            return False
+        if len(item_ids) > 1:
             logger.info(
                 "Skipping Plex rating for TMDB %s season %s: it matches %d tracked "
                 "MAL anime titles",
