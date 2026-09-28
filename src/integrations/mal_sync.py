@@ -711,19 +711,16 @@ def full_sync_entries(
     filters = {
         "user": user,
         "item__source": Sources.MAL.value,
-        "status__in": included_statuses,
+        "status__isnull": False,
     }
     entries = [
         *Anime.objects.filter(**filters).select_related("item"),
         *Manga.objects.filter(**filters).select_related("item"),
-        *[
-            media for media in grouped_sync_entries(
-                user,
-                mapping_issues=mapping_issues,
-                progress_callback=progress_callback,
-            )
-            if media.status in included_statuses
-        ],
+        *grouped_sync_entries(
+            user,
+            mapping_issues=mapping_issues,
+            progress_callback=progress_callback,
+        ),
     ]
     # A rewatch is its own completed row (see integrations.imports.mal), so the
     # same MAL id can legitimately have several rows at once. Pushing an
@@ -735,7 +732,12 @@ def full_sync_entries(
         current = by_key.get(key)
         if current is None or (media.progress or 0) > (current.progress or 0):
             by_key[key] = media
-    entries = list(by_key.values())
+    # Filter after choosing the row that speaks for the MAL entry, as the
+    # per-item push and the pulls do: filtering first would let a rewatch
+    # row push over a completed watch whose status is filtered out.
+    entries = [
+        media for media in by_key.values() if media.status in included_statuses
+    ]
     if mal_account is not None and mal_account.sync_filter_rated_only:
         entries = [media for media in entries if media.score is not None]
     return entries

@@ -2922,6 +2922,29 @@ class FullSyncEntriesFilters(TestCase):
             },
         )
 
+    def test_filtered_out_best_row_is_not_replaced_by_a_rewatch(self):
+        """Regression: with Completed filtered out, a rewatch row at 3 was
+        pushed as "watching 3" over MAL's completed 12, although the per-item
+        push and the pulls treat the completed watch as the entry.
+        """
+        rewatched = Item.objects.create(
+            media_id="7", source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value, title="Rewatched",
+        )
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            Anime.objects.create(
+                user=self.user, item=rewatched, status=Status.COMPLETED.value, progress=12,
+            )
+            Anime.objects.create(
+                user=self.user, item=rewatched, status=Status.IN_PROGRESS.value, progress=3,
+            )
+        self.account.sync_filter_completed = False
+        self.account.save(update_fields=["sync_filter_completed"])
+
+        entries = mal_sync.full_sync_entries(self.user, self.account)
+
+        self.assertNotIn("Rewatched", {media.item.title for media in entries})
+
     def test_planning_and_paused_can_be_opted_in(self):
         self.account.sync_filter_planning = True
         self.account.sync_filter_paused = True
