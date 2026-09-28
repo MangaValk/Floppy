@@ -1029,6 +1029,29 @@ class PushStatus(TestCase):
         refresh.assert_not_called()
         self.assertIsNone(cache.get(lock_key))
 
+    @patch("integrations.mal_sync._refresh_tokens")
+    def test_refresh_that_never_gets_the_lock_is_retried_later(self, refresh, *_mocks):
+        """Regression: a waiter past its deadline refreshed anyway, spending
+        a token the holder was still using, then released the holder's lock.
+        """
+        from app import cache_safety
+
+        cache.clear()
+        self.account.token_expires_at = timezone.now() - timedelta(minutes=5)
+        self.account.save(update_fields=["token_expires_at"])
+        lock_key = f"mal_token_refresh:{self.account.pk}"
+        cache_safety.acquire_lock(lock_key, timeout=30)
+        self.addCleanup(cache_safety.release_lock, lock_key)
+
+        with (
+            patch.object(mal_sync, "TOKEN_REFRESH_LOCK_SECONDS", 0),
+            self.assertRaises(ProviderAPIError),
+        ):
+            mal_sync.get_valid_access_token(self.account)
+
+        refresh.assert_not_called()
+        self.assertIsNotNone(cache.get(lock_key))
+
 
 class PreviewFullSync(TestCase):
     """Test the read-only diff used before a full MAL sync."""

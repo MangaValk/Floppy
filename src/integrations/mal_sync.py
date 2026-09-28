@@ -193,8 +193,9 @@ def _store_tokens(mal_account, token_response):
 
 
 # How long a refresh may hold the lock, and how long another worker waits
-# for it before assuming the holder died.
-TOKEN_REFRESH_LOCK_SECONDS = 30
+# for it. A refresh can sit through api_request's rate-limit and transient
+# retries, so this is generous.
+TOKEN_REFRESH_LOCK_SECONDS = 300
 
 
 def get_valid_access_token(mal_account):
@@ -214,7 +215,12 @@ def get_valid_access_token(mal_account):
             on_error=cache_safety.ON_ERROR_PROCEED,
         ):
             if time.monotonic() >= deadline:
-                break
+                # Refreshing without the lock could spend a refresh token the
+                # holder is still using; retry later instead.
+                raise services.ProviderAPIError(
+                    Sources.MAL.value,
+                    requests.RequestException("MyAnimeList token refresh in progress"),
+                )
             time.sleep(0.5)
         try:
             with transaction.atomic():
