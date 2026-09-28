@@ -149,6 +149,25 @@ class MALSyncModelHooks(TestCase):
         mock_delay.assert_called_once_with(media_type="manga", media_id=manga.pk, clear_score=False)
 
     @patch("integrations.tasks.sync_mal_status.delay")
+    def test_broker_outage_does_not_fail_the_save(self, mock_delay, *_mocks):
+        """Regression: the on-commit enqueue raised after the save committed,
+        turning a saved edit into a 500.
+        """
+        from kombu.exceptions import OperationalError
+
+        manga = Manga.objects.create(
+            user=self.user, item=self.mal_manga_item, status=Status.PAUSED.value,
+        )
+        mock_delay.side_effect = OperationalError("redis down")
+
+        manga.progress = 5
+        with self.captureOnCommitCallbacks(execute=True):
+            manga.save()
+
+        manga.refresh_from_db()
+        self.assertEqual(manga.progress, 5)
+
+    @patch("integrations.tasks.sync_mal_status.delay")
     def test_clearing_a_rating_asks_mal_to_clear_it(self, mock_delay, *_mocks):
         """Regression: an empty rating sent no score, so MAL kept the old one
         and the next full sync pulled it back into Floppy.
@@ -2394,6 +2413,18 @@ class GroupedMALSync(TestCase):
             kwargs={"media_type": "tv", "media_id": self.show.pk},
             countdown=mal_sync.GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
         )
+
+    @patch(
+        "integrations.tasks.sync_mal_status.apply_async",
+        side_effect=RuntimeError("broker down"),
+    )
+    def test_grouped_enqueue_failure_does_not_raise(self, delay):
+        """A broker outage after commit is logged, and the window is freed."""
+        with self.captureOnCommitCallbacks(execute=True):
+            mal_sync.queue_grouped_sync(self.user.pk, self.show_item)
+
+        delay.assert_called_once()
+        self.assertIsNone(cache.get(f"mal_grouped_sync:{self.show.pk}"))
 
     @patch("integrations.tasks.sync_mal_status.apply_async")
     def test_bulk_side_effects_queue_every_show_in_a_mixed_batch(self, delay):

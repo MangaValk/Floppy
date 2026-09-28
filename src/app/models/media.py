@@ -199,11 +199,22 @@ class Media(models.Model):
 
         if not per_item_sync_active(self.user_id):
             return
-        transaction.on_commit(
-            lambda: sync_mal_status.delay(
-                media_type=media_type, media_id=self.pk, clear_score=clear_score,
-            ),
-        )
+
+        def send():
+            try:
+                sync_mal_status.delay(
+                    media_type=media_type, media_id=self.pk, clear_score=clear_score,
+                )
+            # The broker is down; the save already committed, so never raise.
+            except Exception as error:
+                logger.warning(
+                    "mal_sync_enqueue_failed media_type=%s media_id=%s error=%s",
+                    media_type,
+                    self.pk,
+                    error,
+                )
+
+        transaction.on_commit(send)
 
     def _get_local_max_progress(self):
         """Return locally-derived runtime minutes for music/podcast without provider calls."""

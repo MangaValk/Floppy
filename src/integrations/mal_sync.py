@@ -19,7 +19,6 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import requests
 from django.apps import apps
-from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
@@ -395,14 +394,24 @@ def queue_grouped_sync(user_id, item):
         # A watch fires several triggers (watch state, episode, season). The
         # first one reserves the window; the push runs after it closes, so it
         # reads every change that committed inside it and is sent only once.
-        if not cache.add(
-            f"mal_grouped_sync:{show_id}", 1, timeout=GROUPED_SYNC_DEBOUNCE_SECONDS,
+        key = f"mal_grouped_sync:{show_id}"
+        if not cache_safety.acquire_lock(
+            key,
+            timeout=GROUPED_SYNC_DEBOUNCE_SECONDS,
+            on_error=cache_safety.ON_ERROR_PROCEED,
         ):
             return
-        sync_mal_status.apply_async(
-            kwargs={"media_type": "tv", "media_id": show_id},
-            countdown=GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
-        )
+        try:
+            sync_mal_status.apply_async(
+                kwargs={"media_type": "tv", "media_id": show_id},
+                countdown=GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
+            )
+        # The broker is down; the save already committed, so never raise.
+        except Exception as error:
+            cache_safety.release_lock(key)
+            logger.warning(
+                "mal_grouped_sync_enqueue_failed show_id=%s error=%s", show_id, error,
+            )
 
     for show_id in shows.values_list("pk", flat=True).distinct():
         transaction.on_commit(lambda show_id=show_id: send(show_id))
