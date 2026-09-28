@@ -9,6 +9,7 @@ from app.services.anime_migration import AnimeMigrationError
 from integrations.webhooks.generic_scrobble import GenericScrobbleProcessor
 
 MAPPING_ENTRIES = [{"tmdb_id": "12345", "season_number": 2, "episode_offset": 12}]
+MAPPING_DATA = {"tmdb_show:12345:s2": {"mal:999": {"13-24": "1-12"}}}
 PAYLOAD = {"media_type": "episode", "completed": True}
 
 
@@ -17,7 +18,10 @@ PAYLOAD = {"media_type": "episode", "completed": True}
     "integrations.webhooks.anime_mappings.find_entries_for_mal_id",
     return_value=MAPPING_ENTRIES,
 )
-@patch("integrations.webhooks.anime_mappings.fetch_mapping_data", return_value={})
+@patch(
+    "integrations.webhooks.anime_mappings.fetch_mapping_data",
+    return_value=MAPPING_DATA,
+)
 @patch(
     "app.providers.mal.anime",
     return_value={"title": "Cour Two", "image": "", "max_progress": 12},
@@ -69,6 +73,40 @@ class GroupScrobbledAnimeTests(TestCase):
         )
         self.anime.refresh_from_db()
         self.assertEqual(self.anime.progress, 3)
+
+    @patch("app.services.anime_migration.migrate_flat_anime_to_grouped")
+    def test_split_entry_logs_the_season_that_holds_the_episode(
+        self, migrate, metadata, fetch, *_,
+    ):
+        """Regression: the first mapped season was used for every episode,
+        so MAL episode 20 of an entry split 13 + 12 became S1E20, not S2E7.
+        """
+        metadata.return_value = {"title": "Split", "image": "", "max_progress": 25}
+        fetch.return_value = {
+            "tmdb_show:12345:s1": {"mal:999": {"1-13": "1-13"}},
+            "tmdb_show:12345:s2": {"mal:999": {"1-12": "14-25"}},
+        }
+        self.user.group_scrobbled_anime = True
+        self.user.save(update_fields=["group_scrobbled_anime"])
+
+        _, handle_tv = self._scrobble(episode_number=20)
+
+        self.assertEqual(handle_tv.call_args.args[:3], ("12345", 2, 7))
+
+    @patch("app.services.anime_migration.migrate_flat_anime_to_grouped")
+    def test_uncovered_episode_stays_flat(self, migrate, metadata, fetch, *_):
+        """No season covers the episode, so nothing is converted."""
+        metadata.return_value = {"title": "Split", "image": "", "max_progress": 25}
+        fetch.return_value = {"tmdb_show:12345:s1": {"mal:999": {"1-13": "1-13"}}}
+        self.user.group_scrobbled_anime = True
+        self.user.save(update_fields=["group_scrobbled_anime"])
+
+        _, handle_tv = self._scrobble(episode_number=20)
+
+        migrate.assert_not_called()
+        handle_tv.assert_not_called()
+        self.anime.refresh_from_db()
+        self.assertEqual(self.anime.progress, 20)
 
     @patch("app.services.anime_migration.migrate_flat_anime_to_grouped")
     def test_opted_out_keeps_the_flat_entry(self, migrate, *_):

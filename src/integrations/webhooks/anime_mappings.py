@@ -143,6 +143,49 @@ def get_tmdb_movie_id_from_mal_id(mapping_data, mal_id):
     return None
 
 
+def get_series_episode_from_mal(mapping_data, mal_id, mal_episode, provider="tmdb"):
+    """Return (series_id, season, episode) for a MAL episode, or None.
+
+    The reverse of get_mal_id_from_series: only a single one-to-one range
+    that covers the MAL episode counts, so a MAL entry split across seasons
+    lands in the season that actually holds the episode.
+    """
+    candidates = set()
+    prefix = f"{provider}_show:"
+    try:
+        for source_descriptor, targets in mapping_data.items():
+            parts = source_descriptor.split(":")
+            if (
+                not source_descriptor.startswith(prefix)
+                or len(parts) < DESCRIPTOR_SEASON_PART_INDEX
+                or not parts[2].startswith("s")
+            ):
+                continue
+            season = int(parts[2][1:])
+            for target_descriptor, ranges in targets.items():
+                if "," in target_descriptor:
+                    continue
+                if str(_parse_mal_descriptor(target_descriptor)) != str(mal_id):
+                    continue
+                if not ranges:
+                    candidates.add((parts[1], season, mal_episode))
+                for source_range, target_range in ranges.items():
+                    if "|" in target_range or "," in target_range:
+                        continue
+                    target_start, target_end = _parse_episode_range(target_range)
+                    if mal_episode < target_start or (
+                        target_end is not None and mal_episode > target_end
+                    ):
+                        continue
+                    source_start, source_end = _parse_episode_range(source_range)
+                    episode = source_start + mal_episode - target_start
+                    if source_end is None or episode <= source_end:
+                        candidates.add((parts[1], season, episode))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return candidates.pop() if len(candidates) == 1 else None
+
+
 def find_entries_for_mal_id(mapping_data, mal_id):
     """Find TVDB/TMDB provider link dicts for a given MAL ID (reverse lookup)."""
     results = []

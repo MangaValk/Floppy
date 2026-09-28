@@ -2421,7 +2421,7 @@ class BaseWebhookProcessor:
             user.group_scrobbled_anime
             and self._is_played(payload)
             and self._scrobble_to_grouped_anime(
-                anime_item, episode_number, mapping_entries, payload, user
+                anime_item, episode_number, anibridge_data, payload, user
             )
         ):
             return True
@@ -2473,26 +2473,21 @@ class BaseWebhookProcessor:
         return True
 
     def _scrobble_to_grouped_anime(
-        self, anime_item, mal_episode_number, mapping_entries, payload, user
+        self, anime_item, mal_episode_number, mapping_data, payload, user
     ):
         """Log a MAL-mapped episode as grouped anime, converting a flat entry first.
 
-        Returns False when there is no TMDB season to log against or the
+        Returns False when no single TMDB season covers the MAL episode or the
         conversion is refused, so the caller keeps the flat entry.
         """
         from app.services import anime_migration
 
-        target = next(
-            (
-                entry
-                for entry in mapping_entries
-                if entry.get("tmdb_id") not in (None, "")
-                and entry.get("season_number") is not None
-            ),
-            None,
+        target = anime_mappings.get_series_episode_from_mal(
+            mapping_data, anime_item.media_id, mal_episode_number,
         )
         if target is None:
             return False
+        tmdb_id, season_number, tmdb_episode = target
 
         if app.models.Anime.objects.filter(
             user=user,
@@ -2518,9 +2513,9 @@ class BaseWebhookProcessor:
             )
 
         self._handle_tv_episode(
-            str(target["tmdb_id"]),
-            target["season_number"],
-            mal_episode_number + (target.get("episode_offset") or 0),
+            str(tmdb_id),
+            season_number,
+            tmdb_episode,
             payload,
             user,
             library_media_type=MediaTypes.ANIME.value,
