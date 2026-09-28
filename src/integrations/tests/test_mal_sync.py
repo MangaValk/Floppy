@@ -2513,6 +2513,32 @@ class GroupedMALSync(TestCase):
         self.assertEqual(updates, {})
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_cour_rating_comes_from_its_season_not_its_first_episode(self, metadata):
+        """Regression: a watch-state episode created the entry with the show's
+        rating, so the pushed score depended on query order.
+        """
+        from app.models import WatchState
+
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 4}
+        TV.objects.filter(pk=self.show.pk).update(score=Decimal("5.0"))
+        Season.objects.filter(pk=self.season.pk).update(score=Decimal("8.0"))
+        Episode.objects.filter(related_season=self.season)._raw_delete("default")
+        WatchState.objects.bulk_create([
+            WatchState(
+                user=self.user, watched=True,
+                item=Item.objects.get(media_type="episode", episode_number=number),
+            )
+            for number in (1, 2)
+        ])
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual([entry.score for entry in entries], [Decimal("8.0")])
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")

@@ -717,11 +717,26 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
             for mal_id in show_mal_ids
             for season in entries[mal_id][0].grouped_seasons
         )
+        # The entry's rating: its lowest-numbered rated season, else the
+        # show's - never whichever episode happened to create it.
+        season_scores = dict(
+            Season.objects.filter(
+                related_tv=show, order_archived=False, score__isnull=False,
+            ).values_list("item__season_number", "score"),
+        )
         for mal_id in show_mal_ids:
             entry = entries[mal_id][0]
             entry.grouped_exclusive_seasons = {
                 season for season in entry.grouped_seasons if season_feeds[season] == 1
             }
+            entry.score = next(
+                (
+                    season_scores[season]
+                    for season in sorted(entry.grouped_seasons)
+                    if season in season_scores
+                ),
+                show.score,
+            )
 
         if mapping_issues is not None and (unmapped or not mapped_any):
             mapping_issues.append({
