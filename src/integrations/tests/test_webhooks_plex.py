@@ -2568,6 +2568,54 @@ class PlexWebhookTests(TestCase):
         anime.refresh_from_db()
         self.assertIsNone(anime.score)
 
+    @patch("app.providers.tmdb.tv")
+    def test_show_rating_reaches_a_rewatched_flat_mal_anime(self, _mock_tv):
+        """A rewatch row doesn't make the title ambiguous.
+
+        Regression: two Anime rows for one title were treated as two matches,
+        so the rating was skipped for every rewatched show.
+        """
+        anime_item = Item.objects.create(
+            media_id="35078",
+            source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Mitsuboshi Colors",
+            image="",
+        )
+        ItemProviderLink.objects.create(
+            item=anime_item,
+            provider=Sources.TMDB.value,
+            provider_media_type=MediaTypes.TV.value,
+            provider_media_id="76134",
+            season_number=1,
+        )
+        for status, progress in ((Status.COMPLETED.value, 12), (Status.IN_PROGRESS.value, 3)):
+            Anime.objects.create(
+                item=anime_item, user=self.user, status=status, progress=progress,
+            )
+
+        response = self._post_payload(
+            {
+                "event": "media.rate",
+                "Account": {"title": "testuser"},
+                "Metadata": {
+                    "type": "show",
+                    "title": "Mitsuboshi Colors",
+                    "userRating": 9,
+                    "Guid": [{"id": "tmdb://76134"}],
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            sorted(
+                Anime.all_objects.filter(user=self.user, item=anime_item)
+                .values_list("score", flat=True)
+            ),
+            [9, 9],
+        )
+
     @patch("app.providers.tmdb.search")
     @patch("app.providers.tmdb.find")
     @patch("app.providers.tmdb.tv_with_seasons")

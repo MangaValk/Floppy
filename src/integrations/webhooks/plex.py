@@ -941,26 +941,30 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             app.models.Anime.objects.filter(
                 user=user,
                 item_id__in=links.values("item_id"),
-            ),
+            ).select_related("item"),
         )
-        if len(entries) != 1:
+        # A rewatch is another row for the same title, not another title.
+        item_ids = {anime.item_id for anime in entries}
+        if len(item_ids) != 1:
             logger.info(
                 "Skipping Plex rating for TMDB %s season %s: it matches %d tracked "
-                "MAL anime entries",
+                "MAL anime titles",
                 tmdb_id,
                 season_number,
-                len(entries),
+                len(item_ids),
             )
             return True
 
-        anime = entries[0]
-        if anime.score != rating:
-            anime.score = rating
-            anime.save()
+        # Every row carries the title's rating, so MAL sync and the details
+        # page agree whichever row they read.
+        for anime in entries:
+            if anime.score != rating:
+                anime.score = rating
+                anime.save()
         logger.info(
             "%s Plex rating on flat MAL anime %s",
             "Removed" if rating is None else "Applied",
-            anime.item.media_id,
+            entries[0].item.media_id,
         )
         return True
 
