@@ -15,6 +15,7 @@ import logging
 import secrets
 import time
 from datetime import timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 import requests
 from django.apps import apps
@@ -286,6 +287,15 @@ def connect_account(user, code, code_verifier, redirect_uri):
     return mal_account
 
 
+def mal_score(score):
+    """Return a Floppy score as a MAL score: whole, halves up, 1 at the least.
+
+    MAL reads 0 as "no score", so a real rating below 0.5 still sends 1.
+    """
+    rounded = int(Decimal(str(score)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return max(rounded, 1)
+
+
 def status_payload(media, mal_account=None):
     """Return the exact fields that Floppy will push for a media entry."""
     media_type = media.item.media_type
@@ -299,7 +309,7 @@ def status_payload(media, mal_account=None):
     }
     sync_ratings = mal_account is None or mal_account.sync_ratings_enabled
     if media.score is not None and sync_ratings:
-        data["score"] = round(media.score)
+        data["score"] = mal_score(media.score)
     return data
 
 
@@ -1139,7 +1149,7 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
             elif field == "progress":
                 desired[PROGRESS_RESPONSE_FIELDS[media_type][0]] = new_value
             elif field == "score" and mal_account.sync_ratings_enabled:
-                desired["score"] = round(new_value)
+                desired["score"] = mal_score(new_value)
         for field, new_value in desired.items():
             remote_field = (
                 PROGRESS_RESPONSE_FIELDS[media_type][1]

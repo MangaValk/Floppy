@@ -244,6 +244,19 @@ class MALSyncModelHooks(TestCase):
         mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
 
 
+class MALScore(TestCase):
+    """Floppy's decimal scores become whole MAL scores."""
+
+    def test_halves_round_up_and_a_real_rating_is_never_zero(self):
+        """Regression: round() sent 8.5 as 8 (halves to even) and 0.3 as 0,
+        which MAL reads as no score.
+        """
+        self.assertEqual(
+            [mal_sync.mal_score(Decimal(value)) for value in ("8.5", "7.5", "0.3", "10")],
+            [9, 8, 1, 10],
+        )
+
+
 class MALClientCredentials(TestCase):
     """The OAuth client ID and secret always come from the same MAL app."""
 
