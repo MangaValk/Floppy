@@ -149,6 +149,29 @@ class MALSyncModelHooks(TestCase):
         mock_delay.assert_called_once_with(media_type="manga", media_id=manga.pk, clear_score=False)
 
     @patch("integrations.tasks.sync_mal_status.delay")
+    def test_plex_history_import_queues_no_per_item_pushes(self, mock_delay, *_mocks):
+        """Regression: a Plex history import replays plays through
+        _handle_anime, queueing one MAL push per replayed episode.
+        """
+        from integrations.imports.plex import PlexHistoryImporter
+
+        manga = Manga.objects.create(
+            user=self.user, item=self.mal_manga_item, status=Status.PAUSED.value,
+        )
+        mock_delay.reset_mock()
+
+        def replay_a_play():
+            manga.progress = 5
+            with self.captureOnCommitCallbacks(execute=True):
+                manga.save()
+
+        importer = PlexHistoryImporter.__new__(PlexHistoryImporter)
+        with patch.object(PlexHistoryImporter, "_import_data", side_effect=replay_a_play):
+            importer.import_data()
+
+        mock_delay.assert_not_called()
+
+    @patch("integrations.tasks.sync_mal_status.delay")
     def test_broker_outage_does_not_fail_the_save(self, mock_delay, *_mocks):
         """Regression: the on-commit enqueue raised after the save committed,
         turning a saved edit into a 500.

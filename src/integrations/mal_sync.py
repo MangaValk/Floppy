@@ -15,6 +15,8 @@ import logging
 import secrets
 import time
 from collections import Counter
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -361,8 +363,28 @@ def _resolve_mal_from_provider_link(provider, provider_media_id, season_number, 
     return str(link.item.media_id), mapped_episode
 
 
+_PER_ITEM_PUSH_SUPPRESSED = ContextVar("mal_per_item_push_suppressed", default=False)
+
+
+@contextmanager
+def suppress_per_item_push():
+    """Skip per-item MAL pushes while importing history.
+
+    An import replays plays through the webhook handlers, which save rows one
+    by one; each save would otherwise queue its own push. A full sync sends
+    the imported state afterwards.
+    """
+    token = _PER_ITEM_PUSH_SUPPRESSED.set(True)
+    try:
+        yield
+    finally:
+        _PER_ITEM_PUSH_SUPPRESSED.reset(token)
+
+
 def per_item_sync_active(user_id):
     """Return whether saves should queue a per-item push for this user."""
+    if _PER_ITEM_PUSH_SUPPRESSED.get():
+        return False
     return MALAccount.objects.filter(
         user_id=user_id,
         sync_enabled=True,
