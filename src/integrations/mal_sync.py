@@ -262,7 +262,9 @@ def fetch_username(user, access_token):
             params={"fields": "name"},
             headers=headers,
         )
-    except requests.exceptions.HTTPError:
+    # A timeout surfaces as ProviderAPIError. The name is cosmetic, so neither
+    # may stop a reconnect from marking the account healthy.
+    except (requests.exceptions.HTTPError, services.ProviderAPIError):
         logger.warning("Could not fetch the MyAnimeList username after connecting.")
         return ""
     return response.get("name", "")
@@ -282,7 +284,10 @@ def connect_account(user, code, code_verifier, redirect_uri):
     )
     _store_tokens(mal_account, token_response)
 
-    mal_account.mal_username = fetch_username(user, decrypt(mal_account.access_token))
+    mal_account.mal_username = (
+        fetch_username(user, decrypt(mal_account.access_token))
+        or mal_account.mal_username
+    )
     mal_account.sync_enabled = True
     mal_account.connection_broken = False
     mal_account.last_error_message = ""

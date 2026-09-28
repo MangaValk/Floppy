@@ -445,6 +445,31 @@ class MALOAuthCallbackView(TestCase):
         self.assertRedirects(response, reverse("import_data"))
         self.assertFalse(MALAccount.objects.filter(user=self.user).exists())
 
+    @patch("integrations.mal_sync.exchange_code_for_tokens")
+    def test_reconnect_heals_the_account_when_the_username_lookup_times_out(
+        self, exchange, *_mocks,
+    ):
+        """Regression: a timeout in the username lookup aborted the reconnect
+        after saving the tokens, leaving the account broken and paused.
+        """
+        exchange.return_value = {
+            "access_token": "new-access", "refresh_token": "new-refresh", "expires_in": 3600,
+        }
+        account = make_mal_account(self.user)
+        MALAccount.objects.filter(pk=account.pk).update(
+            connection_broken=True, sync_enabled=False, mal_username="OldName",
+        )
+        with patch(
+            "integrations.mal_sync.services.api_request",
+            side_effect=ProviderAPIError("mal", requests.Timeout()),
+        ):
+            mal_sync.connect_account(self.user, "code", "verifier", "http://x/callback")
+
+        account.refresh_from_db()
+        self.assertFalse(account.connection_broken)
+        self.assertTrue(account.sync_enabled)
+        self.assertEqual(account.mal_username, "OldName")
+
     @patch("requests.Session.get")
     @patch("requests.Session.post")
     def test_callback_success_creates_account(self, mock_post, mock_get, *_mocks):
