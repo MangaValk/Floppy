@@ -244,6 +244,48 @@ class MALSyncModelHooks(TestCase):
         mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
 
 
+class MALClientCredentials(TestCase):
+    """The OAuth client ID and secret always come from the same MAL app."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = _make_user()
+
+    def test_personal_secret_is_not_paired_with_the_shared_client_id(self):
+        """Regression: a lone personal secret used Floppy's shared client ID,
+        so sign-in opened but every token exchange was rejected.
+        """
+        from app.providers import credentials
+
+        credentials.set_user("mal", self.user, {"client_secret": "personal-secret"})
+
+        self.assertEqual(mal_sync.client_credentials(self.user), ("", ""))
+        self.assertFalse(mal_sync.is_sync_configured(self.user))
+
+    def test_personal_pair_is_used_together(self):
+        from app.providers import credentials
+
+        credentials.set_user(
+            "mal", self.user,
+            {"client_id": "personal-id", "client_secret": "personal-secret"},
+        )
+
+        self.assertEqual(
+            mal_sync.client_credentials(self.user), ("personal-id", "personal-secret"),
+        )
+
+    @override_settings(MAL_API="instance-id", MAL_API_SECRET="instance-secret")
+    def test_incomplete_personal_pair_falls_back_to_the_instance_pair(self):
+        """A personal client ID alone doesn't borrow the instance secret."""
+        from app.providers import credentials
+
+        credentials.set_user("mal", self.user, {"client_id": "personal-id"})
+
+        self.assertEqual(
+            mal_sync.client_credentials(self.user), ("instance-id", "instance-secret"),
+        )
+
+
 @override_settings(URLS=["https://floppy.example.com"])
 @patch("integrations.mal_sync.client_id", return_value="test_client_id")
 @patch("integrations.mal_sync.client_secret", return_value="test_client_secret")

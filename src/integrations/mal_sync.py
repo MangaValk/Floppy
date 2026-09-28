@@ -96,18 +96,27 @@ class MALSyncMismatchError(Exception):
     """
 
 
+def client_credentials(user):
+    """Return the MAL client ID and secret for OAuth, taken from one source.
+
+    Both must belong to the same MAL app, so a personal secret is never
+    paired with the shared or instance client ID, or the other way round.
+    """
+    return credentials.get_together("mal", ("client_id", "client_secret"), user=user)
+
+
 def client_id(user):
-    """Return the MAL client ID to use for this user (personal or shared)."""
-    return credentials.get("mal", "client_id", user=user)
+    """Return the MAL client ID that goes with this user's client secret."""
+    return client_credentials(user)[0]
 
 
 def client_secret(user):
-    """Return the MAL client secret to use for this user (personal or shared)."""
-    return credentials.get("mal", "client_secret", user=user)
+    """Return the MAL client secret for this user's OAuth app."""
+    return client_credentials(user)[1]
 
 
 def is_sync_configured(user):
-    """Return whether this user has both MAL credentials needed for OAuth."""
+    """Return whether this user has a complete MAL client ID and secret pair."""
     return bool(client_id(user) and client_secret(user))
 
 
