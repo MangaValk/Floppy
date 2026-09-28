@@ -534,11 +534,19 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
     metadata_by_id = {}
 
     def mal_metadata(mal_id):
+        """Return the MAL entry's metadata, or None when MAL no longer has it."""
         if mal_id not in metadata_by_id:
-            with credentials.current_user_scope(user):
-                metadata_by_id[mal_id] = services.get_media_metadata(
-                    "anime", mal_id, Sources.MAL.value,
-                )
+            try:
+                with credentials.current_user_scope(user):
+                    metadata_by_id[mal_id] = services.get_media_metadata(
+                        "anime", mal_id, Sources.MAL.value,
+                    )
+            except services.ProviderAPIError as error:
+                # A deleted or merged entry is a bad mapping for that
+                # episode, not a reason to fail every other show.
+                if error.status_code != requests.codes.not_found:
+                    raise
+                metadata_by_id[mal_id] = None
         return metadata_by_id[mal_id]
 
     for show_index, show in enumerate(shows, start=1):
@@ -632,8 +640,9 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 # One link can cover only the first cour of a split season.
                 # An episode past that entry's end belongs to a later cour,
                 # which only AniBridge knows.
-                total = mal_id and mal_metadata(str(mal_id)).get("max_progress")
-                if total and episode_number > total:
+                link_metadata = mal_id and mal_metadata(str(mal_id))
+                total = link_metadata and link_metadata.get("max_progress")
+                if not link_metadata or (total and episode_number > total):
                     mal_id, episode_number = None, None
             if not mal_id or not episode_number:
                 mal_id, episode_number = anime_mappings.get_mal_id_from_series(
@@ -643,7 +652,12 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                     item.season_number,
                     item.episode_number,
                 )
-            if not mal_id or not episode_number or episode_number < 1:
+            if (
+                not mal_id
+                or not episode_number
+                or episode_number < 1
+                or mal_metadata(str(mal_id)) is None
+            ):
                 if not has_history:
                     # Not a tracked episode, so there is nothing to fix.
                     continue

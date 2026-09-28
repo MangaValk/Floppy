@@ -1619,6 +1619,24 @@ class GroupedMALSync(TestCase):
         "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_deleted_mal_entry_is_a_mapping_issue_not_a_failed_sync(self, metadata):
+        """Regression: one mapped MAL id returning 404 aborted the whole sync."""
+        metadata.side_effect = ProviderAPIError(
+            "MAL", MagicMock(response=MagicMock(status_code=404)),
+        )
+
+        issues = []
+        entries = mal_sync.grouped_sync_entries(self.user, mapping_issues=issues)
+
+        self.assertEqual(entries, [])
+        self.assertEqual(
+            [episode["episode"] for episode in issues[0]["episodes"]], [1, 2, 3],
+        )
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
     def test_play_left_in_progress_is_not_counted_as_watched(self, metadata):
         """Regression: an unfinished final episode raised the count and
         marked the MAL entry Completed early.
