@@ -320,6 +320,21 @@ class MALScore(TestCase):
         )
 
 
+class MALScoreZero(TestCase):
+    """A Floppy score of 0 is never pushed to MAL."""
+
+    def test_score_zero_is_left_out_of_the_push(self):
+        """Regression: mal_score raised 0 to 1, so every 0-rated entry was
+        previewed and pushed to MAL as a rating of 1.
+        """
+        media = Anime(
+            item=Item(media_type=MediaTypes.ANIME.value),
+            status=Status.COMPLETED.value, progress=12, score=Decimal(0),
+        )
+
+        self.assertNotIn("score", mal_sync.status_payload(media))
+
+
 class MALClientCredentials(TestCase):
     """The OAuth client ID and secret always come from the same MAL app."""
 

@@ -304,9 +304,10 @@ def connect_account(user, code, code_verifier, redirect_uri):
 
 
 def mal_score(score):
-    """Return a Floppy score as a MAL score: whole, halves up, 1 at the least.
+    """Return a Floppy score above 0 as a MAL score: whole, halves up, 1 at the least.
 
     MAL reads 0 as "no score", so a real rating below 0.5 still sends 1.
+    A Floppy score of 0 has no MAL equivalent; status_payload never sends it.
     """
     rounded = int(Decimal(str(score)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
     return max(rounded, 1)
@@ -324,7 +325,9 @@ def status_payload(media, mal_account=None):
         progress_field: media.progress,
     }
     sync_ratings = mal_account is None or mal_account.sync_ratings_enabled
-    if media.score is not None and sync_ratings:
+    # MAL has no rating of 0 (it means "no score"), so a Floppy 0 is left
+    # out rather than raised to 1 or sent as a clear.
+    if media.score and sync_ratings:
         data["score"] = mal_score(media.score)
     return data
 
