@@ -1199,15 +1199,20 @@ def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=
     return preview
 
 
-def push_status(media, mal_account):
+def push_status(media, mal_account, clear_score=False):
     """Push a MAL-backed Anime/Manga entry's status, progress and score to MAL.
 
     Args:
         media: A saved Anime or Manga instance whose item.source is MAL.
         mal_account: The user's MALAccount to push through.
+        clear_score: The rating was just removed in Floppy; send 0, which
+            clears it on MAL. An entry that was simply never rated in Floppy
+            leaves MAL's rating alone.
     """
     media_type = media.item.media_type
     data = status_payload(media, mal_account)
+    if clear_score and media.score is None and mal_account.sync_ratings_enabled:
+        data["score"] = 0
 
     access_token = get_valid_access_token(mal_account)
     headers = {"Authorization": f"Bearer {access_token}"}

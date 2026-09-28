@@ -113,7 +113,7 @@ class MALSyncModelHooks(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             anime.save()
 
-        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
+        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk, clear_score=False)
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_progress_change_queues_sync(self, mock_delay, *_mocks):
@@ -130,7 +130,7 @@ class MALSyncModelHooks(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             anime.save()
 
-        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
+        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk, clear_score=False)
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_score_change_queues_sync(self, mock_delay, *_mocks):
@@ -146,7 +146,28 @@ class MALSyncModelHooks(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             manga.save()
 
-        mock_delay.assert_called_once_with(media_type="manga", media_id=manga.pk)
+        mock_delay.assert_called_once_with(media_type="manga", media_id=manga.pk, clear_score=False)
+
+    @patch("integrations.tasks.sync_mal_status.delay")
+    def test_clearing_a_rating_asks_mal_to_clear_it(self, mock_delay, *_mocks):
+        """Regression: an empty rating sent no score, so MAL kept the old one
+        and the next full sync pulled it back into Floppy.
+        """
+        manga = Manga.objects.create(
+            user=self.user,
+            item=self.mal_manga_item,
+            status=Status.PAUSED.value,
+            score=Decimal("8.0"),
+        )
+        mock_delay.reset_mock()
+
+        manga.score = None
+        with self.captureOnCommitCallbacks(execute=True):
+            manga.save()
+
+        mock_delay.assert_called_once_with(
+            media_type="manga", media_id=manga.pk, clear_score=True,
+        )
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_unrelated_field_change_does_not_queue(self, mock_delay, *_mocks):
@@ -190,7 +211,7 @@ class MALSyncModelHooks(TestCase):
                 status=Status.PAUSED.value,
             )
 
-        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
+        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk, clear_score=False)
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_completion_still_queues_sync_alongside_auto_migration(
@@ -213,7 +234,7 @@ class MALSyncModelHooks(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             anime.save()
 
-        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
+        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk, clear_score=False)
 
     @patch("integrations.tasks.sync_mal_status.delay")
     def test_no_queue_without_per_item_sync(self, mock_delay, *_mocks):
@@ -241,7 +262,7 @@ class MALSyncModelHooks(TestCase):
         mock_delay.assert_not_called()
         for callback in callbacks:
             callback()
-        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk)
+        mock_delay.assert_called_once_with(media_type="anime", media_id=anime.pk, clear_score=False)
 
 
 class MALScore(TestCase):
@@ -956,6 +977,20 @@ class PushStatus(TestCase):
         mal_sync.push_status(manga, self.account)
 
         self.assertNotIn("score", mock_put.call_args.kwargs["data"])
+
+    @patch("requests.Session.put")
+    def test_cleared_rating_is_sent_as_zero(self, mock_put, *_mocks):
+        mock_put.return_value = MagicMock(
+            json=lambda: {"status": "dropped", "num_chapters_read": 64, "score": 0},
+        )
+        manga = Manga.objects.create(
+            user=self.user, item=self.manga_item,
+            status=Status.DROPPED.value, progress=64,
+        )
+
+        mal_sync.push_status(manga, self.account, clear_score=True)
+
+        self.assertEqual(mock_put.call_args.kwargs["data"]["score"], 0)
 
     @patch("requests.Session.put")
     @patch("requests.Session.post")
@@ -2092,7 +2127,7 @@ class GroupedMALSync(TestCase):
         entries.return_value = [MagicMock()]
         tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
         entries.assert_called_once_with(self.user, tv=self.show)
-        push.assert_called_once_with(entries.return_value[0], self.account)
+        push.assert_called_once_with(entries.return_value[0], self.account, clear_score=False)
 
     @patch("integrations.mal_sync.push_status")
     @patch("integrations.mal_sync.grouped_sync_entries")
@@ -2482,7 +2517,7 @@ class SyncMALStatusTask(TestCase):
         account = make_mal_account(self.user)
         with patch("integrations.mal_sync.push_status") as mock_push:
             tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
-        mock_push.assert_called_once_with(self.anime, account)
+        mock_push.assert_called_once_with(self.anime, account, clear_score=False)
 
     def test_saving_a_rewatch_row_pushes_the_completed_row(self):
         """A lower rewatch row must not replace a completed MAL entry."""
@@ -2500,7 +2535,7 @@ class SyncMALStatusTask(TestCase):
         with patch("integrations.mal_sync.push_status") as mock_push:
             tasks.sync_mal_status(media_type="anime", media_id=rewatch.pk)
 
-        mock_push.assert_called_once_with(completed, account)
+        mock_push.assert_called_once_with(completed, account, clear_score=False)
 
     def test_noop_when_media_has_no_status(self):
         """Statusless imported media has no MAL list status to push."""
@@ -2537,7 +2572,7 @@ class SyncMALStatusTask(TestCase):
         ):
             tasks.sync_mal_status(media_type="anime", media_id=self.anime.pk)
         mock_entries.assert_called_once_with(self.user, tv=show)
-        mock_push.assert_called_once_with(projected, self.user.mal_account)
+        mock_push.assert_called_once_with(projected, self.user.mal_account, clear_score=False)
 
     def test_not_found_from_mal_is_logged_not_raised(self):
         """A 404 from MAL (e.g. a deleted MAL entry) doesn't raise or retry."""
@@ -3741,7 +3776,7 @@ class MultiUserIsolation(TestCase):
         """Syncing Alice's entry pushes through Alice's account, never Bob's."""
         with patch("integrations.mal_sync.push_status") as mock_push:
             tasks.sync_mal_status(media_type="anime", media_id=self.alice_anime.pk)
-        mock_push.assert_called_once_with(self.alice_anime, self.alice_account)
+        mock_push.assert_called_once_with(self.alice_anime, self.alice_account, clear_score=False)
 
     def test_disconnecting_one_account_leaves_the_other_untouched(self):
         """Disconnecting Alice's account never affects Bob's connection."""

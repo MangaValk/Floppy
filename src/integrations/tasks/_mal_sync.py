@@ -119,7 +119,7 @@ def _claim_full_sync(mal_account, queued):
     retry_jitter=True,
     max_retries=5,
 )
-def sync_mal_status(media_type, media_id):
+def sync_mal_status(media_type, media_id, clear_score=False):
     """Push a single anime/manga entry's status, progress and score to MyAnimeList.
 
     Runs after every save() of a MAL-backed Anime/Manga instance (see the
@@ -129,6 +129,9 @@ def sync_mal_status(media_type, media_id):
     no-ops if the account has turned off per-item pushes specifically
     (mal_account.per_item_sync_enabled), independent of the overall
     connection and of "Sync All Now"/scheduled full syncs.
+
+    `clear_score` is set when the save removed the entry's rating, so MAL's
+    copy is cleared too instead of being pulled back later.
     """
     model = apps.get_model(app_label="app", model_name=media_type)
     # Anime's default manager hides rows auto-migrated to episode tracking on
@@ -193,7 +196,9 @@ def sync_mal_status(media_type, media_id):
     retryable_error = None
     for entry in entries:
         try:
-            mal_sync.push_status(entry, mal_account)
+            mal_sync.push_status(
+                entry, mal_account, clear_score=clear_score and media_type != "tv",
+            )
         except mal_sync.MALAuthError as error:
             _mark_connection_broken(mal_account, error)
             return
