@@ -1025,6 +1025,27 @@ class PushStatus(TestCase):
             "Bearer refreshed-access-token",
         )
 
+    @patch("requests.Session.put")
+    def test_missing_credentials_do_not_break_the_connection(self, mock_put, *_mocks):
+        """Regression: a missing client secret was treated like MAL rejecting
+        the connection, which disabled sync until a full OAuth reconnect.
+        """
+        self.account.token_expires_at = timezone.now() - timedelta(minutes=5)
+        self.account.save(update_fields=["token_expires_at"])
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.anime_item, status=Status.PAUSED.value,
+            )
+
+        with patch("integrations.mal_sync.client_secret", return_value=""):
+            tasks.sync_mal_status(media_type="anime", media_id=anime.pk)
+
+        mock_put.assert_not_called()
+        self.account.refresh_from_db()
+        self.assertFalse(self.account.connection_broken)
+        self.assertTrue(self.account.sync_enabled)
+        self.assertIn("isn't configured", self.account.last_error_message)
+
     @patch("requests.Session.post")
     def test_refresh_failure_raises_auth_error(self, mock_post, *_mocks):
         """A revoked refresh token surfaces as a clean MALAuthError."""

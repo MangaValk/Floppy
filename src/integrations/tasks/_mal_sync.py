@@ -61,7 +61,14 @@ def preview_mal_sync(self, user_id):
 
 
 def _mark_connection_broken(mal_account, message):
-    """Disable sync and record why, matching the LastFM/Koito account pattern."""
+    """Disable sync and record why, matching the LastFM/Koito account pattern.
+
+    Missing client credentials only record the message: MAL rejected
+    nothing, so the connection works again once they're added back.
+    """
+    if isinstance(message, mal_sync.MALNotConfiguredError):
+        connection_health.record_failure(mal_account, message, auth=False)
+        return
     mal_account.sync_enabled = False
     mal_account.last_failed_at = timezone.now()
     mal_account.save(update_fields=["sync_enabled", "last_failed_at", "updated_at"])

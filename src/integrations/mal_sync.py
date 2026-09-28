@@ -90,6 +90,14 @@ class MALAuthError(Exception):
     """Raised when MyAnimeList rejects an OAuth request or credentials are missing."""
 
 
+class MALNotConfiguredError(MALAuthError):
+    """Raised when this instance or user has no complete MAL client ID and secret.
+
+    A setup problem, not a rejection: MAL never saw the request, so the
+    connection isn't broken and adding the credentials back is enough.
+    """
+
+
 class MALSyncMismatchError(Exception):
     """Raised when MAL returns success but its response shows the change wasn't applied.
 
@@ -164,7 +172,7 @@ def _request_token(user, data):
             "MyAnimeList sync isn't configured. Add your own MyAnimeList Client "
             "ID and Client secret under Settings > Metadata."
         )
-        raise MALAuthError(msg)
+        raise MALNotConfiguredError(msg)
 
     try:
         return services.api_request(Sources.MAL.value, "POST", TOKEN_URL, data=data)
