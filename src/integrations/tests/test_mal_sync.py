@@ -2455,11 +2455,33 @@ class GroupedMALSync(TestCase):
 
     @patch("integrations.mal_sync.push_status")
     @patch("integrations.mal_sync.grouped_sync_entries")
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_removing_a_season_rating_clears_only_its_cours(self, _delay, entries, push):
+        """Regression: one season's removed rating zeroed every unrated cour,
+        wiping MAL ratings on seasons never rated in Floppy.
+        """
+        Season.objects.filter(pk=self.season.pk).update(score=Decimal("8.0"))
+        season = Season.objects.get(pk=self.season.pk)
+        season.score = None
+        with self.captureOnCommitCallbacks(execute=True):
+            season.save()
+        season_one, season_three = MagicMock(score=None), MagicMock(score=None)
+        season_one.grouped_seasons, season_three.grouped_seasons = {1}, {3}
+        entries.return_value = [season_one, season_three]
+
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+
+        self.assertEqual(
+            [call.kwargs["clear_score"] for call in push.call_args_list], [True, False],
+        )
+
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
     def test_rating_clear_survives_a_retried_push(self, entries, push):
         """Regression: the flag was dropped before pushing, so a retry after
         a 5xx no longer cleared MAL's rating.
         """
-        cache.set(mal_sync.grouped_clear_score_key(self.show.pk), True)
+        cache.set(mal_sync.grouped_clear_score_key(self.show.pk), ["show"])
         entries.return_value = [MagicMock(score=None)]
         push.side_effect = ProviderAPIError(
             "MAL", MagicMock(response=MagicMock(status_code=503)),

@@ -200,18 +200,24 @@ def sync_mal_status(media_type, media_id, clear_score=False):
         return
 
     clear_key = None
+    clear_scopes = set()
     if media_type == "tv":
         # queue_grouped_sync flags a removed show or season rating here. The
         # flag stays until the push goes through, so a retry still clears it.
         clear_key = mal_sync.grouped_clear_score_key(media.pk)
-        clear_score = clear_score or bool(cache.get(clear_key))
+        clear_scopes = set(cache.get(clear_key) or ())
 
     # A grouped show can span several MAL entries (one per cour). Each is
     # pushed on its own, so one that MAL rejects doesn't hold back the rest.
     retryable_error = None
     for entry in entries:
         try:
-            mal_sync.push_status(entry, mal_account, clear_score=clear_score)
+            # A removed show rating was every unrated cour's fallback; a
+            # removed season rating only touches the cours it feeds.
+            clears = clear_score or "show" in clear_scopes or bool(
+                clear_scopes & set(getattr(entry, "grouped_seasons", ())),
+            )
+            mal_sync.push_status(entry, mal_account, clear_score=clears)
         except mal_sync.MALAuthError as error:
             _mark_connection_broken(mal_account, error)
             return

@@ -19,6 +19,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import requests
 from django.apps import apps
+from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
@@ -374,11 +375,12 @@ def grouped_clear_score_key(show_id):
     return f"mal_grouped_clear_score:{show_id}"
 
 
-def queue_grouped_sync(user_id, item, clear_score=False):
+def queue_grouped_sync(user_id, item, clear_scope=None):
     """Queue current grouped progress after commit for connected, opted-in users.
 
-    `clear_score` flags that the save removed a rating. It's kept apart from
-    the debounce window, so a later trigger in the same window can't drop it.
+    `clear_scope` flags a removed rating: "show", or the season number whose
+    rating went. It's kept apart from the debounce window, so a later trigger
+    in the same window can't drop it.
     """
     from app.models import TV
     from integrations.tasks import sync_mal_status
@@ -403,11 +405,18 @@ def queue_grouped_sync(user_id, item, clear_score=False):
         # A watch fires several triggers (watch state, episode, season). The
         # first one reserves the window; the push runs after it closes, so it
         # reads every change that committed inside it and is sent only once.
-        if clear_score:
-            cache_safety.cache_add(
-                grouped_clear_score_key(show_id),
-                timeout=GROUPED_SYNC_DEBOUNCE_SECONDS + 600,
-            )
+        if clear_scope is not None:
+            clear_key = grouped_clear_score_key(show_id)
+            try:
+                scopes = set(cache.get(clear_key) or ()) | {clear_scope}
+                cache.set(
+                    clear_key, list(scopes), timeout=GROUPED_SYNC_DEBOUNCE_SECONDS + 600,
+                )
+            # The cache is down; the rating stays on MAL, nothing else fails.
+            except Exception as error:
+                logger.warning(
+                    "mal_grouped_clear_flag_failed show_id=%s error=%s", show_id, error,
+                )
         key = f"mal_grouped_sync:{show_id}"
         if not cache_safety.acquire_lock(
             key,
@@ -690,6 +699,8 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                     show.status == Status.PLANNING.value and show.progress == 0,
                 )
                 entries[mal_id][0].grouped_tv = show
+                entries[mal_id][0].grouped_seasons = set()
+            entries[mal_id][0].grouped_seasons.add(item.season_number)
             _, watched_numbers, _, _ = entries[mal_id]
             if watched:
                 watched_numbers.add(episode_number)
