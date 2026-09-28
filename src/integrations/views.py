@@ -1610,33 +1610,32 @@ def mal_episode_mapping_save(request):
     if scope == "season":
         source_episodes = sorted(tracked_episodes)
 
-    references = []
     first_episode = source_episodes[0]
-    for source_episode in source_episodes:
-        references.append(
-            ExternalReference(
-                user=request.user,
-                integration="mal_sync",
-                source_account="",
-                external_namespace="grouped_anime_episode",
-                external_identity=f"{item_id}:{season}:{source_episode}",
-                media_type=MediaTypes.EPISODE.value,
-                matched_item=show.item,
-                corrected_item=show.item,
-                review_status=ExternalReferenceReviewStatus.CORRECTED.value,
-                episode_mapping={
-                    "mal_id": mal_id,
-                    # Offset by episode number, not list position, so an
-                    # untracked episode keeps its slot for when it's watched.
-                    "episode": mal_episode + source_episode - first_episode,
-                },
-                metadata={
-                    "series_title": show.item.title,
-                    "season_number": season,
-                    "episode_number": source_episode,
-                },
-            )
+    references = [
+        ExternalReference(
+            user=request.user,
+            integration="mal_sync",
+            source_account="",
+            external_namespace="grouped_anime_episode",
+            external_identity=f"{item_id}:{season}:{source_episode}",
+            media_type=MediaTypes.EPISODE.value,
+            matched_item=show.item,
+            corrected_item=show.item,
+            review_status=ExternalReferenceReviewStatus.CORRECTED.value,
+            episode_mapping={
+                "mal_id": mal_id,
+                # Offset by episode number, not list position, so an
+                # untracked episode keeps its slot for when it's watched.
+                "episode": mal_episode + source_episode - first_episode,
+            },
+            metadata={
+                "series_title": show.item.title,
+                "season_number": season,
+                "episode_number": source_episode,
+            },
         )
+        for source_episode in source_episodes
+    ]
     ExternalReference.objects.bulk_create(
         references,
         update_conflicts=True,
