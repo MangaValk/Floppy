@@ -115,6 +115,8 @@ The "Pull into Floppy" list only offers what a sync applies. Pulling progress
 needs "pull higher progress" and never applies to grouped anime; pulling a
 missing rating needs "pull ratings" and does apply to grouped anime, landing on
 the show.
+With "pull higher progress" on, a full sync that cannot load the MyAnimeList
+lists fails without pushing, so a higher count on MAL is never lowered.
 
 Preview runs as a read-only Celery task on the background queue. The page starts
 it with a CSRF-protected POST and polls with an expiring, user-bound token, so

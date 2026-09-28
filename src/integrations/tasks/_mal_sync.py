@@ -297,8 +297,34 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None, queued=False):
             list_error = error
         logger.warning(
             "Could not fetch MyAnimeList lists to check for a higher recorded "
-            "progress before pushing; continuing without the correction",
+            "progress before pushing",
         )
+
+    if list_error is not None and mal_account.pull_higher_progress_enabled:
+        # Pushing now could lower a count MAL has ahead of Floppy, which the
+        # user asked to keep, so nothing is pushed until the lists load.
+        mal_account.full_sync_status = MALFullSyncStatus.FAILED
+        mal_account.full_sync_total = 0
+        mal_account.full_sync_processed = 0
+        mal_account.full_sync_succeeded = 0
+        mal_account.full_sync_failed = 1
+        mal_account.full_sync_completed_at = timezone.now()
+        mal_account.full_sync_results = [{
+            "title": "MyAnimeList lists",
+            "media_type": "Anime",
+            "mal_id": "",
+            "outcome": "failed",
+            "reason": (
+                "Couldn't load your MyAnimeList lists, so nothing was pushed. "
+                "Please try again."
+            ),
+        }]
+        mal_account.save(update_fields=[
+            "full_sync_status", "full_sync_total", "full_sync_processed",
+            "full_sync_succeeded", "full_sync_failed", "full_sync_completed_at",
+            "full_sync_results", "updated_at",
+        ])
+        return
 
     mapping_issues = []
     try:

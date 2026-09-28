@@ -1615,6 +1615,7 @@ class GroupedMALSync(TestCase):
             countdown=mal_sync.GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
         )
 
+    @patch("integrations.mal_sync._fetch_list_statuses", new=MagicMock(return_value={}))
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={})
     def test_mapping_issues_persist_and_survive_page_reload(self):
         self.client.force_login(self.user)
@@ -2273,6 +2274,7 @@ class GroupedMALSync(TestCase):
             sorted([self.show.pk, other_show.pk]),
         )
 
+    @patch("integrations.mal_sync._fetch_list_statuses", new=MagicMock(return_value={}))
     @patch("integrations.mal_sync.grouped_sync_entries")
     def test_mapping_outage_fails_full_sync_without_leaving_it_queued(self, entries):
         entries.side_effect = ProviderAPIError("mal", requests.RequestException())
@@ -2473,6 +2475,11 @@ class BulkSyncMALStatusTask(TestCase):
 
     def setUp(self):
         """Create a user with a mix of MAL-backed and non-MAL-backed entries."""
+        # An empty MAL list unless a test supplies one: a failed fetch
+        # stops a full sync before it pushes anything.
+        lists = patch("integrations.mal_sync._fetch_list_statuses", return_value={})
+        lists.start()
+        self.addCleanup(lists.stop)
         self.user = _make_user()
         with patch("integrations.tasks.sync_mal_status.delay"):
             self.anime = Anime.objects.create(
@@ -2574,6 +2581,23 @@ class BulkSyncMALStatusTask(TestCase):
         result = MALAccount.objects.get(user=self.user).full_sync_results[-1]
         self.assertEqual(result["outcome"], "failed")
         self.assertIn("503", result["reason"])
+
+    def test_list_outage_pushes_nothing_when_higher_progress_is_kept(self):
+        """Regression: a failed list fetch was only logged, so the sync
+        pushed Floppy's lower count over MAL's higher one.
+        """
+        make_mal_account(self.user, pull_higher_progress_enabled=True)
+        error = ProviderAPIError("MAL", MagicMock(response=MagicMock(status_code=503)))
+        with (
+            patch("integrations.mal_sync._fetch_list_statuses", side_effect=error),
+            patch("integrations.mal_sync.push_status") as mock_push,
+        ):
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        mock_push.assert_not_called()
+        account = MALAccount.objects.get(user=self.user)
+        self.assertEqual(account.full_sync_status, "failed")
+        self.assertIn("nothing was pushed", account.full_sync_results[0]["reason"])
 
     def test_schedule_does_not_take_over_a_queued_sync(self):
         """Regression: a scheduled run claimed the QUEUED row a user's review
@@ -2712,7 +2736,9 @@ class BulkSyncMALStatusTask(TestCase):
 
     def test_pull_higher_progress_disabled_skips_the_correction(self):
         """Turning the setting off skips fetching/adopting MAL's remote progress."""
-        make_mal_account(self.user, pull_higher_progress_enabled=False)
+        make_mal_account(
+            self.user, pull_higher_progress_enabled=False, pull_ratings_enabled=False,
+        )
         with (
             patch("integrations.mal_sync.pull_higher_mal_progress") as mock_pull,
             patch("integrations.mal_sync.push_status"),
