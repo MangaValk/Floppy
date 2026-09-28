@@ -1528,6 +1528,26 @@ class GroupedMALSync(TestCase):
         self.assertEqual(entries[0].status, Status.COMPLETED.value)
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_play_left_in_progress_is_not_counted_as_watched(self, metadata):
+        """Regression: an unfinished final episode raised the count and
+        marked the MAL entry Completed early.
+        """
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 3}
+        Episode.objects.filter(
+            related_season=self.season, item__episode_number=3,
+        ).update(status=Status.IN_PROGRESS.value)
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(
+            [(entry.progress, entry.status) for entry in entries],
+            [(2, Status.IN_PROGRESS.value)],
+        )
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:111": {"1-2": "1-2"}, "mal:222": {"3-": "1-"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")
