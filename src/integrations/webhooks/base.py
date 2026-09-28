@@ -464,9 +464,10 @@ class BaseWebhookProcessor:
             if (
                 existing_tv_item
                 and existing_tv_item.library_media_type != MediaTypes.ANIME.value
-                and self._find_existing_anime_home(user, media_id, tvdb_id)
             ):
-                existing_tv_item = None
+                anime_home = self._find_existing_anime_home(user, media_id, tvdb_id)
+                if anime_home and anime_home[0] == "flat":
+                    existing_tv_item = None
             if existing_tv_item:
                 logger.info(
                     "Routing episode to existing TV tracking item instead of flat "

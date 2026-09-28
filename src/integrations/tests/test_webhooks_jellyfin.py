@@ -1,6 +1,6 @@
 import json
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings, tag
@@ -972,6 +972,85 @@ class JellyfinWebhookTests(TestCase):
         anime.refresh_from_db()
         self.assertEqual(anime.progress, 9)
         self.assertFalse(Season.objects.filter(related_tv=tv).exists())
+
+    @override_settings(TVDB_API_KEY="")
+    @patch("integrations.webhooks.anime_mappings.fetch_mapping_data")
+    @patch("app.providers.mal.anime")
+    @patch("app.providers.tmdb.tv_with_seasons")
+    @patch("app.providers.tmdb.find")
+    def test_tv_bucket_row_keeps_episodes_when_the_anime_home_is_grouped(
+        self,
+        mock_find,
+        mock_tv_with_seasons,
+        mock_mal_anime,
+        mock_load_mapping_data,
+    ):
+        """Only a flat MAL home takes the episode from a TV-bucket row.
+
+        Regression: any anime home dropped the TV row, so with a grouped home
+        the episode fell through to flat MAL mapping and started a flat entry.
+        """
+        mock_find.return_value = {
+            "tv_episode_results": [],
+            "tv_results": [{"id": 12345}],
+        }
+        mock_tv_with_seasons.return_value = {
+            "media_id": "12345",
+            "title": "Flat Show",
+            "image": "https://example.com/show.jpg",
+            "tvdb_id": "402474",
+            "season/1": {"episodes": [{"episode_number": 9}]},
+        }
+        mock_load_mapping_data.return_value = {
+            "tvdb_show:402474:s1": {"mal:35078": {}},
+            "tmdb_show:12345:s1": {"mal:35078": {}},
+        }
+        mock_mal_anime.return_value = {
+            "media_id": "35078",
+            "title": "Flat Show",
+            "image": "https://example.com/anime.jpg",
+            "max_progress": 12,
+        }
+
+        tv_item = Item.objects.create(
+            media_id="12345",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            library_media_type=MediaTypes.TV.value,
+            title="Flat Show",
+        )
+        tv = TV.objects.create(
+            item=tv_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        grouped_home = patch(
+            "integrations.webhooks.base.BaseWebhookProcessor._find_existing_anime_home",
+            return_value=("grouped", MagicMock()),
+        )
+        with grouped_home:
+            response = self.client.post(
+                self.url,
+                data=json.dumps(
+                    {
+                        "Event": "Stop",
+                        "Item": {
+                            "Type": "Episode",
+                            "Name": "Episode 9",
+                            "ProviderIds": {"Tmdb": "12345", "Tvdb": "402474"},
+                            "UserData": {"Played": True},
+                            "SeriesName": "Flat Show",
+                            "ParentIndexNumber": 1,
+                            "IndexNumber": 9,
+                        },
+                    },
+                ),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Anime.objects.filter(user=self.user).exists())
+        self.assertTrue(Season.objects.filter(related_tv=tv).exists())
 
     @override_settings(TVDB_API_KEY="")
     @patch("integrations.webhooks.anime_mappings.fetch_mapping_data")
