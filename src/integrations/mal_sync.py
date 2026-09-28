@@ -447,6 +447,16 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
     }
     ignored_ids = ignored_mapping_item_ids(user)
     entries = {}
+    metadata_by_id = {}
+
+    def mal_metadata(mal_id):
+        if mal_id not in metadata_by_id:
+            with credentials.current_user_scope(user):
+                metadata_by_id[mal_id] = services.get_media_metadata(
+                    "anime", mal_id, Sources.MAL.value,
+                )
+        return metadata_by_id[mal_id]
+
     for show_index, show in enumerate(shows, start=1):
         if progress_callback:
             progress_callback(show_index, len(shows), show.item.title)
@@ -502,6 +512,12 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                     item.season_number,
                     item.episode_number,
                 )
+                # One link can cover only the first cour of a split season.
+                # An episode past that entry's end belongs to a later cour,
+                # which only AniBridge knows.
+                total = mal_id and mal_metadata(str(mal_id)).get("max_progress")
+                if total and episode_number > total:
+                    mal_id, episode_number = None, None
             if not mal_id or not episode_number:
                 mal_id, episode_number = anime_mappings.get_mal_id_from_series(
                     mapping_data,
@@ -520,10 +536,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 continue
             mal_id = str(mal_id)
             if mal_id not in entries:
-                with credentials.current_user_scope(user):
-                    metadata = services.get_media_metadata(
-                        "anime", mal_id, Sources.MAL.value,
-                    )
+                metadata = mal_metadata(mal_id)
                 entries[mal_id] = (
                     Anime(
                         user=user,

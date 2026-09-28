@@ -1410,6 +1410,39 @@ class GroupedMALSync(TestCase):
         self.assertEqual(entries[0].status, Status.COMPLETED.value)
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:111": {"1-2": "1-2"}, "mal:222": {"3-": "1-"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_link_to_first_cour_leaves_later_episodes_to_anibridge(self, metadata):
+        """A season link covers only its own MAL entry's episodes.
+
+        Regression: a link to cour 1 of a season split across two MAL
+        entries mapped S1E3 onto cour 1 as episode 3, where it was clamped
+        away and cour 2 was never updated.
+        """
+        metadata.side_effect = lambda _type, mal_id, _source: {
+            "title": f"Cour {mal_id}", "max_progress": 2,
+        }
+        ItemProviderLink.objects.create(
+            item=Item.objects.create(
+                media_id="111", source=Sources.MAL.value,
+                media_type=MediaTypes.ANIME.value, title="Cour 111",
+            ),
+            provider=Sources.TMDB.value,
+            provider_media_id="100",
+            provider_media_type=MediaTypes.TV.value,
+            season_number=1,
+            episode_offset=0,
+        )
+
+        entries = {
+            entry.item.media_id: entry.progress
+            for entry in mal_sync.grouped_sync_entries(self.user)
+        }
+
+        self.assertEqual(entries, {"111": 2, "222": 1})
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:1482": {"1-3": "1-3"}},
         "tmdb_show:100:s2": {"mal:1482": {"1-2": "4-5"}},
     })
