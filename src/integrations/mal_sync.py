@@ -909,7 +909,9 @@ def pull_grouped_rating(media, current, mal_account):
     transient per-cour projection, so its rating lands on the show.
     """
     show = getattr(media, "grouped_tv", None)
-    if show is None:
+    # Entries of one show share its TV object; once a sibling cour has set
+    # the rating, the rest must not overwrite it with their own MAL score.
+    if show is None or show.score is not None:
         return
     updates = _local_pull_updates(media.item.media_type, media, current, mal_account)
     if "score" in updates:

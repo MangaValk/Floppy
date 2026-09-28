@@ -2893,6 +2893,24 @@ class BulkSyncMALStatusTask(TestCase):
         self.assertEqual((show.status, show.score), (Status.IN_PROGRESS.value, 7))
         show.save.assert_called_once_with(update_fields=["score"])
 
+    def test_first_pulled_cour_rating_is_kept_for_the_show(self):
+        """Regression: each cour's stale snapshot still looked unrated, so the
+        last cour's MAL rating won and was pushed over the first cour's.
+        """
+        account = make_mal_account(self.user)
+        show = MagicMock(score=None)
+        cours = []
+        for _ in range(2):
+            media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
+            media.grouped_tv = show
+            cours.append(media)
+
+        mal_sync.pull_grouped_rating(cours[0], {"status": "watching", "score": 8}, account)
+        mal_sync.pull_grouped_rating(cours[1], {"status": "watching", "score": 6}, account)
+
+        self.assertEqual(show.score, 8)
+        show.save.assert_called_once_with(update_fields=["score"])
+
     def test_grouped_entry_never_offers_a_progress_pull(self):
         """Grouped progress is episode history, so only a rating can be pulled."""
         account = make_mal_account(self.user)
