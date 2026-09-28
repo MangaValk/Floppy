@@ -1792,12 +1792,28 @@ def mal_full_sync(request):
             if request.POST.get("selective") == "true"
             else None
         )
-        tasks.bulk_sync_mal_status.delay(
-            user_id=request.user.pk,
-            selected=selected,
-            pull=request.POST.getlist("pull"),
-            queued=True,
-        )
+        try:
+            tasks.bulk_sync_mal_status.delay(
+                user_id=request.user.pk,
+                selected=selected,
+                pull=request.POST.getlist("pull"),
+                queued=True,
+            )
+        except BrokerOperationalError:
+            # Release the claim, or every sync is refused as "in progress"
+            # until it goes stale.
+            type(mal_account).objects.filter(
+                pk=mal_account.pk, full_sync_status=MALFullSyncStatus.QUEUED,
+            ).update(
+                full_sync_status=MALFullSyncStatus.FAILED,
+                full_sync_completed_at=timezone.now(),
+                updated_at=timezone.now(),
+            )
+            messages.error(
+                request,
+                "Could not queue the sync. Check the background worker and Redis.",
+            )
+            return _integration_redirect(request)
         messages.success(
             request,
             "Full sync to MyAnimeList started in the background. This can "
@@ -1827,6 +1843,7 @@ def mal_full_sync_retry_failed(request):
     else:
         from integrations.models import MALFullSyncStatus
 
+        previous_status = mal_account.full_sync_status
         queued = type(mal_account).objects.filter(pk=mal_account.pk).exclude(
             full_sync_status__in=[MALFullSyncStatus.QUEUED, MALFullSyncStatus.RUNNING],
         ).update(
@@ -1836,7 +1853,17 @@ def mal_full_sync_retry_failed(request):
         if not queued:
             messages.info(request, "A MyAnimeList sync is already in progress.")
             return _integration_redirect(request)
-        tasks.retry_failed_mal_status.delay(user_id=request.user.pk, queued=True)
+        try:
+            tasks.retry_failed_mal_status.delay(user_id=request.user.pk, queued=True)
+        except BrokerOperationalError:
+            type(mal_account).objects.filter(
+                pk=mal_account.pk, full_sync_status=MALFullSyncStatus.QUEUED,
+            ).update(full_sync_status=previous_status, updated_at=timezone.now())
+            messages.error(
+                request,
+                "Could not queue the retry. Check the background worker and Redis.",
+            )
+            return _integration_redirect(request)
         messages.success(
             request,
             "Retrying failed MyAnimeList entries in the background.",

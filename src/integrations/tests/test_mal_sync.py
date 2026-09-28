@@ -3502,6 +3502,51 @@ class MALFullSyncView(TestCase):
         mock_delay.assert_not_called()
         self.assertContains(response, "No failed MyAnimeList entries")
 
+    def test_broker_outage_releases_the_queued_sync(self):
+        """Regression: with Redis down the view raised a 500 and left the
+        account QUEUED, refusing every sync for 15 minutes.
+        """
+        from kombu.exceptions import OperationalError
+
+        make_mal_account(self.user)
+        with patch(
+            "integrations.tasks.bulk_sync_mal_status.delay",
+            side_effect=OperationalError("redis down"),
+        ):
+            response = self.client.post(
+                reverse("mal_full_sync"), {"confirmed": "true"}, follow=True,
+            )
+
+        self.assertContains(response, "Could not queue the sync")
+        account = MALAccount.objects.get(user=self.user)
+        self.assertEqual(account.full_sync_status, "failed")
+        self.assertFalse(account.full_sync_is_active)
+
+    def test_broker_outage_releases_the_queued_retry(self):
+        from kombu.exceptions import OperationalError
+
+        account = make_mal_account(self.user)
+        account.full_sync_status = "completed"
+        account.full_sync_failed = 1
+        account.full_sync_results = [{
+            "title": "A", "media_type": "Anime", "mal_id": "1",
+            "outcome": "failed", "reason": "",
+        }]
+        account.save(update_fields=[
+            "full_sync_status", "full_sync_failed", "full_sync_results",
+        ])
+        with patch(
+            "integrations.tasks.retry_failed_mal_status.delay",
+            side_effect=OperationalError("redis down"),
+        ):
+            response = self.client.post(
+                reverse("mal_full_sync_retry_failed"), follow=True,
+            )
+
+        self.assertContains(response, "Could not queue the retry")
+        account.refresh_from_db()
+        self.assertEqual(account.full_sync_status, "completed")
+
     def test_retry_is_refused_when_only_the_whole_sync_failed(self):
         """Regression: an aborted sync's single row had no MAL entry, so a
         retry pushed nothing and still reported "1 entries still failed".
