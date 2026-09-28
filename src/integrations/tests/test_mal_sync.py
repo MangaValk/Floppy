@@ -2321,6 +2321,8 @@ class BulkSyncMALStatusTask(TestCase):
             (self.anime.status, self.anime.progress, self.anime.score),
             (Status.DROPPED.value, 5, 7),
         )
+        account = MALAccount.objects.get(user=self.user)
+        self.assertEqual(account.full_sync_results[-1]["direction"], "pull")
 
     def test_rating_pull_runs_without_progress_pull(self):
         """A rating the preview offers is pulled even when progress pulls are off."""
@@ -2838,6 +2840,33 @@ class RetryFailedMALStatusTask(TestCase):
         results_by_id = {result["mal_id"]: result for result in self.account.full_sync_results}
         self.assertEqual(results_by_id["1"]["outcome"], "succeeded")
         self.assertEqual(results_by_id["2"]["outcome"], "succeeded")
+
+    def test_failed_pull_is_retried_as_a_pull(self):
+        """Retry repeats the direction the user chose for the entry.
+
+        Regression: retry always pushed, so a failed pull overwrote MAL with
+        Floppy's values - or added a title that wasn't on the MAL list.
+        """
+        self.account.full_sync_results[0]["direction"] = "pull"
+        self.account.save(update_fields=["full_sync_results"])
+        remote = {"1": {"status": "completed", "num_episodes_watched": 12, "score": 9}}
+        with (
+            patch("integrations.mal_sync._fetch_list_statuses", return_value=remote),
+            patch("integrations.mal_sync.push_status") as mock_push,
+            patch("integrations.tasks.sync_mal_status.delay"),
+        ):
+            tasks.retry_failed_mal_status(self.user.pk)
+
+        mock_push.assert_not_called()
+        self.anime.refresh_from_db()
+        self.assertEqual(
+            (self.anime.status, self.anime.progress, self.anime.score),
+            (Status.COMPLETED.value, 12, 9),
+        )
+        self.account.refresh_from_db()
+        results_by_id = {result["mal_id"]: result for result in self.account.full_sync_results}
+        self.assertEqual(results_by_id["1"]["outcome"], "succeeded")
+        self.assertEqual(results_by_id["1"]["reason"], "Pulled from MyAnimeList")
 
     def test_entry_that_fails_again_keeps_its_updated_reason(self):
         error = ProviderAPIError("MAL", MagicMock(response=MagicMock(status_code=503)))

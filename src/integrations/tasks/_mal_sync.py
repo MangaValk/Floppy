@@ -326,16 +326,20 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
     failed = 0
     results = list(mapping_issues)
     for media in entries:
+        is_pull = mal_sync.entry_key(media) in pull
         result = {
             "title": media.item.title,
             "media_type": media._meta.verbose_name.title(),
             "mal_id": str(media.item.media_id),
         }
+        if is_pull:
+            # Retry failed repeats the user's choice instead of pushing.
+            result["direction"] = "pull"
         try:
             current = remote_statuses.get(media.item.media_type, {}).get(
                 str(media.item.media_id),
             )
-            if mal_sync.entry_key(media) in pull:
+            if is_pull:
                 mal_sync.pull_mal_entry(media, current)
                 result["reason"] = "Pulled from MyAnimeList"
             else:
@@ -531,15 +535,27 @@ def retry_failed_mal_status(user_id):
             ],
         )
 
+    remote_statuses = {}
     for media in retryable:
         key = (media._meta.verbose_name.title(), str(media.item.media_id))
         result = results_by_key.get(key)
         if result is None:
             continue
         try:
-            mal_sync.push_status(media, mal_account)
+            if result.get("direction") == "pull":
+                media_type = media.item.media_type
+                if media_type not in remote_statuses:
+                    remote_statuses[media_type] = mal_sync._fetch_list_statuses(
+                        media_type, mal_account,
+                    )
+                mal_sync.pull_mal_entry(
+                    media, remote_statuses[media_type].get(str(media.item.media_id)),
+                )
+                result["reason"] = "Pulled from MyAnimeList"
+            else:
+                mal_sync.push_status(media, mal_account)
+                result["reason"] = ""
             result["outcome"] = "succeeded"
-            result["reason"] = ""
         except mal_sync.MALAuthError as error:
             result["outcome"] = "failed"
             result["reason"] = str(error)[:500]
