@@ -13,6 +13,7 @@ app.providers.credentials, slug "mal").
 
 import logging
 import secrets
+import time
 from datetime import timedelta
 
 import requests
@@ -21,6 +22,7 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
+from app import cache_safety
 from app.models.choices import MediaTypes, Sources, Status
 from app.providers import credentials, services
 from integrations.imports.helpers import decrypt, encrypt
@@ -190,17 +192,43 @@ def _store_tokens(mal_account, token_response):
     )
 
 
+# How long a refresh may hold the lock, and how long another worker waits
+# for it before assuming the holder died.
+TOKEN_REFRESH_LOCK_SECONDS = 30
+
+
 def get_valid_access_token(mal_account):
-    """Return a usable (decrypted) access token, refreshing it first if needed."""
+    """Return a usable (decrypted) access token, refreshing it first if needed.
+
+    MAL refresh tokens work once, so two workers refreshing together would
+    leave the second with a rejected token and a broken connection. The
+    cache lock serialises them (select_for_update alone is a no-op on
+    SQLite); the waiter then rereads the account and uses the new token.
+    """
     if timezone.now() >= mal_account.token_expires_at - EXPIRY_LEEWAY:
-        with transaction.atomic():
-            current = MALAccount.objects.select_for_update().select_related("user").get(pk=mal_account.pk)
-            if timezone.now() >= current.token_expires_at - EXPIRY_LEEWAY:
-                token_response = _refresh_tokens(current)
-                _store_tokens(current, token_response)
-            mal_account.access_token = current.access_token
-            mal_account.refresh_token = current.refresh_token
-            mal_account.token_expires_at = current.token_expires_at
+        lock_key = f"mal_token_refresh:{mal_account.pk}"
+        deadline = time.monotonic() + TOKEN_REFRESH_LOCK_SECONDS
+        while not cache_safety.acquire_lock(
+            lock_key,
+            timeout=TOKEN_REFRESH_LOCK_SECONDS,
+            on_error=cache_safety.ON_ERROR_PROCEED,
+        ):
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.5)
+        try:
+            with transaction.atomic():
+                current = MALAccount.objects.select_for_update().select_related(
+                    "user",
+                ).get(pk=mal_account.pk)
+                if timezone.now() >= current.token_expires_at - EXPIRY_LEEWAY:
+                    token_response = _refresh_tokens(current)
+                    _store_tokens(current, token_response)
+                mal_account.access_token = current.access_token
+                mal_account.refresh_token = current.refresh_token
+                mal_account.token_expires_at = current.token_expires_at
+        finally:
+            cache_safety.release_lock(lock_key)
 
     return decrypt(mal_account.access_token)
 

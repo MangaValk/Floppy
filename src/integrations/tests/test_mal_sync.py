@@ -1002,6 +1002,33 @@ class PushStatus(TestCase):
         self.assertEqual(mal_sync.get_valid_access_token(self.account), "rotated-access")
         refresh.assert_not_called()
 
+    @patch("integrations.mal_sync._refresh_tokens")
+    def test_concurrent_refresh_waits_for_the_other_worker(self, refresh, *_mocks):
+        """Regression: without a lock that works on SQLite, both workers spent
+        the one-time refresh token and the loser broke the connection.
+        """
+        from app import cache_safety
+
+        cache.clear()
+        self.account.token_expires_at = timezone.now() - timedelta(minutes=5)
+        self.account.save(update_fields=["token_expires_at"])
+        lock_key = f"mal_token_refresh:{self.account.pk}"
+        cache_safety.acquire_lock(lock_key, timeout=30)
+
+        def other_worker_finishes(_seconds):
+            mal_sync._store_tokens(MALAccount.objects.get(pk=self.account.pk), {
+                "access_token": "rotated-access", "refresh_token": "rotated-refresh",
+                "expires_in": 3600,
+            })
+            cache_safety.release_lock(lock_key)
+
+        with patch("integrations.mal_sync.time.sleep", side_effect=other_worker_finishes):
+            token = mal_sync.get_valid_access_token(self.account)
+
+        self.assertEqual(token, "rotated-access")
+        refresh.assert_not_called()
+        self.assertIsNone(cache.get(lock_key))
+
 
 class PreviewFullSync(TestCase):
     """Test the read-only diff used before a full MAL sync."""
