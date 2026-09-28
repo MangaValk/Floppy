@@ -96,15 +96,18 @@ def get_mal_id_from_series(mapping_data, provider, series_id, season, episode):
             mal_id = _parse_mal_descriptor(descriptor)
             if mal_id is None:
                 continue
-            if "," in descriptor:
-                return None, None
+            # Several MAL ids for one range can't give a single count, but
+            # only for the episodes that range covers.
+            several_ids = "," in descriptor
             if not ranges:
+                if several_ids:
+                    return None, None
                 candidates.add((mal_id, episode))
             for source_range, target_range in ranges.items():
                 source_start, source_end = _parse_episode_range(source_range)
                 if episode < source_start or (source_end is not None and episode > source_end):
                     continue
-                if "|" in target_range:
+                if several_ids or "|" in target_range:
                     return None, None
                 mapped = _map_target_episode_number(target_range, episode - source_start)
                 if mapped is not None:
