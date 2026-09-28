@@ -936,7 +936,12 @@ def _local_pull_updates(media_type, media, current, mal_account):
     ):
         updates["status"] = mapped_status
 
-    if mal_account.pull_ratings_enabled and media.score is None:
+    # A grouped cour's rating only lands on seasons that feed it alone
+    # (_set_grouped_rating), so without one there's nothing to offer.
+    rating_target = getattr(media, "grouped_tv", None) is None or getattr(
+        media, "grouped_exclusive_seasons", None,
+    )
+    if mal_account.pull_ratings_enabled and media.score is None and rating_target:
         remote_score = current.get("score")
         if isinstance(remote_score, int) and remote_score > 0:
             updates["score"] = remote_score

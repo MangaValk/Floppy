@@ -2502,6 +2502,16 @@ class GroupedMALSync(TestCase):
         self.assertEqual((season.score, season.status), (7, Status.IN_PROGRESS.value))
         self.assertEqual(TV.objects.get(pk=self.show.pk).status, Status.IN_PROGRESS.value)
 
+    def test_preview_offers_no_rating_for_a_cour_without_its_own_season(self):
+        """The sync skips such a cour, so the preview mustn't promise it."""
+        media = self._cour(set())
+
+        updates = mal_sync._local_pull_updates(
+            MediaTypes.ANIME.value, media, {"status": "watching", "score": 8}, self.account,
+        )
+
+        self.assertEqual(updates, {})
+
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
     })
@@ -2971,6 +2981,7 @@ class BulkSyncMALStatusTask(TestCase):
         account = make_mal_account(self.user)
         media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
         media.grouped_tv = MagicMock()
+        media.grouped_exclusive_seasons = {1}
 
         updates = mal_sync._local_pull_updates(
             MediaTypes.ANIME.value,
