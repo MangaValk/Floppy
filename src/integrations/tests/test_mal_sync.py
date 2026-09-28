@@ -1671,7 +1671,12 @@ class GroupedMALSync(TestCase):
         self.assertEqual(entries[0].progress, 3)
         self.assertEqual(entries[0].status, Status.COMPLETED.value)
 
-    def test_season_mapping_is_sequential_across_source_number_gaps(self):
+    def test_season_mapping_keeps_source_numbering_across_gaps(self):
+        """An untracked episode still takes its MAL number.
+
+        Regression: overrides were numbered by list position, so E3 took
+        E2's MAL episode and collided with E2 once it was watched and mapped.
+        """
         from app.models import WatchState
 
         Episode.objects.filter(
@@ -1699,7 +1704,7 @@ class GroupedMALSync(TestCase):
                 integration="mal_sync",
             )
         )
-        self.assertEqual(mappings, [(1, 4), (3, 5)])
+        self.assertEqual(mappings, [(1, 4), (3, 6)])
 
     def test_manual_mapping_is_user_scoped_and_validated(self):
         self.client.force_login(self.user)

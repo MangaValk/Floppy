@@ -182,8 +182,12 @@
              if (!response.ok) { throw new Error(data.error || gettext('Could not load episodes.')); }
              this.malEpisodeOptions = data.episodes || [];
              if (this.mappingWizard?.scope === 'season') {
-               const required = this.mappingWizard.entry.seasons
-                 .find(season => season.season === this.mappingWizard.season)?.episodes.length || 1;
+               const episodes = this.mappingWizard.entry.seasons
+                 .find(season => season.season === this.mappingWizard.season)?.episodes || [];
+               // Episodes keep their numbering gaps, so the span matters, not the count.
+               const required = episodes.length
+                 ? Math.max(...episodes) - Math.min(...episodes) + 1
+                 : 1;
                this.malEpisodeOptions = this.malEpisodeOptions.slice(
                  0,
                  Math.max(0, this.malEpisodeOptions.length - required + 1)

@@ -1611,7 +1611,8 @@ def mal_episode_mapping_save(request):
         source_episodes = sorted(tracked_episodes)
 
     references = []
-    for mapping_offset, source_episode in enumerate(source_episodes):
+    first_episode = source_episodes[0]
+    for source_episode in source_episodes:
         references.append(
             ExternalReference(
                 user=request.user,
@@ -1625,7 +1626,9 @@ def mal_episode_mapping_save(request):
                 review_status=ExternalReferenceReviewStatus.CORRECTED.value,
                 episode_mapping={
                     "mal_id": mal_id,
-                    "episode": mal_episode + mapping_offset,
+                    # Offset by episode number, not list position, so an
+                    # untracked episode keeps its slot for when it's watched.
+                    "episode": mal_episode + source_episode - first_episode,
                 },
                 metadata={
                     "series_title": show.item.title,
