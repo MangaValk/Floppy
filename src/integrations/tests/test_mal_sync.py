@@ -1880,6 +1880,37 @@ class GroupedMALSync(TestCase):
         entries.assert_called_once_with(self.user, tv=self.show)
         push.assert_called_once_with(entries.return_value[0], self.account)
 
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_rejected_cour_does_not_block_the_next_one(self, entries, push):
+        """Each MAL entry of a grouped show is pushed on its own.
+
+        Regression: one push covered every cour, so a mismatch or a 404 on
+        the first entry stopped the rest on every later trigger too.
+        """
+        entries.return_value = [MagicMock(), MagicMock(), MagicMock()]
+        not_found = ProviderAPIError("MAL", MagicMock(response=MagicMock(status_code=404)))
+        push.side_effect = [mal_sync.MALSyncMismatchError("mismatch"), not_found, None]
+
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+
+        self.assertEqual(
+            [call.args[0] for call in push.call_args_list], entries.return_value,
+        )
+
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_retryable_error_is_raised_after_the_other_cours(self, entries, push):
+        """A temporary failure still retries the task, but only after the rest."""
+        entries.return_value = [MagicMock(), MagicMock()]
+        unavailable = ProviderAPIError("MAL", MagicMock(response=MagicMock(status_code=503)))
+        push.side_effect = [unavailable, None]
+
+        with self.assertRaises(ProviderAPIError):
+            tasks.sync_mal_status.run(media_type="tv", media_id=self.show.pk)
+
+        self.assertEqual(push.call_count, 2)
+
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
     })

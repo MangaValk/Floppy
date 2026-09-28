@@ -159,24 +159,35 @@ def sync_mal_status(media_type, media_id):
             mal_sync.grouped_sync_entries(media.user, tv=media)
             if media_type == "tv" else [media]
         )
-        for media in entries:
-            mal_sync.push_status(media, mal_account)
     except mal_sync.MALAuthError as error:
         _mark_connection_broken(mal_account, error)
-    except mal_sync.MALSyncMismatchError as error:
-        # Not retryable: MAL echoed a response that doesn't match what was
-        # sent, so retrying the same payload won't change the outcome.
-        logger.warning(str(error))
-    except services.ProviderAPIError as error:
-        if error.status_code in {requests.codes.not_found, requests.codes.bad_request}:
-            logger.warning(
-                "MyAnimeList rejected the update for %s (MAL ID %s): %s",
-                media.item.title,
-                media.item.media_id,
-                error,
-            )
+        return
+
+    # A grouped show can span several MAL entries (one per cour). Each is
+    # pushed on its own, so one that MAL rejects doesn't hold back the rest.
+    retryable_error = None
+    for entry in entries:
+        try:
+            mal_sync.push_status(entry, mal_account)
+        except mal_sync.MALAuthError as error:
+            _mark_connection_broken(mal_account, error)
             return
-        raise
+        except mal_sync.MALSyncMismatchError as error:
+            # Not retryable: MAL echoed a response that doesn't match what was
+            # sent, so retrying the same payload won't change the outcome.
+            logger.warning(str(error))
+        except services.ProviderAPIError as error:
+            if error.status_code in {requests.codes.not_found, requests.codes.bad_request}:
+                logger.warning(
+                    "MyAnimeList rejected the update for %s (MAL ID %s): %s",
+                    entry.item.title,
+                    entry.item.media_id,
+                    error,
+                )
+                continue
+            retryable_error = retryable_error or error
+    if retryable_error is not None:
+        raise retryable_error
 
 
 @shared_task(name=MAL_FULL_SYNC_TASK_NAME)
