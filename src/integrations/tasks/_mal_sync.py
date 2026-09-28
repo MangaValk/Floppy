@@ -323,9 +323,12 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None, queued=False):
                 for media_type in ("anime", "manga")
             }
         if pulls_enabled:
-            mal_sync.pull_higher_mal_progress(
-                user, mal_account, remote_statuses, only=selected,
-            )
+            # The sync pushes these entries itself; a per-item push per
+            # pulled row would double the MAL calls.
+            with mal_sync.suppress_per_item_push():
+                mal_sync.pull_higher_mal_progress(
+                    user, mal_account, remote_statuses, only=selected,
+                )
     except mal_sync.MALAuthError as error:
         _mark_connection_broken(mal_account, error)
         mal_account.full_sync_status = MALFullSyncStatus.FAILED
@@ -442,11 +445,13 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None, queued=False):
                 str(media.item.media_id),
             )
             if is_pull:
-                mal_sync.pull_mal_entry(media, current, list_error=list_error)
+                with mal_sync.suppress_per_item_push():
+                    mal_sync.pull_mal_entry(media, current, list_error=list_error)
                 result["reason"] = "Pulled from MyAnimeList"
             else:
                 if pulls_enabled:
-                    mal_sync.pull_grouped_rating(media, current, mal_account)
+                    with mal_sync.suppress_per_item_push():
+                        mal_sync.pull_grouped_rating(media, current, mal_account)
                 mal_sync.push_status(media, mal_account)
                 result["reason"] = ""
             synced += 1
@@ -649,9 +654,10 @@ def retry_failed_mal_status(user_id, queued=False):
                     remote_statuses[media_type] = mal_sync._fetch_list_statuses(
                         media_type, mal_account,
                     )
-                mal_sync.pull_mal_entry(
-                    media, remote_statuses[media_type].get(str(media.item.media_id)),
-                )
+                with mal_sync.suppress_per_item_push():
+                    mal_sync.pull_mal_entry(
+                        media, remote_statuses[media_type].get(str(media.item.media_id)),
+                    )
                 result["reason"] = "Pulled from MyAnimeList"
             else:
                 mal_sync.push_status(media, mal_account)

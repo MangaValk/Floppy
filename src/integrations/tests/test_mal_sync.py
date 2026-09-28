@@ -3066,6 +3066,30 @@ class BulkSyncMALStatusTask(TestCase):
             MALAccount.objects.get(user=self.user).full_sync_status, "queued",
         )
 
+    def test_full_sync_pulls_queue_no_per_item_pushes(self):
+        """Regression: each pulled row's save queued its own push on top of
+        the full sync's, doubling MAL calls on a large first sync.
+        """
+        make_mal_account(self.user)
+        remote = {
+            "anime": {"1": {"status": "watching", "num_episodes_watched": 9}},
+            "manga": {},
+        }
+        with (
+            patch(
+                "integrations.mal_sync._fetch_list_statuses",
+                side_effect=lambda media_type, _account: remote[media_type],
+            ),
+            patch("integrations.mal_sync.push_status"),
+            patch("integrations.tasks.sync_mal_status.delay") as per_item,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        self.anime.refresh_from_db()
+        self.assertEqual(self.anime.progress, 9)
+        per_item.assert_not_called()
+
     def test_rating_pull_runs_without_progress_pull(self):
         """A rating the preview offers is pulled even when progress pulls are off."""
         make_mal_account(self.user, pull_higher_progress_enabled=False)
