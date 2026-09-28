@@ -549,7 +549,7 @@
              x-show="malSyncStatus?.processed"
              x-text="interpolate(gettext('%s succeeded, %s failed'), [malSyncStatus?.succeeded || 0, malSyncStatus?.failed || 0])">
           </p>
-          <form x-show="!malSyncStatus?.is_active && malSyncStatus?.failed > 0"
+          <form x-show="!malSyncStatus?.is_active && malSyncStatus?.retryable > 0"
                 method="post" action="{% url 'mal_full_sync_retry_failed' %}">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}">

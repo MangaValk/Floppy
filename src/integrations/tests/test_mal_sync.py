@@ -3380,6 +3380,7 @@ class MALFullSyncView(TestCase):
         account.full_sync_processed = 2
         account.full_sync_succeeded = 1
         account.full_sync_failed = 1
+        account.full_sync_results = [{"title": "A", "media_type": "Anime", "mal_id": "1", "outcome": "failed", "reason": ""}]
         account.full_sync_results = [
             {
                 "title": "Failed Anime",
@@ -3433,10 +3434,33 @@ class MALFullSyncView(TestCase):
         mock_delay.assert_not_called()
         self.assertContains(response, "No failed MyAnimeList entries")
 
+    def test_retry_is_refused_when_only_the_whole_sync_failed(self):
+        """Regression: an aborted sync's single row had no MAL entry, so a
+        retry pushed nothing and still reported "1 entries still failed".
+        """
+        account = make_mal_account(self.user)
+        account.full_sync_status = "failed"
+        account.full_sync_failed = 1
+        account.full_sync_results = [{
+            "title": "MyAnimeList lists", "media_type": "Anime", "mal_id": "",
+            "outcome": "failed", "reason": "Couldn't load your MyAnimeList lists",
+        }]
+        account.save(update_fields=[
+            "full_sync_status", "full_sync_failed", "full_sync_results",
+        ])
+
+        with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
+            response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
+
+        mock_delay.assert_not_called()
+        self.assertContains(response, "run a full sync again")
+        self.assertEqual(mal_sync.full_sync_report(account)["retryable"], 0)
+
     def test_retry_queues_task_when_entries_failed(self):
         account = make_mal_account(self.user)
         account.full_sync_failed = 2
-        account.save(update_fields=["full_sync_failed"])
+        account.full_sync_results = [{"title": "A", "media_type": "Anime", "mal_id": "1", "outcome": "failed", "reason": ""}]
+        account.save(update_fields=["full_sync_results", "full_sync_failed"])
 
         with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
             response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
@@ -3449,8 +3473,9 @@ class MALFullSyncView(TestCase):
     def test_retry_blocked_while_sync_active(self):
         account = make_mal_account(self.user)
         account.full_sync_failed = 1
+        account.full_sync_results = [{"title": "A", "media_type": "Anime", "mal_id": "1", "outcome": "failed", "reason": ""}]
         account.full_sync_status = "running"
-        account.save(update_fields=["full_sync_failed", "full_sync_status"])
+        account.save(update_fields=["full_sync_results", "full_sync_failed", "full_sync_status"])
 
         with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
             response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
@@ -3461,8 +3486,9 @@ class MALFullSyncView(TestCase):
     def test_retry_reclaims_a_stale_running_sync(self):
         account = make_mal_account(self.user)
         account.full_sync_failed = 1
+        account.full_sync_results = [{"title": "A", "media_type": "Anime", "mal_id": "1", "outcome": "failed", "reason": ""}]
         account.full_sync_status = "running"
-        account.save(update_fields=["full_sync_failed", "full_sync_status"])
+        account.save(update_fields=["full_sync_results", "full_sync_failed", "full_sync_status"])
         MALAccount.objects.filter(pk=account.pk).update(
             updated_at=timezone.now() - timedelta(minutes=30),
         )

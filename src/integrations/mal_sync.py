@@ -975,6 +975,19 @@ def reconcile_stale_full_sync(mal_account):
     return mal_account
 
 
+def retryable_failures(mal_account):
+    """Return the failed report rows "Retry failed" can act on.
+
+    A sync that stopped before its entries (lists or mappings failed to
+    load) records a single row with no MAL entry; only a new full sync
+    helps there.
+    """
+    return [
+        result for result in mal_account.full_sync_results
+        if result.get("outcome") == "failed" and result.get("mal_id")
+    ]
+
+
 def full_sync_report(mal_account):
     """Return the persisted report used by both page loads and live polling."""
     return {
@@ -985,6 +998,7 @@ def full_sync_report(mal_account):
         "processed": mal_account.full_sync_processed,
         "succeeded": mal_account.full_sync_succeeded,
         "failed": mal_account.full_sync_failed,
+        "retryable": len(retryable_failures(mal_account)),
         "results": mal_account.full_sync_results,
         "mapping_issues": [
             result for result in mal_account.full_sync_results

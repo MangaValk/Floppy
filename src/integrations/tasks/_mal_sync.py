@@ -526,10 +526,14 @@ def retry_failed_mal_status(user_id, queued=False):
 
     failed_keys = {
         (result.get("media_type"), result.get("mal_id"))
-        for result in mal_account.full_sync_results
-        if result.get("outcome") == "failed"
+        for result in mal_sync.retryable_failures(mal_account)
     }
     if not failed_keys:
+        if queued:
+            # Only a whole-sync failure is left; release the page's claim.
+            MALAccount.objects.filter(
+                pk=mal_account.pk, full_sync_status=MALFullSyncStatus.QUEUED,
+            ).update(full_sync_status=MALFullSyncStatus.FAILED)
         return
 
     if not _claim_full_sync(mal_account, queued=queued):

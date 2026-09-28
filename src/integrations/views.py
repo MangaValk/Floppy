@@ -1818,8 +1818,12 @@ def mal_full_sync_retry_failed(request):
         messages.error(request, "Turn sync back on before retrying.")
     elif mal_sync.reconcile_stale_full_sync(mal_account).full_sync_is_active:
         messages.info(request, "A MyAnimeList sync is already in progress.")
-    elif mal_account.full_sync_failed <= 0:
-        messages.error(request, "No failed MyAnimeList entries to retry.")
+    elif not mal_sync.retryable_failures(mal_account):
+        messages.error(
+            request,
+            "No failed MyAnimeList entries to retry. If the whole sync failed, "
+            "run a full sync again.",
+        )
     else:
         from integrations.models import MALFullSyncStatus
 
