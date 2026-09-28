@@ -564,7 +564,8 @@
                       x-text="entry.outcome === 'succeeded' ? '\u2713' : '\u2717'"></span>
                 <div class="min-w-0">
                   <p class="text-[var(--color-text)] break-words" x-text="entry.title"></p>
-                  <p class="text-red-300 break-words"
+                  <p class="break-words"
+                     :class="entry.outcome === 'succeeded' ? 'text-[var(--color-text-muted)]' : 'text-red-300'"
                      x-show="entry.reason"
                      x-text="entry.reason"></p>
                 </div>
