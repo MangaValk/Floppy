@@ -199,11 +199,12 @@ def sync_mal_status(media_type, media_id, clear_score=False):
         _mark_connection_broken(mal_account, error)
         return
 
+    clear_key = None
     if media_type == "tv":
-        # queue_grouped_sync flags a removed show or season rating here.
+        # queue_grouped_sync flags a removed show or season rating here. The
+        # flag stays until the push goes through, so a retry still clears it.
         clear_key = mal_sync.grouped_clear_score_key(media.pk)
         clear_score = clear_score or bool(cache.get(clear_key))
-        cache.delete(clear_key)
 
     # A grouped show can span several MAL entries (one per cour). Each is
     # pushed on its own, so one that MAL rejects doesn't hold back the rest.
@@ -230,6 +231,8 @@ def sync_mal_status(media_type, media_id, clear_score=False):
             retryable_error = retryable_error or error
     if retryable_error is not None:
         raise retryable_error
+    if clear_key:
+        cache.delete(clear_key)
 
 
 @shared_task(name=MAL_FULL_SYNC_TASK_NAME)

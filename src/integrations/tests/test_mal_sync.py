@@ -2435,6 +2435,23 @@ class GroupedMALSync(TestCase):
         )
         self.assertIsNone(cache.get(mal_sync.grouped_clear_score_key(self.show.pk)))
 
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_rating_clear_survives_a_retried_push(self, entries, push):
+        """Regression: the flag was dropped before pushing, so a retry after
+        a 5xx no longer cleared MAL's rating.
+        """
+        cache.set(mal_sync.grouped_clear_score_key(self.show.pk), True)
+        entries.return_value = [MagicMock(score=None)]
+        push.side_effect = ProviderAPIError(
+            "MAL", MagicMock(response=MagicMock(status_code=503)),
+        )
+
+        with self.assertRaises(ProviderAPIError):
+            tasks.sync_mal_status.run(media_type="tv", media_id=self.show.pk)
+
+        self.assertTrue(cache.get(mal_sync.grouped_clear_score_key(self.show.pk)))
+
     @patch(
         "integrations.tasks.sync_mal_status.apply_async",
         side_effect=RuntimeError("broker down"),
