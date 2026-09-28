@@ -107,15 +107,17 @@ the previous report; per-item sync does not erase it.
 Each preview title links to its Floppy detail page and has a checkbox; only
 checked titles are synced. A checked title can instead be set to pull from
 MyAnimeList, which overwrites Floppy's status, progress and score with the MAL
-list values. For grouped anime, only the score is pulled: its progress comes
-from episode history, and one MAL cour's status is not the whole show's.
+list values. For grouped anime, only the score is pulled, onto that cour's own
+seasons: its progress comes from episode history, and one MAL cour's status is
+not the whole show's.
 Scheduled and scripted full syncs, which
 post no selection, still sync every entry.
 
 The "Pull into Floppy" list only offers what a sync applies. Pulling progress
 needs "pull higher progress" and never applies to grouped anime; pulling a
-missing rating needs "pull ratings" and does apply to grouped anime, landing on
-the show.
+missing rating needs "pull ratings" and does apply to grouped anime. The rating
+lands on the seasons that feed only that MAL entry, never on the show, whose
+rating other cours would inherit; a season split across cours is not rated.
 With "pull higher progress" on, a full sync that cannot load the MyAnimeList
 lists fails without pushing, so a higher count on MAL is never lowered.
 Removing a rating in Floppy, on an entry, show or season, clears it on MAL on

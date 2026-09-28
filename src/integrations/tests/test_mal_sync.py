@@ -2453,6 +2453,68 @@ class GroupedMALSync(TestCase):
         )
         self.assertIsNone(cache.get(mal_sync.grouped_clear_score_key(self.show.pk)))
 
+    def _cour(self, exclusive_seasons):
+        media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
+        media.grouped_tv = self.show
+        media.grouped_exclusive_seasons = set(exclusive_seasons)
+        return media
+
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_pulled_cour_rating_lands_on_its_own_seasons(self, _delay):
+        """Regression: a cour's MAL rating went on the show, which then pushed
+        it to sibling cours with different MAL ratings.
+        """
+        season_2 = Season(
+            user=self.user, related_tv=self.show, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="100", source="tmdb", media_type="season",
+                library_media_type="anime", season_number=2, title="Season 2",
+            ),
+        )
+        Season.objects.bulk_create([season_2])
+
+        mal_sync.pull_grouped_rating(self._cour({1}), {"score": 8}, self.account)
+        mal_sync.pull_grouped_rating(self._cour({2}), {"score": 6}, self.account)
+
+        scores = dict(
+            Season.objects.filter(related_tv=self.show)
+            .values_list("item__season_number", "score")
+        )
+        self.assertEqual(scores, {1: 8, 2: 6})
+        self.assertIsNone(TV.objects.get(pk=self.show.pk).score)
+
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_season_shared_by_cours_is_not_rated_by_one_of_them(self, _delay):
+        mal_sync.pull_grouped_rating(self._cour(set()), {"score": 8}, self.account)
+
+        self.assertIsNone(Season.objects.get(pk=self.season.pk).score)
+
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_explicit_pull_onto_a_grouped_cour_takes_only_the_score(self, _delay):
+        """Regression: one cour's Completed status was saved on the whole
+        show, whose save then marked every season and episode watched.
+        """
+        mal_sync.pull_mal_entry(
+            self._cour({1}), {"status": "completed", "num_episodes_watched": 12, "score": 7},
+        )
+
+        season = Season.objects.get(pk=self.season.pk)
+        self.assertEqual((season.score, season.status), (7, Status.IN_PROGRESS.value))
+        self.assertEqual(TV.objects.get(pk=self.show.pk).status, Status.IN_PROGRESS.value)
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_split_season_is_exclusive_to_no_cour(self, metadata):
+        metadata.return_value = {"title": "Cour", "max_progress": 2}
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(
+            [entry.grouped_exclusive_seasons for entry in entries], [set(), set()],
+        )
+
     @patch("integrations.mal_sync.push_status")
     @patch("integrations.mal_sync.grouped_sync_entries")
     @patch("integrations.tasks.sync_mal_status.apply_async")
@@ -2903,53 +2965,6 @@ class BulkSyncMALStatusTask(TestCase):
 
         self.anime.refresh_from_db()
         self.assertEqual((self.anime.score, self.anime.progress), (8, 0))
-
-    def test_grouped_show_takes_the_mal_rating(self):
-        """A grouped entry's pulled rating lands on its show."""
-        account = make_mal_account(self.user)
-        show = MagicMock(score=None)
-        media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
-        media.grouped_tv = show
-
-        mal_sync.pull_grouped_rating(
-            media, {"status": "watching", "num_episodes_watched": 9, "score": 7}, account,
-        )
-
-        self.assertEqual(show.score, 7)
-        show.save.assert_called_once_with(update_fields=["score"])
-
-    def test_explicit_pull_onto_a_grouped_show_takes_only_the_score(self):
-        """Regression: one cour's Completed status was saved on the whole
-        show, whose save then marked every season and episode watched.
-        """
-        show = MagicMock(status=Status.IN_PROGRESS.value, score=None)
-        media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
-        media.grouped_tv = show
-
-        mal_sync.pull_mal_entry(
-            media, {"status": "completed", "num_episodes_watched": 12, "score": 7},
-        )
-
-        self.assertEqual((show.status, show.score), (Status.IN_PROGRESS.value, 7))
-        show.save.assert_called_once_with(update_fields=["score"])
-
-    def test_first_pulled_cour_rating_is_kept_for_the_show(self):
-        """Regression: each cour's stale snapshot still looked unrated, so the
-        last cour's MAL rating won and was pushed over the first cour's.
-        """
-        account = make_mal_account(self.user)
-        show = MagicMock(score=None)
-        cours = []
-        for _ in range(2):
-            media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
-            media.grouped_tv = show
-            cours.append(media)
-
-        mal_sync.pull_grouped_rating(cours[0], {"status": "watching", "score": 8}, account)
-        mal_sync.pull_grouped_rating(cours[1], {"status": "watching", "score": 6}, account)
-
-        self.assertEqual(show.score, 8)
-        show.save.assert_called_once_with(update_fields=["score"])
 
     def test_grouped_entry_never_offers_a_progress_pull(self):
         """Grouped progress is episode history, so only a rating can be pulled."""

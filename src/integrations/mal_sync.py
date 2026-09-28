@@ -14,6 +14,7 @@ app.providers.credentials, slug "mal").
 import logging
 import secrets
 import time
+from collections import Counter
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -625,6 +626,7 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 ),
             }
         mapped_any = False
+        show_mal_ids = set()
 
         for item, watched, score in coordinates.values():
             if item.season_number is None or item.episode_number is None:
@@ -701,9 +703,23 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 entries[mal_id][0].grouped_tv = show
                 entries[mal_id][0].grouped_seasons = set()
             entries[mal_id][0].grouped_seasons.add(item.season_number)
+            show_mal_ids.add(mal_id)
             _, watched_numbers, _, _ = entries[mal_id]
             if watched:
                 watched_numbers.add(episode_number)
+
+        # A season split across cours feeds several entries; a rating pulled
+        # for one cour may only land on seasons that feed that cour alone.
+        season_feeds = Counter(
+            season
+            for mal_id in show_mal_ids
+            for season in entries[mal_id][0].grouped_seasons
+        )
+        for mal_id in show_mal_ids:
+            entry = entries[mal_id][0]
+            entry.grouped_exclusive_seasons = {
+                season for season in entry.grouped_seasons if season_feeds[season] == 1
+            }
 
         if mapping_issues is not None and (unmapped or not mapped_any):
             mapping_issues.append({
@@ -927,21 +943,41 @@ def _local_pull_updates(media_type, media, current, mal_account):
     return updates
 
 
+def _set_grouped_rating(media, score):
+    """Rate the seasons that feed only this cour; return whether any were set.
+
+    The show's rating is every unrated cour's fallback, so a rating that
+    belongs to one MAL entry goes on that entry's own seasons instead.
+    """
+    from app.models import Season
+
+    seasons = Season.objects.filter(
+        related_tv=media.grouped_tv,
+        order_archived=False,
+        item__season_number__in=getattr(media, "grouped_exclusive_seasons", ()),
+    ).exclude(score=score)
+    changed = False
+    for season in seasons:
+        season.score = score
+        season.save(update_fields=["score"])
+        changed = True
+    media.score = score
+    return changed
+
+
 def pull_grouped_rating(media, current, mal_account):
-    """Adopt MAL's rating on a grouped show that has none, as the preview offers.
+    """Adopt MAL's rating for a grouped cour that has none, as the preview offers.
 
     `pull_higher_mal_progress` only covers flat rows; a grouped entry is a
-    transient per-cour projection, so its rating lands on the show.
+    transient per-cour projection, so its rating lands on the seasons that
+    feed that cour alone - never on the show, which would pass it on to
+    sibling cours with different MAL ratings.
     """
-    show = getattr(media, "grouped_tv", None)
-    # Entries of one show share its TV object; once a sibling cour has set
-    # the rating, the rest must not overwrite it with their own MAL score.
-    if show is None or show.score is not None:
+    if getattr(media, "grouped_tv", None) is None:
         return
     updates = _local_pull_updates(media.item.media_type, media, current, mal_account)
     if "score" in updates:
-        media.score = show.score = updates["score"]
-        show.save(update_fields=["score"])
+        _set_grouped_rating(media, updates["score"])
 
 
 def pull_higher_mal_progress(user, mal_account, remote_statuses=None, only=None):
@@ -1112,10 +1148,10 @@ def pull_mal_entry(media, current, list_error=None):
     """Overwrite Floppy's values for one entry with its MyAnimeList list status.
 
     Raises list_error, when loading the MyAnimeList list failed, and
-    MALSyncMismatchError when the entry isn't on the list. A grouped show
-    only takes the score: its progress is its episode history, and one MAL
-    cour's status isn't the show's - saving Completed on the show would mark
-    every season watched, inventing watches.
+    MALSyncMismatchError when the entry isn't on the list. A grouped cour
+    only takes the score, on the seasons that feed it alone: its progress is
+    its episode history, and one MAL cour's status isn't the show's - saving
+    Completed on the show would mark every season watched, inventing watches.
     """
     if list_error is not None:
         raise list_error
@@ -1130,17 +1166,15 @@ def pull_mal_entry(media, current, list_error=None):
     }
     if values["status"] is None:
         del values["status"]
-    target = getattr(media, "grouped_tv", None)
-    if target is not None:
-        values.pop("status", None)
-    else:
-        target = media
-        remote_progress = current.get(PROGRESS_RESPONSE_FIELDS[media_type][1])
-        if isinstance(remote_progress, int):
-            values["progress"] = remote_progress
+    if getattr(media, "grouped_tv", None) is not None:
+        _set_grouped_rating(media, values["score"])
+        return
+    remote_progress = current.get(PROGRESS_RESPONSE_FIELDS[media_type][1])
+    if isinstance(remote_progress, int):
+        values["progress"] = remote_progress
     for field, value in values.items():
-        setattr(target, field, value)
-    target.save(update_fields=list(values))
+        setattr(media, field, value)
+    media.save(update_fields=list(values))
 
 
 def preview_full_sync(user, mal_account, mapping_issues=None, progress_callback=None):
