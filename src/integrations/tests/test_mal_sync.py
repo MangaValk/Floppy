@@ -2588,6 +2588,17 @@ class GroupedMALSync(TestCase):
 
         self.assertEqual(cache.get(key), [3])
 
+    def test_rating_clear_flag_outlasts_every_push_retry(self):
+        """Regression: the flag expired after ~10 minutes while retries ran
+        for ~15, so the last retry no longer sent the clear.
+        """
+        task = tasks.sync_mal_status
+        backoff = sum(
+            min(task.retry_backoff * 2 ** attempt, task.retry_backoff_max)
+            for attempt in range(task.max_retries)
+        )
+        self.assertGreater(mal_sync.GROUPED_CLEAR_FLAG_SECONDS, backoff)
+
     @patch("integrations.mal_sync.push_status")
     @patch("integrations.mal_sync.grouped_sync_entries")
     def test_rating_clear_survives_a_retried_push(self, entries, push):

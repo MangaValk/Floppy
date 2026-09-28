@@ -371,8 +371,11 @@ def per_item_sync_active(user_id):
     ).exists()
 
 
-# How long a removed-rating flag waits for its grouped push.
-GROUPED_CLEAR_FLAG_SECONDS = GROUPED_SYNC_DEBOUNCE_SECONDS + 600
+# How long a removed-rating flag waits for its grouped push. It must outlast
+# sync_mal_status's retries (about 15 minutes of backoff); holding it longer
+# is harmless, since a cour rated again in the meantime is never cleared and
+# a successful push removes the flag.
+GROUPED_CLEAR_FLAG_SECONDS = 24 * 60 * 60
 
 
 def grouped_clear_score_key(show_id):
