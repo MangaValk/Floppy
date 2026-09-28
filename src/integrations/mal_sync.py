@@ -992,8 +992,9 @@ def pull_mal_entry(media, current, list_error=None):
 
     Raises list_error, when loading the MyAnimeList list failed, and
     MALSyncMismatchError when the entry isn't on the list. A grouped show
-    only takes status and score: its progress is its episode history, which
-    can't be raised without inventing watches.
+    only takes the score: its progress is its episode history, and one MAL
+    cour's status isn't the show's - saving Completed on the show would mark
+    every season watched, inventing watches.
     """
     if list_error is not None:
         raise list_error
@@ -1009,7 +1010,9 @@ def pull_mal_entry(media, current, list_error=None):
     if values["status"] is None:
         del values["status"]
     target = getattr(media, "grouped_tv", None)
-    if target is None:
+    if target is not None:
+        values.pop("status", None)
+    else:
         target = media
         remote_progress = current.get(PROGRESS_RESPONSE_FIELDS[media_type][1])
         if isinstance(remote_progress, int):

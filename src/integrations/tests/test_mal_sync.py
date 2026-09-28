@@ -2650,6 +2650,21 @@ class BulkSyncMALStatusTask(TestCase):
         self.assertEqual(show.score, 7)
         show.save.assert_called_once_with(update_fields=["score"])
 
+    def test_explicit_pull_onto_a_grouped_show_takes_only_the_score(self):
+        """Regression: one cour's Completed status was saved on the whole
+        show, whose save then marked every season and episode watched.
+        """
+        show = MagicMock(status=Status.IN_PROGRESS.value, score=None)
+        media = Anime(item=Item(media_type=MediaTypes.ANIME.value), score=None, progress=2)
+        media.grouped_tv = show
+
+        mal_sync.pull_mal_entry(
+            media, {"status": "completed", "num_episodes_watched": 12, "score": 7},
+        )
+
+        self.assertEqual((show.status, show.score), (Status.IN_PROGRESS.value, 7))
+        show.save.assert_called_once_with(update_fields=["score"])
+
     def test_grouped_entry_never_offers_a_progress_pull(self):
         """Grouped progress is episode history, so only a rating can be pulled."""
         account = make_mal_account(self.user)

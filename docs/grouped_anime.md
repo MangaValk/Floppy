@@ -107,8 +107,9 @@ the previous report; per-item sync does not erase it.
 Each preview title links to its Floppy detail page and has a checkbox; only
 checked titles are synced. A checked title can instead be set to pull from
 MyAnimeList, which overwrites Floppy's status, progress and score with the MAL
-list values. For grouped anime, only status and score are pulled, because its
-progress comes from episode history. Scheduled and scripted full syncs, which
+list values. For grouped anime, only the score is pulled: its progress comes
+from episode history, and one MAL cour's status is not the whole show's.
+Scheduled and scripted full syncs, which
 post no selection, still sync every entry.
 
 The "Pull into Floppy" list only offers what a sync applies. Pulling progress
