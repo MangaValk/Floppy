@@ -1772,6 +1772,7 @@ def mal_full_sync(request):
             user_id=request.user.pk,
             selected=selected,
             pull=request.POST.getlist("pull"),
+            queued=True,
         )
         messages.success(
             request,
@@ -1807,7 +1808,7 @@ def mal_full_sync_retry_failed(request):
         if not queued:
             messages.info(request, "A MyAnimeList sync is already in progress.")
             return _integration_redirect(request)
-        tasks.retry_failed_mal_status.delay(user_id=request.user.pk)
+        tasks.retry_failed_mal_status.delay(user_id=request.user.pk, queued=True)
         messages.success(
             request,
             "Retrying failed MyAnimeList entries in the background.",

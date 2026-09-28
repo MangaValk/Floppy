@@ -2173,7 +2173,7 @@ class GroupedMALSync(TestCase):
         self.account.full_sync_status = "queued"
         self.account.save(update_fields=["full_sync_status"])
 
-        tasks.bulk_sync_mal_status(self.user.pk)
+        tasks.bulk_sync_mal_status(self.user.pk, queued=True)
 
         self.account.refresh_from_db()
         self.assertEqual(self.account.full_sync_status, "failed")
@@ -2468,6 +2468,21 @@ class BulkSyncMALStatusTask(TestCase):
         result = MALAccount.objects.get(user=self.user).full_sync_results[-1]
         self.assertEqual(result["outcome"], "failed")
         self.assertIn("503", result["reason"])
+
+    def test_schedule_does_not_take_over_a_queued_sync(self):
+        """Regression: a scheduled run claimed the QUEUED row a user's review
+        had just written, then pushed every entry, ignoring the user's
+        selection and pulls; the user's own task found it RUNNING and quit.
+        """
+        make_mal_account(self.user)
+        MALAccount.objects.filter(user=self.user).update(full_sync_status="queued")
+        with patch("integrations.mal_sync.push_status") as mock_push:
+            tasks.bulk_sync_mal_status(user_id=self.user.pk)
+
+        mock_push.assert_not_called()
+        self.assertEqual(
+            MALAccount.objects.get(user=self.user).full_sync_status, "queued",
+        )
 
     def test_rating_pull_runs_without_progress_pull(self):
         """A rating the preview offers is pulled even when progress pulls are off."""
@@ -3077,7 +3092,7 @@ class MALFullSyncView(TestCase):
                 reverse("mal_full_sync"), {"confirmed": "true"}, follow=True
             )
         mock_delay.assert_called_once_with(
-            user_id=self.user.pk, selected=None, pull=[],
+            user_id=self.user.pk, selected=None, pull=[], queued=True,
         )
         self.assertContains(response, "started in the background")
         account = MALAccount.objects.get(user=self.user)
@@ -3112,7 +3127,7 @@ class MALFullSyncView(TestCase):
             )
 
         mock_delay.assert_called_once_with(
-            user_id=self.user.pk, selected=None, pull=[],
+            user_id=self.user.pk, selected=None, pull=[], queued=True,
         )
         self.assertContains(response, "started in the background")
         account.refresh_from_db()
@@ -3186,7 +3201,7 @@ class MALFullSyncView(TestCase):
         with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
             response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
 
-        mock_delay.assert_called_once_with(user_id=self.user.pk)
+        mock_delay.assert_called_once_with(user_id=self.user.pk, queued=True)
         self.assertContains(response, "Retrying failed MyAnimeList entries")
         account.refresh_from_db()
         self.assertEqual(account.full_sync_status, "queued")
@@ -3215,7 +3230,7 @@ class MALFullSyncView(TestCase):
         with patch("integrations.tasks.retry_failed_mal_status.delay") as mock_delay:
             response = self.client.post(reverse("mal_full_sync_retry_failed"), follow=True)
 
-        mock_delay.assert_called_once_with(user_id=self.user.pk)
+        mock_delay.assert_called_once_with(user_id=self.user.pk, queued=True)
         self.assertContains(response, "Retrying failed MyAnimeList entries")
 
     def test_complete_report_survives_page_reload(self):

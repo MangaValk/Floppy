@@ -86,6 +86,31 @@ def _heartbeat(mal_account):
     return beat
 
 
+def _claim_full_sync(mal_account, queued):
+    """Mark the account's full sync RUNNING for this task, if it may start.
+
+    A task the page queued (queued=True) takes over the QUEUED row the page
+    wrote. Any other run, such as the schedule, only starts when no sync is
+    queued or running, so it can't replace a user's selective sync. A row
+    whose heartbeat went quiet is claimable either way.
+    """
+    active = [MALFullSyncStatus.QUEUED, MALFullSyncStatus.RUNNING]
+    claimable = (
+        models.Q(full_sync_status=MALFullSyncStatus.QUEUED)
+        if queued
+        else ~models.Q(full_sync_status__in=active)
+    )
+    stale_before = timezone.now() - STALE_FULL_SYNC_AGE
+    return MALAccount.objects.filter(pk=mal_account.pk).filter(
+        claimable | models.Q(updated_at__lt=stale_before),
+    ).update(
+        full_sync_status=MALFullSyncStatus.RUNNING,
+        full_sync_started_at=timezone.now(),
+        full_sync_completed_at=None,
+        updated_at=timezone.now(),
+    )
+
+
 @shared_task(
     name=MAL_SYNC_TASK_NAME,
     autoretry_for=(services.ProviderAPIError,),
@@ -191,7 +216,7 @@ def sync_mal_status(media_type, media_id):
 
 
 @shared_task(name=MAL_FULL_SYNC_TASK_NAME)
-def bulk_sync_mal_status(user_id, selected=None, pull=None):
+def bulk_sync_mal_status(user_id, selected=None, pull=None, queued=False):
     """Push every MAL-backed anime/manga entry's current status to MyAnimeList.
 
     Runs on demand (the "Sync All Now" button) rather than per save() - useful
@@ -200,7 +225,8 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
 
     `selected` limits the run to those `mal_sync.entry_key` values (None means
     every entry); entries whose key is in `pull` take MyAnimeList's values
-    instead of pushing Floppy's.
+    instead of pushing Floppy's. `queued` is set by the page that marked the
+    sync QUEUED (see _claim_full_sync).
     """
     selected = None if selected is None else set(selected)
     pull = set(pull or ())
@@ -238,17 +264,7 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
         )
         return
 
-    stale_before = timezone.now() - STALE_FULL_SYNC_AGE
-    claimed = MALAccount.objects.filter(pk=mal_account.pk).filter(
-        ~models.Q(full_sync_status=MALFullSyncStatus.RUNNING)
-        | models.Q(updated_at__lt=stale_before),
-    ).update(
-        full_sync_status=MALFullSyncStatus.RUNNING,
-        full_sync_started_at=timezone.now(),
-        full_sync_completed_at=None,
-        updated_at=timezone.now(),
-    )
-    if not claimed:
+    if not _claim_full_sync(mal_account, queued=queued):
         return
 
     remote_statuses = {}
@@ -461,7 +477,7 @@ def bulk_sync_mal_status(user_id, selected=None, pull=None):
 
 
 @shared_task(name="Retry failed MyAnimeList entries")
-def retry_failed_mal_status(user_id):
+def retry_failed_mal_status(user_id, queued=False):
     """Retry only the entries marked "failed" on the last full sync.
 
     Recomputes eligible entries the same way a full sync does (so a fixed
@@ -490,17 +506,7 @@ def retry_failed_mal_status(user_id):
     if not failed_keys:
         return
 
-    stale_before = timezone.now() - STALE_FULL_SYNC_AGE
-    claimed = MALAccount.objects.filter(pk=mal_account.pk).filter(
-        ~models.Q(full_sync_status=MALFullSyncStatus.RUNNING)
-        | models.Q(updated_at__lt=stale_before),
-    ).update(
-        full_sync_status=MALFullSyncStatus.RUNNING,
-        full_sync_started_at=timezone.now(),
-        full_sync_completed_at=None,
-        updated_at=timezone.now(),
-    )
-    if not claimed:
+    if not _claim_full_sync(mal_account, queued=queued):
         return
     mal_account.refresh_from_db()
 
