@@ -3310,6 +3310,19 @@ class RetryFailedMALStatusTask(TestCase):
             tasks.retry_failed_mal_status(self.user.pk)
         mock_push.assert_not_called()
 
+    def test_disabled_sync_releases_the_queued_retry(self):
+        """Regression: the early return left the page's QUEUED row, so new
+        syncs were refused as in progress for 15 minutes.
+        """
+        self.account.sync_enabled = False
+        self.account.full_sync_status = "queued"
+        self.account.save(update_fields=["sync_enabled", "full_sync_status"])
+
+        tasks.retry_failed_mal_status(self.user.pk, queued=True)
+
+        self.account.refresh_from_db()
+        self.assertFalse(self.account.full_sync_is_active)
+
     def test_noop_when_sync_disabled(self):
         self.account.sync_enabled = False
         self.account.save(update_fields=["sync_enabled"])

@@ -533,7 +533,16 @@ def retry_failed_mal_status(user_id, queued=False):
     except MALAccount.DoesNotExist:
         return
 
+    def release_claim():
+        # A retry that doesn't run must not leave the page's QUEUED row,
+        # which refuses every sync until it goes stale.
+        if queued:
+            MALAccount.objects.filter(
+                pk=mal_account.pk, full_sync_status=MALFullSyncStatus.QUEUED,
+            ).update(full_sync_status=MALFullSyncStatus.FAILED)
+
     if not mal_account.sync_enabled or mal_account.connection_broken:
+        release_claim()
         return
 
     failed_keys = {
@@ -541,11 +550,7 @@ def retry_failed_mal_status(user_id, queued=False):
         for result in mal_sync.retryable_failures(mal_account)
     }
     if not failed_keys:
-        if queued:
-            # Only a whole-sync failure is left; release the page's claim.
-            MALAccount.objects.filter(
-                pk=mal_account.pk, full_sync_status=MALFullSyncStatus.QUEUED,
-            ).update(full_sync_status=MALFullSyncStatus.FAILED)
+        release_claim()
         return
 
     if not _claim_full_sync(mal_account, queued=queued):
