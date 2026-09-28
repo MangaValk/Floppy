@@ -1608,7 +1608,28 @@ def mal_episode_mapping_save(request):
         return JsonResponse({"error": "Unsupported mapping scope."}, status=400)
     source_episodes = [episode]
     if scope == "season":
-        source_episodes = sorted(tracked_episodes)
+        # The report behind the wizard can be stale, so only episodes that
+        # still don't resolve get an override; working mappings are kept.
+        issues = []
+        try:
+            mal_sync.grouped_sync_entries(request.user, tv=show, mapping_issues=issues)
+        except services.ProviderAPIError:
+            return JsonResponse(
+                {"error": "Couldn't check the current MAL mappings. Please try again."},
+                status=502,
+            )
+        source_episodes = sorted({
+            number
+            for issue in issues
+            for issue_season in issue.get("seasons", [])
+            if issue_season["season"] == season
+            for number in issue_season["episodes"]
+        })
+        if episode not in source_episodes:
+            return JsonResponse(
+                {"error": "This season is already mapped. Refresh the page."},
+                status=409,
+            )
 
     first_episode = source_episodes[0]
     references = [

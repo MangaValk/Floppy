@@ -1748,6 +1748,48 @@ class GroupedMALSync(TestCase):
         )
         self.assertEqual(mappings, [(1, 4), (3, 6)])
 
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:9": {"1-2": "1-2"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_season_mapping_keeps_episodes_that_already_resolve(self, metadata):
+        """Regression: a stale report let "Fix whole season" overwrite every
+        tracked episode, breaking E1-2's working mapping and numbering E3
+        from E1 instead of from itself.
+        """
+        metadata.return_value = {"title": "Cour 9", "max_progress": 2}
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 3,
+            "scope": "season", "mal_id": 500, "mal_episode": 1,
+        })
+
+        self.assertEqual(response.json()["mapped"], 1)
+        mappings = {
+            reference.metadata["episode_number"]: reference.episode_mapping
+            for reference in self.user.external_references.filter(
+                integration="mal_sync",
+            )
+        }
+        self.assertEqual(mappings, {3: {"mal_id": 500, "episode": 1}})
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:9": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_season_mapping_of_a_resolved_season_is_refused(self, metadata):
+        metadata.return_value = {"title": "Cour 9", "max_progress": 3}
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 1,
+            "scope": "season", "mal_id": 500, "mal_episode": 1,
+        })
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(self.user.external_references.exists())
+
     def test_manual_mapping_is_user_scoped_and_validated(self):
         self.client.force_login(self.user)
         response = self.client.post(reverse("mal_episode_mapping_save"), {
@@ -1810,13 +1852,13 @@ class GroupedMALSync(TestCase):
         ])
         self.client.force_login(self.user)
 
-        single = self.client.post(reverse("mal_episode_mapping_save"), {
-            "item_id": self.show_item.pk, "season": 1, "episode": 4,
-            "mal_id": 500, "mal_episode": 4,
-        })
         season = self.client.post(reverse("mal_episode_mapping_save"), {
             "item_id": self.show_item.pk, "season": 1, "episode": 1,
             "scope": "season", "mal_id": 500, "mal_episode": 1,
+        })
+        single = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 4,
+            "mal_id": 500, "mal_episode": 4,
         })
 
         self.assertEqual(single.status_code, 200)

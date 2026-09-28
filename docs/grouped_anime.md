@@ -135,9 +135,10 @@ The repair wizard searches the complete MAL anime catalogue, including titles
 hidden by the normal search preference, then loads the selected title's episode
 count. A single unresolved episode can be mapped independently. When every
 tracked episode in a season is unresolved, "Fix whole season" stores one
-override per source episode, counting from the selected MAL episode for the
-season's first tracked episode. Gaps in the tracked episodes are kept, so an
-episode watched later maps to its own MAL episode.
+override per episode that still has no mapping, counting from the selected MAL
+episode for the first of them. Episodes that already resolve keep their
+mapping. Gaps in the episode numbers are kept, so an episode watched later
+maps to its own MAL episode.
 
 ## Classification policy
 
