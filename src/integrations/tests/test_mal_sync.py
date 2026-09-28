@@ -564,6 +564,30 @@ class PullHigherMALProgress(TestCase):
         self.assertEqual(anime.progress, 24)
         self.assertEqual(anime.status, Status.COMPLETED.value)
 
+    def test_entries_the_sync_filters_exclude_are_not_pulled(self, *_mocks):
+        """Regression: an unselected run (the schedule) changed Dropped or
+        unrated entries that the filters exclude and the preview never shows.
+        """
+        self.account.sync_filter_dropped = False
+        self.account.save(update_fields=["sync_filter_dropped"])
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            anime = Anime.objects.create(
+                user=self.user, item=self.item,
+                status=Status.DROPPED.value, progress=5,
+            )
+
+        corrected = mal_sync.pull_higher_mal_progress(
+            self.user, self.account,
+            remote_statuses={
+                "anime": {"9253": {"status": "watching", "num_episodes_watched": 20}},
+                "manga": {},
+            },
+        )
+
+        anime.refresh_from_db()
+        self.assertEqual(corrected, [])
+        self.assertEqual(anime.progress, 5)
+
     def test_lower_or_equal_remote_progress_is_left_alone(self, *_mocks):
         with patch("integrations.tasks.sync_mal_status.delay"):
             anime = Anime.objects.create(
@@ -680,6 +704,8 @@ class PullHigherMALProgress(TestCase):
         self.assertEqual(anime.status, Status.DROPPED.value)
 
     def test_planned_remote_status_with_progress_becomes_in_progress(self, *_mocks):
+        self.account.sync_filter_planning = True
+        self.account.save(update_fields=["sync_filter_planning"])
         with patch("integrations.tasks.sync_mal_status.delay"):
             anime = Anime.objects.create(
                 user=self.user, item=self.item,

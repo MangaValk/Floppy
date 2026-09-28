@@ -678,6 +678,22 @@ def manual_episode_mappings(user):
     return list(groups.values())
 
 
+def _included_statuses(mal_account):
+    """Return the statuses the account's full-sync filters include."""
+    included_statuses = set()
+    if mal_account is None or mal_account.sync_filter_completed:
+        included_statuses.add(Status.COMPLETED.value)
+    if mal_account is None or mal_account.sync_filter_in_progress:
+        included_statuses.add(Status.IN_PROGRESS.value)
+    if mal_account is None or mal_account.sync_filter_dropped:
+        included_statuses.add(Status.DROPPED.value)
+    if mal_account is not None and mal_account.sync_filter_planning:
+        included_statuses.add(Status.PLANNING.value)
+    if mal_account is not None and mal_account.sync_filter_paused:
+        included_statuses.add(Status.PAUSED.value)
+    return included_statuses
+
+
 def full_sync_entries(
     user, mal_account=None, mapping_issues=None, progress_callback=None,
 ):
@@ -691,18 +707,7 @@ def full_sync_entries(
     Anime = apps.get_model(app_label="app", model_name="anime")  # noqa: N806
     Manga = apps.get_model(app_label="app", model_name="manga")  # noqa: N806
 
-    included_statuses = set()
-    if mal_account is None or mal_account.sync_filter_completed:
-        included_statuses.add(Status.COMPLETED.value)
-    if mal_account is None or mal_account.sync_filter_in_progress:
-        included_statuses.add(Status.IN_PROGRESS.value)
-    if mal_account is None or mal_account.sync_filter_dropped:
-        included_statuses.add(Status.DROPPED.value)
-    if mal_account is not None and mal_account.sync_filter_planning:
-        included_statuses.add(Status.PLANNING.value)
-    if mal_account is not None and mal_account.sync_filter_paused:
-        included_statuses.add(Status.PAUSED.value)
-
+    included_statuses = _included_statuses(mal_account)
     filters = {
         "user": user,
         "item__source": Sources.MAL.value,
@@ -859,6 +864,9 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None, only=None)
             for media_type in (MediaTypes.ANIME.value, MediaTypes.MANGA.value)
         }
 
+    # The same filters as full_sync_entries, so a sync never changes an
+    # entry locally that it neither pushes nor shows in the preview.
+    included_statuses = _included_statuses(mal_account)
     corrected = []
     for media_type, model in (
         (MediaTypes.ANIME.value, Anime),
@@ -881,6 +889,10 @@ def pull_higher_mal_progress(user, mal_account, remote_statuses=None, only=None)
                 best_rows[media.item_id] = media
         for media in best_rows.values():
             if only is not None and entry_key(media) not in only:
+                continue
+            if media.status not in included_statuses or (
+                mal_account.sync_filter_rated_only and media.score is None
+            ):
                 continue
             current = remote.get(str(media.item.media_id))
             updates = _local_pull_updates(media_type, media, current, mal_account)
