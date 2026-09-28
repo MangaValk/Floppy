@@ -459,11 +459,13 @@ class BaseWebhookProcessor:
                 media_id,
                 preferred_library_media_type=MediaTypes.ANIME.value,
             )
-            # A TV-bucket row (e.g. one a Plex show rating created) must not
-            # take episodes from a show the user tracks as flat MAL anime.
+            # A stray TV-bucket row (e.g. one a Plex show rating created) must
+            # not take episodes from a show the user tracks as flat MAL anime.
+            # A row with its own episode history is real tracking and keeps them.
             if (
                 existing_tv_item
                 and existing_tv_item.library_media_type != MediaTypes.ANIME.value
+                and not self._tv_row_has_history(user, existing_tv_item)
             ):
                 anime_home = self._find_existing_anime_home(user, media_id, tvdb_id)
                 if anime_home and anime_home[0] == "flat":
@@ -795,6 +797,13 @@ class BaseWebhookProcessor:
         if getattr(self, "_grouped_anime_mapping_loaded", False):
             snapshot = self._grouped_anime_snapshot
         return grouped_anime.classify(tv_metadata, snapshot=snapshot)
+
+    def _tv_row_has_history(self, user, tv_item):
+        """Return whether the user's TV row for this show has any episode logged."""
+        return app.models.Episode.objects.filter(
+            related_season__related_tv__user=user,
+            related_season__related_tv__item=tv_item,
+        ).exists()
 
     def _find_existing_anime_home(self, user, tmdb_media_id, tvdb_id=None):
         """Return the user's existing Anime-library home for this show.

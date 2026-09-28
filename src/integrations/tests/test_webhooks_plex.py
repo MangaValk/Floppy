@@ -2569,6 +2569,63 @@ class PlexWebhookTests(TestCase):
         self.assertIsNone(anime.score)
 
     @patch("app.providers.tmdb.tv")
+    def test_show_rating_stays_on_a_tracked_tv_row_beside_a_flat_mal_entry(self, _mock_tv):
+        """Regression: a flat MAL entry linked to the show (an OVA, one cour)
+        took the Plex rating away from the user's real TV-library row.
+        """
+        tv_item = Item.objects.create(
+            media_id="76134", source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value, title="Mitsuboshi Colors",
+        )
+        tv = TV.objects.create(item=tv_item, user=self.user, status=Status.IN_PROGRESS.value)
+        season = Season.objects.create(
+            item=Item.objects.create(
+                media_id="76134", source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value, season_number=1,
+                title="Mitsuboshi Colors",
+            ),
+            user=self.user, related_tv=tv, status=Status.IN_PROGRESS.value,
+        )
+        Episode.objects.create(
+            item=Item.objects.create(
+                media_id="76134", source=Sources.TMDB.value,
+                media_type=MediaTypes.EPISODE.value, season_number=1, episode_number=1,
+                title="Episode 1",
+            ),
+            related_season=season,
+        )
+        anime_item = Item.objects.create(
+            media_id="35078", source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value, title="Mitsuboshi Colors OVA", image="",
+        )
+        ItemProviderLink.objects.create(
+            item=anime_item, provider=Sources.TMDB.value,
+            provider_media_type=MediaTypes.TV.value, provider_media_id="76134",
+            season_number=0,
+        )
+        anime = Anime.objects.create(
+            item=anime_item, user=self.user, status=Status.COMPLETED.value, progress=1,
+        )
+
+        self._post_payload(
+            {
+                "event": "media.rate",
+                "Account": {"title": "testuser"},
+                "Metadata": {
+                    "type": "show",
+                    "title": "Mitsuboshi Colors",
+                    "userRating": 8,
+                    "Guid": [{"id": "tmdb://76134"}],
+                },
+            },
+        )
+
+        tv.refresh_from_db()
+        anime.refresh_from_db()
+        self.assertEqual(tv.score, 8)
+        self.assertIsNone(anime.score)
+
+    @patch("app.providers.tmdb.tv")
     def test_show_rating_reaches_a_rewatched_flat_mal_anime(self, _mock_tv):
         """A rewatch row doesn't make the title ambiguous.
 

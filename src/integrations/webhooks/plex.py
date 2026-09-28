@@ -925,6 +925,15 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
         anime_home = self._find_existing_anime_home(user, tmdb_id)
         if anime_home is None or anime_home[0] != "flat":
             return False
+        # A show the user really tracks in the TV library keeps its rating
+        # there, even when an OVA or one cour is also a flat MAL entry.
+        tv_row = app.models.TV.objects.filter(
+            user=user,
+            item__source=Sources.TMDB.value,
+            item__media_id=str(tmdb_id),
+        ).select_related("item").first()
+        if tv_row is not None and self._tv_row_has_history(user, tv_row.item):
+            return False
 
         links = app.models.ItemProviderLink.objects.filter(
             provider=Sources.TMDB.value,
