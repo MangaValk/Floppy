@@ -2414,6 +2414,27 @@ class GroupedMALSync(TestCase):
             countdown=mal_sync.GROUPED_SYNC_DEBOUNCE_SECONDS + 1,
         )
 
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_removing_a_show_rating_clears_it_on_mal(self, _delay, entries, push):
+        """Regression: a grouped show's removed rating was never cleared on
+        MAL, so the next full sync pulled it back onto the show.
+        """
+        TV.objects.filter(pk=self.show.pk).update(score=Decimal("8.0"))
+        show = TV.objects.get(pk=self.show.pk)
+        show.score = None
+        with self.captureOnCommitCallbacks(execute=True):
+            show.save()
+        entries.return_value = [MagicMock(score=None)]
+
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+
+        push.assert_called_once_with(
+            entries.return_value[0], self.account, clear_score=True,
+        )
+        self.assertIsNone(cache.get(mal_sync.grouped_clear_score_key(self.show.pk)))
+
     @patch(
         "integrations.tasks.sync_mal_status.apply_async",
         side_effect=RuntimeError("broker down"),

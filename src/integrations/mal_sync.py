@@ -369,8 +369,17 @@ def per_item_sync_active(user_id):
     ).exists()
 
 
-def queue_grouped_sync(user_id, item):
-    """Queue current grouped progress after commit for connected, opted-in users."""
+def grouped_clear_score_key(show_id):
+    """Return the cache key flagging that a grouped show's rating was removed."""
+    return f"mal_grouped_clear_score:{show_id}"
+
+
+def queue_grouped_sync(user_id, item, clear_score=False):
+    """Queue current grouped progress after commit for connected, opted-in users.
+
+    `clear_score` flags that the save removed a rating. It's kept apart from
+    the debounce window, so a later trigger in the same window can't drop it.
+    """
     from app.models import TV
     from integrations.tasks import sync_mal_status
 
@@ -394,6 +403,11 @@ def queue_grouped_sync(user_id, item):
         # A watch fires several triggers (watch state, episode, season). The
         # first one reserves the window; the push runs after it closes, so it
         # reads every change that committed inside it and is sent only once.
+        if clear_score:
+            cache_safety.cache_add(
+                grouped_clear_score_key(show_id),
+                timeout=GROUPED_SYNC_DEBOUNCE_SECONDS + 600,
+            )
         key = f"mal_grouped_sync:{show_id}"
         if not cache_safety.acquire_lock(
             key,

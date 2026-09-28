@@ -31,8 +31,16 @@ def sync_grouped_anime_change(sender, instance, **kwargs):
         return
     if sender is WatchState and instance.item.media_type != "episode":
         return
+    # Removing a show or season rating must clear it on MAL too, or the next
+    # full sync pulls MAL's old rating back.
+    clear_score = (
+        sender is not WatchState
+        and instance.score is None
+        and instance.tracker.has_changed("score")
+        and instance.tracker.previous("score") is not None
+    )
     try:
-        queue_grouped_sync(instance.user_id, instance.item)
+        queue_grouped_sync(instance.user_id, instance.item, clear_score=clear_score)
     except ObjectDoesNotExist:
         return
 

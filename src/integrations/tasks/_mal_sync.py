@@ -12,6 +12,7 @@ import requests
 from celery import shared_task
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import models
 from django.utils import timezone
 
@@ -198,14 +199,18 @@ def sync_mal_status(media_type, media_id, clear_score=False):
         _mark_connection_broken(mal_account, error)
         return
 
+    if media_type == "tv":
+        # queue_grouped_sync flags a removed show or season rating here.
+        clear_key = mal_sync.grouped_clear_score_key(media.pk)
+        clear_score = clear_score or bool(cache.get(clear_key))
+        cache.delete(clear_key)
+
     # A grouped show can span several MAL entries (one per cour). Each is
     # pushed on its own, so one that MAL rejects doesn't hold back the rest.
     retryable_error = None
     for entry in entries:
         try:
-            mal_sync.push_status(
-                entry, mal_account, clear_score=clear_score and media_type != "tv",
-            )
+            mal_sync.push_status(entry, mal_account, clear_score=clear_score)
         except mal_sync.MALAuthError as error:
             _mark_connection_broken(mal_account, error)
             return
