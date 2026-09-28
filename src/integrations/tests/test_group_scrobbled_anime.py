@@ -13,6 +13,10 @@ MAPPING_DATA = {"tmdb_show:12345:s2": {"mal:999": {"13-24": "1-12"}}}
 PAYLOAD = {"media_type": "episode", "completed": True}
 
 
+@patch(
+    "app.providers.tmdb.tv_with_seasons",
+    side_effect=lambda _id, seasons: {f"season/{season}": {"episodes": []} for season in seasons},
+)
 @patch("app.services.metadata_resolution.upsert_provider_links")
 @patch(
     "integrations.webhooks.anime_mappings.find_entries_for_mal_id",
@@ -135,6 +139,25 @@ class GroupScrobbledAnimeTests(TestCase):
         self.anime.refresh_from_db()
         self.assertEqual(self.anime.progress, 4)
 
+
+    @patch("app.services.anime_migration.migrate_flat_anime_to_grouped")
+    def test_missing_tmdb_season_keeps_the_flat_entry(self, migrate, *mocks):
+        """Regression: the entry was converted before the episode was known
+        to be loggable, so a missing TMDB season lost the play for good.
+        """
+        tv_with_seasons = mocks[-1]
+        tv_with_seasons.side_effect = None
+        tv_with_seasons.return_value = {}
+        self.user.group_scrobbled_anime = True
+        self.user.save(update_fields=["group_scrobbled_anime"])
+
+        result, handle_tv = self._scrobble()
+
+        self.assertTrue(result)
+        migrate.assert_not_called()
+        handle_tv.assert_not_called()
+        self.anime.refresh_from_db()
+        self.assertEqual(self.anime.progress, 4)
 
     @patch("app.services.anime_migration.migrate_flat_anime_to_grouped")
     def test_tmdb_outage_during_conversion_falls_back_to_flat(self, migrate, *_):

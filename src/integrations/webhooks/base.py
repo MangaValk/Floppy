@@ -798,6 +798,14 @@ class BaseWebhookProcessor:
             snapshot = self._grouped_anime_snapshot
         return grouped_anime.classify(tv_metadata, snapshot=snapshot)
 
+    def _tmdb_season_available(self, tmdb_id, season_number):
+        """Return whether TMDB can describe this season right now."""
+        try:
+            metadata = app.providers.tmdb.tv_with_seasons(str(tmdb_id), [season_number])
+        except ProviderAPIError:
+            return False
+        return bool(metadata.get(f"season/{season_number}"))
+
     def _tv_row_has_history(self, user, tv_item):
         """Return whether the user's TV row for this show has any episode logged."""
         return app.models.Episode.objects.filter(
@@ -2504,6 +2512,16 @@ class BaseWebhookProcessor:
             item=anime_item,
             migrated_to_item__isnull=True,
         ).exists():
+            # The episode must be loggable before the flat entry goes: after
+            # the conversion there's no flat entry to fall back to.
+            if not self._tmdb_season_available(tmdb_id, season_number):
+                logger.warning(
+                    "Keeping MAL %s flat; TMDB %s season %s is unavailable",
+                    anime_item.media_id,
+                    tmdb_id,
+                    season_number,
+                )
+                return False
             try:
                 anime_migration.migrate_flat_anime_to_grouped(
                     user,
@@ -2524,7 +2542,7 @@ class BaseWebhookProcessor:
                 anime_item.media_id,
             )
 
-        self._handle_tv_episode(
+        logged = self._handle_tv_episode(
             str(tmdb_id),
             season_number,
             tmdb_episode,
@@ -2532,6 +2550,15 @@ class BaseWebhookProcessor:
             user,
             library_media_type=MediaTypes.ANIME.value,
         )
+        if logged is None:
+            # Past the conversion a flat fallback would start a second entry.
+            logger.error(
+                "Per-episode scrobble for MAL %s was not logged at TMDB %s S%sE%s",
+                anime_item.media_id,
+                tmdb_id,
+                season_number,
+                tmdb_episode,
+            )
         return True
 
     def _queue_collection_metadata_update(self, payload, user, item):
