@@ -148,7 +148,8 @@ from integrations.upload_staging import (
 from integrations.webhooks.plex import extract_plex_webhook_usernames
 
 logger = logging.getLogger(__name__)
-MAL_MAPPING_MIN_QUERY_LENGTH = 2
+# MyAnimeList search rejects shorter queries with HTTP 400.
+MAL_MAPPING_MIN_QUERY_LENGTH = 3
 ARR_SYNC_INTERVAL_HOURS = 2
 RADARR_RECURRING_TASK_NAME = "Import from Radarr (Recurring)"
 JELLYFIN_PLAYBACK_REPORTING_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -1708,7 +1709,7 @@ def mal_mapping_search(request):
     """Search MAL anime titles for the manual episode-mapping wizard."""
     query = request.GET.get("q", "").strip()
     if len(query) < MAL_MAPPING_MIN_QUERY_LENGTH:
-        return JsonResponse({"error": "Enter at least two characters."}, status=400)
+        return JsonResponse({"error": "Enter at least three characters."}, status=400)
     try:
         from app.providers import mal as mal_provider
 

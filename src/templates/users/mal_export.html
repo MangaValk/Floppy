@@ -149,7 +149,7 @@
            this.activeModal = 'mal-mapping-wizard';
          },
          async searchMalTitles() {
-           if (this.mappingSearchQuery.trim().length < 2) { return; }
+           if (this.mappingSearchQuery.trim().length < 3) { return; }
            this.mappingSearchLoading = true;
            this.mappingWizardError = '';
            try {
@@ -820,7 +820,7 @@
             <input id="mal-mapping-search" type="search" x-model="mappingSearchQuery"
                    placeholder="{% translate 'Search anime title' %}"
                    class="min-w-0 flex-1 py-2 px-3 bg-[var(--color-panel)] border border-gray-600 rounded-md text-[var(--color-text)]">
-            <button type="submit" :disabled="mappingSearchLoading || mappingSearchQuery.trim().length < 2"
+            <button type="submit" :disabled="mappingSearchLoading || mappingSearchQuery.trim().length < 3"
                     class="px-4 py-2 bg-indigo-600 text-white rounded-md cursor-pointer disabled:opacity-50">
               {% translate "Search" %}
             </button>

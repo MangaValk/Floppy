@@ -2135,6 +2135,18 @@ class GroupedMALSync(TestCase):
         self.assertEqual(response.json(), {"reverted": True})
         self.assertEqual(mal_sync.manual_episode_mappings(self.user), [])
 
+    def test_mapping_search_asks_for_three_characters(self):
+        """Regression: two-character queries reached MAL, which rejects them
+        with 400, and the wizard showed "search is unavailable".
+        """
+        self.client.force_login(self.user)
+        with patch("app.providers.mal.search") as search:
+            response = self.client.get(reverse("mal_mapping_search"), {"q": "86"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("three characters", response.json()["error"])
+        search.assert_not_called()
+
     @patch("app.providers.mal.search")
     def test_mapping_wizard_searches_mal_anime(self, search):
         self.client.force_login(self.user)
