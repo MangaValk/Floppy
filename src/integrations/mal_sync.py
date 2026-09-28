@@ -371,6 +371,10 @@ def per_item_sync_active(user_id):
     ).exists()
 
 
+# How long a removed-rating flag waits for its grouped push.
+GROUPED_CLEAR_FLAG_SECONDS = GROUPED_SYNC_DEBOUNCE_SECONDS + 600
+
+
 def grouped_clear_score_key(show_id):
     """Return the cache key flagging that a grouped show's rating was removed."""
     return f"mal_grouped_clear_score:{show_id}"
@@ -410,9 +414,7 @@ def queue_grouped_sync(user_id, item, clear_scope=None):
             clear_key = grouped_clear_score_key(show_id)
             try:
                 scopes = set(cache.get(clear_key) or ()) | {clear_scope}
-                cache.set(
-                    clear_key, list(scopes), timeout=GROUPED_SYNC_DEBOUNCE_SECONDS + 600,
-                )
+                cache.set(clear_key, list(scopes), timeout=GROUPED_CLEAR_FLAG_SECONDS)
             # The cache is down; the rating stays on MAL, nothing else fails.
             except Exception as error:
                 logger.warning(

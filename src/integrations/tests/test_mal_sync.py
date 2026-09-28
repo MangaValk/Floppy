@@ -2549,6 +2549,21 @@ class GroupedMALSync(TestCase):
 
     @patch("integrations.mal_sync.push_status")
     @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_rating_removed_during_a_push_is_kept_for_the_next(self, entries, push):
+        """Regression: the finished push deleted the whole flag, dropping a
+        season clear queued while it ran.
+        """
+        key = mal_sync.grouped_clear_score_key(self.show.pk)
+        cache.set(key, [1])
+        entries.return_value = [MagicMock(score=None)]
+        push.side_effect = lambda *_args, **_kwargs: cache.set(key, [1, 3])
+
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+
+        self.assertEqual(cache.get(key), [3])
+
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
     def test_rating_clear_survives_a_retried_push(self, entries, push):
         """Regression: the flag was dropped before pushing, so a retry after
         a 5xx no longer cleared MAL's rating.

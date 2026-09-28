@@ -237,8 +237,16 @@ def sync_mal_status(media_type, media_id, clear_score=False):
             retryable_error = retryable_error or error
     if retryable_error is not None:
         raise retryable_error
-    if clear_key:
-        cache.delete(clear_key)
+    if clear_scopes:
+        # Only the scopes this push read: a rating removed while it ran is
+        # left for the push that trigger queued.
+        remaining = set(cache.get(clear_key) or ()) - clear_scopes
+        if remaining:
+            cache.set(
+                clear_key, list(remaining), timeout=mal_sync.GROUPED_CLEAR_FLAG_SECONDS,
+            )
+        else:
+            cache.delete(clear_key)
 
 
 @shared_task(name=MAL_FULL_SYNC_TASK_NAME)
