@@ -1618,12 +1618,15 @@ def mal_episode_mapping_save(request):
                 {"error": "Couldn't check the current MAL mappings. Please try again."},
                 status=502,
             )
+        # Counted from the episode the user aligned in the wizard, so an
+        # earlier one that became unresolved since doesn't shift the rest.
         source_episodes = sorted({
             number
             for issue in issues
             for issue_season in issue.get("seasons", [])
             if issue_season["season"] == season
             for number in issue_season["episodes"]
+            if number >= episode
         })
         if episode not in source_episodes:
             return JsonResponse(
@@ -1631,7 +1634,7 @@ def mal_episode_mapping_save(request):
                 status=409,
             )
 
-    first_episode = source_episodes[0]
+    first_episode = episode
     references = [
         ExternalReference(
             user=request.user,

@@ -1828,6 +1828,26 @@ class GroupedMALSync(TestCase):
         }
         self.assertEqual(mappings, {3: {"mal_id": 500, "episode": 1}})
 
+    def test_season_mapping_counts_from_the_aligned_episode(self):
+        """Regression: an earlier episode that became unresolved after the
+        report was built took the first MAL episode and shifted the rest.
+        """
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("mal_episode_mapping_save"), {
+            "item_id": self.show_item.pk, "season": 1, "episode": 2,
+            "scope": "season", "mal_id": 500, "mal_episode": 1,
+        })
+
+        self.assertEqual(response.json()["mapped"], 2)
+        mappings = {
+            reference.metadata["episode_number"]: reference.episode_mapping["episode"]
+            for reference in self.user.external_references.filter(
+                integration="mal_sync",
+            )
+        }
+        self.assertEqual(mappings, {2: 1, 3: 2})
+
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:9": {"1-3": "1-3"}},
     })
