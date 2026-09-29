@@ -2614,6 +2614,49 @@ class GroupedMALSync(TestCase):
         self.assertEqual([entry.score for entry in entries], [Decimal("8.0")])
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+        "tmdb_show:200:s0": {"mal:42": {"1": "1"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_another_show_on_the_same_entry_keeps_its_rating(self, metadata):
+        """Regression: a later, unrated show mapped to the same MAL entry
+        replaced its rating with None, so every sync offered the same pull.
+        """
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 4}
+        Season.objects.filter(pk=self.season.pk).update(score=Decimal("8.0"))
+        other = TV(
+            user=self.user, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="200", source="tmdb", media_type="tv",
+                library_media_type="anime", title="Other Anime",
+            ),
+        )
+        TV.objects.bulk_create([other])
+        special = Season(
+            user=self.user, related_tv=other, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="200", source="tmdb", media_type="season",
+                library_media_type="anime", season_number=0, title="Specials",
+            ),
+        )
+        Season.objects.bulk_create([special])
+        Episode.objects.bulk_create([Episode(
+            related_season=special,
+            item=Item.objects.create(
+                media_id="200", source="tmdb", media_type="episode",
+                library_media_type="anime", season_number=0, episode_number=1,
+                title="Special 1",
+            ),
+        )])
+
+        [entry] = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(entry.grouped_tv, self.show)
+        self.assertEqual(entry.score, Decimal("8.0"))
+        self.assertEqual(entry.grouped_seasons, {1})
+        self.assertEqual(entry.grouped_exclusive_seasons, {1})
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")

@@ -737,8 +737,13 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
                 )
                 entries[mal_id][0].grouped_tv = show
                 entries[mal_id][0].grouped_seasons = set()
-            entries[mal_id][0].grouped_seasons.add(item.season_number)
-            show_mal_ids.add(mal_id)
+            # Another show mapped to the same entry adds its watches, but the
+            # entry's seasons and rating stay with the show that made it:
+            # its season numbers mean nothing on grouped_tv, and rating it
+            # again would replace grouped_tv's rating with its own.
+            if entries[mal_id][0].grouped_tv is show:
+                entries[mal_id][0].grouped_seasons.add(item.season_number)
+                show_mal_ids.add(mal_id)
             _, watched_numbers, _, _ = entries[mal_id]
             if watched:
                 watched_numbers.add(episode_number)
