@@ -20,7 +20,9 @@ from integrations.imports import (
     hltb,
     imdb,
     jellyfin_playback_reporting,
+    kapowarr,
     kitsu,
+    komga,
     mal,
     mdblist,
     mylar,
@@ -54,6 +56,8 @@ from integrations.tasks import _jellyfin_health
 from integrations.tasks._import_helpers import (
     GOODREADS_IMPORT_TASK_NAME,
     LEGACY_GOODREADS_IMPORT_TASK_NAMES,
+    STREMIO_IMPORT_SOFT_TIME_LIMIT,
+    STREMIO_IMPORT_TIME_LIMIT,
     _run_file_import,
     format_import_message,
     format_watchlist_sync_message,
@@ -64,8 +68,6 @@ from integrations.tasks._plex_collection import update_collection_metadata_from_
 
 logger = logging.getLogger(__name__)
 
-STREMIO_IMPORT_SOFT_TIME_LIMIT = 20 * 60
-STREMIO_IMPORT_TIME_LIMIT = 30 * 60
 
 
 def import_media(
@@ -100,8 +102,13 @@ def import_media(
                     username=oauth_username,
                     **extra_kwargs,
                 )
-    except Exception:
-        ImportRun.objects.filter(id=import_run.id).update(
+    except BaseException:
+        # BaseException so a soft time limit or worker shutdown still leaves a
+        # record. RUNNING only: a cancel has already marked the row CANCELLED.
+        ImportRun.objects.filter(
+            id=import_run.id,
+            status=ImportRun.Status.RUNNING,
+        ).update(
             status=ImportRun.Status.FAILED,
             finished_at=timezone.now(),
         )
@@ -222,14 +229,27 @@ def import_mdblist(user_id, mode, username=None):
 
 
 @shared_task(name="Import from SIMKL")
-def import_simkl(token, user_id, mode, username=None, anime_destination=None):
+def import_simkl(
+    token,
+    user_id,
+    mode,
+    username=None,
+    anime_destination=None,
+    refresh_token=None,
+):
     """Celery task for importing media data from SIMKL.
 
     `anime_destination` is accepted and ignored. Recurring schedules created
     before the option was removed persist it in their task kwargs, so dropping
     the parameter would break them on the next deploy.
     """
-    return import_media(simkl.importer, token, user_id, mode)
+    return import_media(
+        simkl.importer,
+        token,
+        user_id,
+        mode,
+        refresh_token=refresh_token,
+    )
 
 
 @shared_task(name="Import from MyAnimeList")
@@ -467,6 +487,27 @@ def import_mylar_recurring(instance_id):
     )
 
 
+@shared_task(name="Import from Kapowarr")
+def import_kapowarr(user_id, mode="new", username=None, instance_id=None):
+    """Celery task for importing comic collection data from Kapowarr."""
+    return _run_arr_import(
+        "Kapowarr", kapowarr.importer, user_id, mode, instance_id=instance_id
+    )
+
+
+@shared_task(name="Import from Kapowarr (Recurring)")
+def import_kapowarr_recurring(instance_id):
+    """Recurring import task for one Kapowarr instance."""
+    from integrations.models import KapowarrInstance
+
+    user_id = KapowarrInstance.objects.values_list("user_id", flat=True).get(
+        pk=instance_id
+    )
+    return _run_arr_import(
+        "Kapowarr", kapowarr.importer, user_id, "new", instance_id=instance_id
+    )
+
+
 @shared_task(name="Import from Sonarr")
 def import_sonarr(user_id, mode="new", username=None, instance_id=None):
     """Celery task for importing TV collection data from Sonarr."""
@@ -571,6 +612,18 @@ def import_audiobookshelf(user_id, mode="new"):
 def import_audiobookshelf_recurring(user_id):
     """Recurring import task for Audiobookshelf."""
     return import_media(audiobookshelf.importer, None, user_id, "new")
+
+
+@shared_task(name="Import from Komga")
+def import_komga(user_id, mode="new"):
+    """Celery task for importing book and comic reading progress from Komga."""
+    return import_media(komga.importer, None, user_id, mode)
+
+
+@shared_task(name="Import from Komga (Recurring)")
+def import_komga_recurring(user_id):
+    """Recurring import task for Komga."""
+    return import_media(komga.importer, None, user_id, "new")
 
 
 @shared_task(name="Import from Storyteller")

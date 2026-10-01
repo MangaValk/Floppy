@@ -134,7 +134,7 @@ MEDIA_TYPE_CONFIG = {
         "date_key": "end_date",
     },
     MediaTypes.MANGA.value: {
-        "sources": [Sources.MAL, Sources.MANGAUPDATES],
+        "sources": [Sources.MAL, Sources.MANGAUPDATES, Sources.MANGABAKA],
         "default_source": Sources.MAL,
         "unicode_icon": "📚",
         "verb": (gettext_noop("read"), gettext_noop("read")),
@@ -185,7 +185,7 @@ MEDIA_TYPE_CONFIG = {
         "unit": ("P", gettext_noop("Page")),
     },
     MediaTypes.COMIC.value: {
-        "sources": [Sources.COMICVINE],
+        "sources": [Sources.COMICVINE, Sources.GCD],
         "default_source": Sources.COMICVINE,
         "unicode_icon": "📕",
         "verb": (gettext_noop("read"), gettext_noop("read")),
@@ -199,7 +199,7 @@ MEDIA_TYPE_CONFIG = {
         "unit": ("#", gettext_noop("Issue")),
     },
     MediaTypes.COMIC_ISSUE.value: {
-        "sources": [Sources.COMICVINE],
+        "sources": [Sources.COMICVINE, Sources.GCD],
         "default_source": Sources.COMICVINE,
         "unicode_icon": "📄",
         "verb": (gettext_noop("read"), gettext_noop("read")),

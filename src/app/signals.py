@@ -89,8 +89,12 @@ TRACKED_TASK_NAMES = frozenset(
         "Import from Sonarr (Recurring)",
         "Import from Mylar3",
         "Import from Mylar3 (Recurring)",
+        "Import from Kapowarr",
+        "Import from Kapowarr (Recurring)",
         "Import from Audiobookshelf",
         "Import from Audiobookshelf (Recurring)",
+        "Import from Komga",
+        "Import from Komga (Recurring)",
         "Import from Storyteller",
         "Import from Storyteller (Recurring)",
         "Import from Pocket Casts",
@@ -539,6 +543,7 @@ def _handle_media_cache_change(
     schedule_statistics: bool = True,
     force_history_days: bool = False,
     clear_runtime_caches: bool = True,
+    history_dates_may_have_moved: bool = True,
 ) -> None:
     if not user_id:
         return
@@ -582,8 +587,14 @@ def _handle_media_cache_change(
         # invalidate in that case, but it can still appear in a title's
         # history. Statistics read undated rows straight from the database
         # when aggregating, so no day payload is affected: re-aggregating the
-        # ranges is enough.
-        history_cache.invalidate_history_cache(user_id)
+        # ranges is enough. History day payloads are dropped only when the save
+        # may have taken a dated row's date away (its old day is unknown here):
+        # otherwise adding or updating an undated entry, Planning above all,
+        # threw away every cached day and left the repair task to rebuild them.
+        if history_dates_may_have_moved:
+            history_cache.invalidate_history_cache(
+                user_id, reason="undated_media_change"
+            )
         statistics_cache.invalidate_statistics_cache(user_id)
         statistics_marked = True
 
@@ -801,6 +812,11 @@ def refresh_discover_cache_on_item_person_credit_change(sender, instance, **kwar
     item = getattr(instance, "item", None)
     if item is None and getattr(instance, "item_id", None):
         item = Item.objects.filter(id=instance.item_id).only("id", "media_type").first()
+    invalidate_discover_for_credit_item(item)
+
+
+def invalidate_discover_for_credit_item(item):
+    """Refresh Discover for the users tracking a movie/TV item whose credits changed."""
     user_ids, media_type = _discover_user_ids_for_credit_item(item)
     if not media_type:
         return
@@ -945,13 +961,18 @@ def capture_statistics_previous_dates(sender, instance, **kwargs):
     The change handlers only see the new dates; without this the day an entry
     moved away from kept counting it until something else rebuilt it.
     """
-    if kwargs.get("raw") or not instance.pk:
+    if kwargs.get("raw"):
+        return
+    if not instance.pk:
+        instance._history_had_dates = False
         return
     if media_cache_change_signals_suppressed() or media_change_side_effects_suppressed():
         return
-    instance._statistics_previous_dates = (
+    previous = (
         sender.objects.filter(pk=instance.pk).values_list("start_date", "end_date").first()
     )
+    instance._statistics_previous_dates = previous
+    instance._history_had_dates = previous is None or any(previous)
 
 
 @receiver(post_save, sender=Movie)
@@ -979,6 +1000,25 @@ def mark_statistics_previous_dates(sender, instance, **kwargs):
         )
 
 
+def _history_dates_may_have_moved(instance, signal_kwargs) -> bool:
+    """Whether an undated save or delete may have left a history day stale.
+
+    History places a row by its dates, and the receivers only see the new
+    ones. An undated row that is new, deleted, or saved without touching its
+    dates cannot have left a day it used to be on; only a save that may have
+    cleared existing dates needs the whole-cache fallback.
+    """
+    had_dates = instance.__dict__.pop("_history_had_dates", None)
+    if signal_kwargs.get("signal") is post_delete or signal_kwargs.get("created"):
+        return False
+    update_fields = signal_kwargs.get("update_fields")
+    if update_fields is not None and not {"start_date", "end_date"} & set(
+        update_fields
+    ):
+        return False
+    return had_dates is not False
+
+
 @receiver([post_save, post_delete], sender=Movie)
 def refresh_history_cache_on_movie_change(sender, instance, **kwargs):
     """Schedule history cache refresh when movie activity changes."""
@@ -995,6 +1035,7 @@ def refresh_history_cache_on_movie_change(sender, instance, **kwargs):
         reason="movie_change",
         history_specs=[([day_key] if day_key else [], ("sessions", "repeats"))],
         statistics_day_values=[day_key] if day_key else [],
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1074,6 +1115,7 @@ def refresh_history_cache_on_music_change(sender, instance, **kwargs):
         reason="music_change",
         history_specs=[([day_key] if day_key else [], ("sessions", "repeats"))],
         statistics_day_values=[day_key] if day_key else [],
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1105,6 +1147,7 @@ def refresh_history_cache_on_podcast_change(sender, instance, **kwargs):
         reason="podcast_change",
         history_specs=history_specs,
         statistics_day_values=[day_key] if day_key else [],
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1200,6 +1243,7 @@ def refresh_statistics_cache_on_anime_change(sender, instance, **kwargs):
         reason="anime_change",
         history_specs=[(history_day_keys, ("sessions", "repeats"))],
         statistics_day_values=day_keys,
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1247,6 +1291,7 @@ def refresh_statistics_cache_on_manga_change(sender, instance, **kwargs):
         reason="manga_change",
         history_specs=[(history_day_keys, ("sessions", "repeats"))],
         statistics_day_values=day_keys,
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1268,6 +1313,7 @@ def refresh_statistics_cache_on_book_change(sender, instance, **kwargs):
         reason="book_change",
         history_specs=[(history_day_keys, ("sessions", "repeats"))],
         statistics_day_values=day_keys,
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1289,6 +1335,7 @@ def refresh_statistics_cache_on_comic_change(sender, instance, **kwargs):
         reason="comic_change",
         history_specs=[(history_day_keys, ("sessions", "repeats"))],
         statistics_day_values=day_keys,
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1337,6 +1384,7 @@ def refresh_statistics_cache_on_game_change(sender, instance, **kwargs):
             ([session_key] if session_key else [], ("sessions",)),
         ],
         statistics_day_values=stats_day_keys,
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 
@@ -1370,6 +1418,7 @@ def refresh_statistics_cache_on_boardgame_change(sender, instance, **kwargs):
             ([session_key] if session_key else [], ("sessions",)),
         ],
         statistics_day_values=stats_day_keys,
+        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
     )
 
 

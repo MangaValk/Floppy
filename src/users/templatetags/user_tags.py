@@ -196,6 +196,10 @@ SOURCES_CONFIG = {
         "name": "Storyteller",
         "logo": static("img/storyteller-logo.svg"),
     },
+    "komga": {
+        "name": "Komga",
+        "logo": static("img/komga-logo.svg"),
+    },
     "koreader": {
         "name": "KOReader",
         "logo": static("img/koreader-logo.svg"),
@@ -267,6 +271,14 @@ SOURCES_CONFIG = {
     "mylar": {
         "name": "Mylar3",
         "logo": static("img/mylar-logo.png"),
+    },
+    "kapowarr": {
+        "name": "Kapowarr",
+        "logo": static("img/kapowarr-logo.png"),
+    },
+    "gcd": {
+        "name": "Grand Comics Database",
+        "logo": static("img/gcd-logo.png"),
     },
 }
 

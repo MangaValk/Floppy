@@ -766,6 +766,12 @@ _DETAIL_LINK_BRANDS = {
         "accent_classes": _DETAIL_LINK_ACCENT_CLASSES,
         "fallback_text": "MU",
     },
+    Sources.MANGABAKA.value: {
+        "chip_classes": "border-rose-400/18 bg-rose-500/[0.07]",
+        "badge_classes": "border-rose-400/28 bg-rose-500/14",
+        "accent_classes": _DETAIL_LINK_ACCENT_CLASSES,
+        "fallback_text": "MB",
+    },
     Sources.IGDB.value: {
         "logo_src": static("img/igdb-logo.png"),
         "chip_classes": "border-orange-400/18 bg-orange-500/[0.07]",
@@ -944,6 +950,7 @@ def _build_detail_link_entry(label, url, brand_key):
     return {
         "label": label,
         "url": url,
+        "brand": _normalize_detail_link_brand_key(brand_key),
         "chip_classes": brand["chip_classes"],
         "badge_classes": brand["badge_classes"],
         "accent_classes": brand["accent_classes"],

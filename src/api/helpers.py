@@ -207,10 +207,10 @@ VALID_SOURCES = {
     MediaTypes.EPISODE.value: ["tmdb", "manual"],
     MediaTypes.MOVIE.value: ["tmdb", "manual"],
     MediaTypes.ANIME.value: ["mal", "manual"],
-    MediaTypes.MANGA.value: ["mal", "mangaupdates", "manual"],
+    MediaTypes.MANGA.value: ["mal", "mangaupdates", "mangabaka", "manual"],
     MediaTypes.GAME.value: ["igdb", "manual"],
     MediaTypes.BOOK.value: ["openlibrary", "hardcover", "googlebooks", "manual"],
-    MediaTypes.COMIC.value: ["comicvine", "manual"],
+    MediaTypes.COMIC.value: ["comicvine", "gcd", "manual"],
     MediaTypes.BOARDGAME.value: ["bgg", "manual"],
 }
 
