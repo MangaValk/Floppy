@@ -757,16 +757,26 @@ def grouped_sync_entries(user, tv=None, mapping_issues=None, progress_callback=N
         )
         # The entry's rating: its lowest-numbered rated season, else the
         # show's - never whichever episode happened to create it.
-        season_scores = dict(
+        season_rows = dict(
             Season.objects.filter(
-                related_tv=show, order_archived=False, score__isnull=False,
+                related_tv=show, order_archived=False,
             ).values_list("item__season_number", "score"),
         )
+        season_scores = {
+            season: score for season, score in season_rows.items() if score is not None
+        }
         for mal_id in show_mal_ids:
             entry = entries[mal_id][0]
+            # Only a season with its own row can hold a rating; history made
+            # of watch states alone has none.
             entry.grouped_exclusive_seasons = {
-                season for season in entry.grouped_seasons if season_feeds[season] == 1
+                season
+                for season in entry.grouped_seasons
+                if season_feeds[season] == 1 and season in season_rows
             }
+            # A show feeding this entry alone can carry its rating without
+            # passing it on to a sibling cour.
+            entry.grouped_rates_show = len(show_mal_ids) == 1
             entry.score = next(
                 (
                     season_scores[season]
@@ -991,10 +1001,13 @@ def _local_pull_updates(media_type, media, current, mal_account):
     ):
         updates["status"] = mapped_status
 
-    # A grouped cour's rating only lands on seasons that feed it alone
-    # (_set_grouped_rating), so without one there's nothing to offer.
-    rating_target = getattr(media, "grouped_tv", None) is None or getattr(
-        media, "grouped_exclusive_seasons", None,
+    # A grouped cour's rating only lands on seasons that feed it alone, or on
+    # a show with no other cour (_set_grouped_rating), so without either
+    # there's nothing to offer.
+    rating_target = (
+        getattr(media, "grouped_tv", None) is None
+        or getattr(media, "grouped_exclusive_seasons", None)
+        or getattr(media, "grouped_rates_show", False)
     )
     if mal_account.pull_ratings_enabled and media.score is None and rating_target:
         remote_score = current.get("score")
@@ -1007,19 +1020,30 @@ def _set_grouped_rating(media, score):
     """Rate the seasons that feed only this cour; return whether any were set.
 
     The show's rating is every unrated cour's fallback, so a rating that
-    belongs to one MAL entry goes on that entry's own seasons instead.
+    belongs to one MAL entry goes on that entry's own seasons instead. A
+    show that feeds no other entry and has no season row to rate takes it.
     """
     from app.models import Season
 
+    exclusive_seasons = getattr(media, "grouped_exclusive_seasons", ())
     seasons = Season.objects.filter(
         related_tv=media.grouped_tv,
         order_archived=False,
-        item__season_number__in=getattr(media, "grouped_exclusive_seasons", ()),
+        item__season_number__in=exclusive_seasons,
     ).exclude(score=score)
     changed = False
     for season in seasons:
         season.score = score
         season.save(update_fields=["score"])
+        changed = True
+    show = media.grouped_tv
+    if (
+        not exclusive_seasons
+        and getattr(media, "grouped_rates_show", False)
+        and show.score != score
+    ):
+        show.score = score
+        show.save(update_fields=["score"])
         changed = True
     media.score = score
     return changed

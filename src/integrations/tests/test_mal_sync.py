@@ -2615,6 +2615,60 @@ class GroupedMALSync(TestCase):
 
     @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
         "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_pulled_rating_lands_on_a_show_without_season_rows(self, _delay, metadata):
+        """Regression: a show tracked through watch states alone has no season
+        row to rate, so the pull saved nothing and every sync offered it again.
+        """
+        from app.models import WatchState
+
+        metadata.return_value = {"title": "Mapped Anime", "max_progress": 4}
+        Episode.objects.filter(related_season=self.season)._raw_delete("default")
+        Season.objects.filter(pk=self.season.pk)._raw_delete("default")
+        WatchState.objects.bulk_create([
+            WatchState(
+                user=self.user, watched=True,
+                item=Item.objects.get(media_type="episode", episode_number=number),
+            )
+            for number in (1, 2)
+        ])
+        [entry] = mal_sync.grouped_sync_entries(self.user)
+
+        with mal_sync.suppress_per_item_push():
+            mal_sync.pull_grouped_rating(entry, {"score": 8}, self.account)
+
+        self.assertEqual(TV.objects.get(pk=self.show.pk).score, 8)
+        [entry] = mal_sync.grouped_sync_entries(self.user)
+        self.assertEqual(
+            mal_sync._local_pull_updates(
+                MediaTypes.ANIME.value, entry, {"score": 8}, self.account,
+            ),
+            {},
+        )
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-2": "1-2"}, "mal:43": {"3-4": "1-2"}},
+    })
+    @patch("integrations.mal_sync.services.get_media_metadata")
+    def test_show_with_several_cours_offers_no_show_rating(self, metadata):
+        metadata.return_value = {"title": "Cour", "max_progress": 2}
+
+        entries = mal_sync.grouped_sync_entries(self.user)
+
+        self.assertEqual(
+            [
+                mal_sync._local_pull_updates(
+                    MediaTypes.ANIME.value, entry, {"score": 8}, self.account,
+                )
+                for entry in entries
+            ],
+            [{}, {}],
+        )
+
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tmdb_show:100:s1": {"mal:42": {"1-3": "1-3"}},
         "tmdb_show:200:s0": {"mal:42": {"1": "1"}},
     })
     @patch("integrations.mal_sync.services.get_media_metadata")
