@@ -17,6 +17,7 @@ from app import config, helpers
 from app.activity_builders import (
     _normalize_detail_episode_actions,
     _paginate_detail_episodes,
+    attach_unwatched_ratings,
 )
 from app.detail_builders import (
     _build_detail_link_sections,
@@ -25,6 +26,7 @@ from app.detail_builders import (
     _build_series_graph_from_raw,
     _build_trakt_popularity_context,
 )
+from app.detail_related import drop_recommendations_if_hidden
 from app.log_safety import exception_summary
 from app.metadata_sync_views import (
     _build_local_tv_with_seasons_metadata,
@@ -730,6 +732,8 @@ def season_details(
             if db_item is not None and db_item.release_datetime is not None:
                 episode["air_date"] = db_item.release_datetime
 
+    drop_recommendations_if_hidden(request, season_metadata)
+
     # Enrich related items with user tracking data
     # For public views, use list owner's data if available
     if render_secondary_only and season_metadata.get("related"):
@@ -974,6 +978,11 @@ def season_details(
     if render_secondary_only and season_metadata.get("episodes"):
         season_metadata["episodes"] = _normalize_detail_episode_actions(
             season_metadata["episodes"],
+        )
+        attach_unwatched_ratings(
+            season_metadata["episodes"],
+            request.user,
+            season_metadata,
         )
         season_metadata["episodes"], episode_load_more = _paginate_detail_episodes(
             request,

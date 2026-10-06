@@ -1,5 +1,6 @@
 import json
 import logging
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from django.conf import settings
@@ -79,6 +80,188 @@ def _music_artist_detail_url(artist):
 def _music_album_detail_url(album):
     """Return the canonical shared media-details URL for a music album."""
     return app_tags.music_album_url(album)
+
+
+def _music_track_detail_url(track):
+    """Return the canonical shared media-details URL for a music track."""
+    return app_tags.music_track_url(track)
+
+
+def _nonempty_genre_names(genres):
+    """Return genre labels that are not blank."""
+    if not genres:
+        return []
+    names = []
+    for genre in genres:
+        text = str(genre).strip()
+        if text:
+            names.append(text)
+    return names
+
+
+def _track_page_genres(track):
+    """Return track genres, or the album's genres when the track has none."""
+    track_genres = _nonempty_genre_names(track.genres)
+    if track_genres:
+        return track_genres
+    return _nonempty_genre_names(getattr(track.album, "genres", None))
+
+
+def _safe_origin_url(value):
+    """Return an http(s) origin URL, or an empty string."""
+    text = (value or "").strip()
+    if text.lower().startswith(("https://", "http://")):
+        return text
+    return ""
+
+
+def _music_entry_for_track(user, track):
+    """Resolve this user's Music row the same way the album track list does."""
+    user_music_by_track = {}
+    music_entries = Music.objects.filter(
+        user=user,
+        album=track.album,
+    ).select_related("item", "track")
+    for music in music_entries:
+        if music.track_id:
+            user_music_by_track[music.track_id] = music
+        if music.item and music.item.media_id:
+            user_music_by_track[f"recording_{music.item.media_id}"] = music
+
+    music_entry = user_music_by_track.get(track.id)
+    if not music_entry and track.musicbrainz_recording_id:
+        music_entry = user_music_by_track.get(
+            f"recording_{track.musicbrainz_recording_id}",
+        )
+    return music_entry
+
+
+def _lookup_text(value):
+    """Return a comparable lowercase form of a title or artist."""
+    return "".join(ch for ch in (value or "").lower() if ch.isalnum())
+
+
+def _search_recording_id(track):
+    """Return a MusicBrainz recording id from an artist and title search."""
+    from app.providers import musicbrainz
+
+    artist = track.album.artist
+    artist_name = artist.name if artist else ""
+    query = " ".join(part for part in (artist_name, track.title) if part).strip()
+    if not query:
+        return ""
+
+    results = musicbrainz.search(query, page=1, skip_cover_art=True)
+    expected_title = _lookup_text(track.title)
+    for result in (results or {}).get("results") or []:
+        if expected_title and expected_title in _lookup_text(result.get("title")):
+            return result.get("media_id") or ""
+    return ""
+
+
+def _lookup_unlistened_recording(track):
+    """Fetch MusicBrainz recording metadata when this user has no listen."""
+    from app.providers import musicbrainz
+
+    recording_id = (track.musicbrainz_recording_id or "").strip()
+    try:
+        if not recording_id:
+            recording_id = _search_recording_id(track)
+        if not recording_id:
+            return None
+        return musicbrainz.recording(recording_id)
+    except Exception as exc:
+        logger.debug(
+            "Track %s recording lookup failed: %s",
+            track.id,
+            exception_summary(exc),
+        )
+        return None
+
+
+def _recording_genre_names(recording):
+    """Return title-cased genre labels from a MusicBrainz recording payload."""
+    return [
+        name.title() for name in _nonempty_genre_names((recording or {}).get("genres"))
+    ]
+
+
+def _recording_display(track, recording):
+    """Return the recording fields the track page does not already show.
+
+    Artist and album stay in the header. Ids and the minute-rounded duration
+    stay off the page. Runtime is included only when the track has no duration.
+    """
+    if not recording:
+        return {"release_date": "", "runtime": "", "image": ""}
+
+    details = recording.get("details") or {}
+    image = recording.get("image") or ""
+    if image == settings.IMG_NONE:
+        image = ""
+    runtime = ""
+    if details.get("runtime") and not track.duration_formatted:
+        runtime = details["runtime"]
+    return {
+        "release_date": details.get("release_date") or "",
+        "runtime": runtime,
+        "image": image,
+    }
+
+
+def _track_play_history(music_entry):
+    """Return completed listens for a Music row, newest first."""
+    if music_entry is None:
+        return []
+    history = []
+    rows = music_entry.history.all().order_by("-end_date")
+    for row in rows:
+        if not row.end_date:
+            continue
+        history.append(
+            {
+                "end_date": row.end_date,
+                "origin_url": _safe_origin_url(getattr(row, "origin_url", "")),
+            },
+        )
+    return history
+
+
+def _album_display_genres(album):
+    """Return album genres, or the artist's when the album has none."""
+    if album is None:
+        return []
+    return sync_services._music_item_direct_genres(album)
+
+
+def _play_link_label(url):
+    """Return the play-link label for a SoundCloud or Spotify URL."""
+    host = (urlparse(url or "").hostname or "").lower()
+    if host == "soundcloud.com" or host.endswith(".soundcloud.com"):
+        return "SoundCloud"
+    if host == "spotify.com" or host.endswith(".spotify.com"):
+        return "Spotify"
+    return ""
+
+
+def _external_play_links(tracks_with_data):
+    """Return one play chip per distinct SoundCloud or Spotify URL on this album."""
+    links = {}
+    seen_urls = set()
+    for track_data in tracks_with_data:
+        url = track_data.get("origin_url") or ""
+        label = _play_link_label(url)
+        if not label or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        if label in links:
+            label = track_data["track"].title or url
+        base_label, suffix = label, 2
+        while label in links:
+            label = f"{base_label} ({suffix})"
+            suffix += 1
+        links[label] = url
+    return links
 
 
 def _selected_music_release(user, album):
@@ -548,6 +731,7 @@ def _render_music_artist_details(request, artist):
             models.Q(artist=artist) | models.Q(artist_credits__artist=artist),
         )
         .select_related("artist")
+        .prefetch_related("artist_credits__artist")
         .distinct()
         .order_by("-release_date", "title"),
     )
@@ -677,6 +861,10 @@ def _render_music_artist_details(request, artist):
         genre_chips = [g["name"].title() for g in genres[:6]]
     elif tags:
         genre_chips = [t["name"].title() for t in tags[:6]]
+    else:
+        from app.providers import musicbrainz
+
+        genre_chips = musicbrainz._normalize_musicbrainz_genre_names(artist.genres)
 
     collection_stats = get_artist_collection_stats(request.user, artist)
     notes_entry = artist_tracker if artist_tracker and artist_tracker.notes else None
@@ -872,10 +1060,14 @@ def _render_music_album_details(request, artist, album):
     elif album_metadata_updated:
         album.refresh_from_db(fields=["genres", "implied_genres"])
 
-    all_tracks = Track.objects.filter(album=album).order_by(
-        "disc_number",
-        "track_number",
-        "title",
+    all_tracks = (
+        Track.objects.filter(album=album)
+        .select_related("album", "album__artist")
+        .order_by(
+            "disc_number",
+            "track_number",
+            "title",
+        )
     )
     user_music_entries = list(
         Music.objects.filter(
@@ -917,10 +1109,15 @@ def _render_music_album_details(request, artist, album):
         if music_entry and music_entry.item_id:
             collection_entry = collection_entries_by_item_id.get(music_entry.item_id)
 
+        origin_url = _safe_origin_url(
+            getattr(music_entry, "origin_url", "") if music_entry else "",
+        )
         tracks_with_data.append(
             {
                 "track": track,
                 "music": music_entry,
+                "origin_url": origin_url,
+                "origin_label": _play_link_label(origin_url),
                 "history": (
                     list(music_entry.history.all().order_by("-end_date"))
                     if music_entry
@@ -999,6 +1196,7 @@ def _render_music_album_details(request, artist, album):
     detail_link_sections = view_barrel._build_detail_link_sections(
         {
             "source_url": album_details.get("musicbrainz_url", ""),
+            "external_links": _external_play_links(tracks_with_data),
         },
         MediaTypes.MUSIC.value,
         Sources.MUSICBRAINZ.value,
@@ -1022,11 +1220,12 @@ def _render_music_album_details(request, artist, album):
             or f"album-{album.id}"
         ),
     ).first()
+    album_genres = _album_display_genres(album)
     detail_tag_sections = _build_detail_tag_sections(
         {},
         detail_item,
         request.user,
-        fallback_genres=album.genres,
+        fallback_genres=album_genres,
         fallback_implied_genres=album.implied_genres,
         genre_list_media_type=MediaTypes.MUSIC.value,
     )
@@ -1037,6 +1236,7 @@ def _render_music_album_details(request, artist, album):
         "media_type": MediaTypes.MUSIC.value,
         "artist": artist or album.artist,
         "album": album,
+        "album_genres": album_genres,
         "album_display_image": album_display_image,
         "media": {
             "media_type": MediaTypes.MUSIC.value,
@@ -1121,6 +1321,80 @@ def music_album_details(request, artist_id, artist_slug, album_id, album_slug):
         return redirect(_music_album_detail_url(album))
     artist = album.artist
     return _render_music_album_details(request, artist, album)
+
+
+def _render_music_track_details(request, track):
+    """Render a music track through the shared media details template."""
+    album = track.album
+    artist = album.artist
+    music_entry = _music_entry_for_track(request.user, track)
+    track_genres = _track_page_genres(track)
+    recording_display = {"release_date": "", "runtime": "", "image": ""}
+    if music_entry is None:
+        recording = _lookup_unlistened_recording(track)
+        if recording and not track_genres:
+            track_genres = _recording_genre_names(recording)
+        recording_display = _recording_display(track, recording)
+    album_display_image = album.image or settings.IMG_NONE
+    if recording_display["image"] and album_display_image in ("", settings.IMG_NONE):
+        album_display_image = recording_display["image"]
+    context = {
+        "user": request.user,
+        "music_detail_kind": "track",
+        "media_type": MediaTypes.MUSIC.value,
+        "artist": artist,
+        "album": album,
+        "track": track,
+        "album_display_image": album_display_image,
+        "track_genres": track_genres,
+        "recording_release_date": recording_display["release_date"],
+        "recording_runtime": recording_display["runtime"],
+        "track_history": _track_play_history(music_entry),
+        "media": {
+            "media_type": MediaTypes.MUSIC.value,
+            "source": Sources.MUSICBRAINZ.value,
+            "media_id": track.musicbrainz_recording_id or f"track-{track.id}",
+            "title": track.title,
+            "image": album_display_image,
+            "synopsis": "",
+            "details": {},
+            "related": {},
+        },
+    }
+    return render(request, "app/media_details.html", context)
+
+
+@require_GET
+def music_track_details(
+    request,
+    artist_id,
+    artist_slug,
+    album_id,
+    album_slug,
+    track_id,
+    track_slug,
+):
+    """Return the canonical shared music track detail page."""
+    track = get_object_or_404(
+        Track.objects.select_related("album__artist"),
+        id=track_id,
+    )
+    if track.album_id != album_id:
+        return redirect(_music_track_detail_url(track))
+    album = track.album
+    if album.artist_id and album.artist_id != artist_id:
+        return redirect(_music_track_detail_url(track))
+    return _render_music_track_details(request, track)
+
+
+@require_GET
+def track_detail(request, track_id):
+    """Redirect a short track URL to the canonical shared detail page."""
+    track = get_object_or_404(
+        Track.objects.select_related("album__artist"),
+        id=track_id,
+    )
+    return redirect(_music_track_detail_url(track))
 
 
 @require_GET
@@ -1312,6 +1586,8 @@ def prefetch_artist_covers(request, artist_id):
             models.Q(artist=artist) | models.Q(artist_credits__artist=artist),
         )
         .distinct()
+        .select_related("artist")
+        .prefetch_related("artist_credits__artist")
         .order_by("-release_date", "title"),
     )
 

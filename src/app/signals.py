@@ -9,7 +9,13 @@ from celery.signals import before_task_publish, task_failure, task_success
 from django.apps import apps
 from django.conf import settings
 from django.db import transaction
-from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
+from django.db.models.signals import (
+    m2m_changed,
+    post_delete,
+    post_save,
+    pre_delete,
+    pre_save,
+)
 from django.db.utils import OperationalError
 from django.dispatch import receiver
 from django.utils import timezone
@@ -47,6 +53,7 @@ from app.models import (
     PodcastShowTracker,
     Season,
     Sources,
+    VideoPlay,
 )
 from lists.models import CustomList, CustomListItem
 from lists.smart_rules import sync_smart_lists_for_item
@@ -54,6 +61,16 @@ from lists.smart_rules import sync_smart_lists_for_item
 logger = logging.getLogger(__name__)
 
 RUNTIME_UNKNOWN_FAILED = 999999  # runtime completely unknown / failed lookup
+
+
+@receiver([pre_save, pre_delete])
+def fence_overwrite_tracking_writes(sender, instance, **kwargs):
+    """Cooperate with a durable replacement before mutating its original scope."""
+    from integrations.import_scope import TRACKING_MODELS, guard_instances
+
+    if (not kwargs.get("raw") and instance._meta.apps is apps
+            and instance._meta.app_label == "app" and instance._meta.model_name in TRACKING_MODELS):
+        guard_instances([instance])
 
 RUNTIME_BACKFILL_SOURCES = ("tmdb", "tvdb", "mal", "simkl")
 GENRE_BACKFILL_SOURCES = ("tmdb", "tvdb", "mal", "simkl", "igdb", "bgg")
@@ -66,6 +83,7 @@ TRACKED_TASK_NAMES = frozenset(
         "Import from MyAnimeList",
         "Import from AniList",
         "Import from Kitsu",
+        "Import from MangaBaka",
         "Import from Yamtrack",
         "Import from HowLongToBeat",
         "Import from Grouvee",
@@ -93,6 +111,8 @@ TRACKED_TASK_NAMES = frozenset(
         "Import from Kapowarr (Recurring)",
         "Import from Audiobookshelf",
         "Import from Audiobookshelf (Recurring)",
+        "Import from Kavita",
+        "Import from Kavita (Recurring)",
         "Import from Komga",
         "Import from Komga (Recurring)",
         "Import from Storyteller",
@@ -105,6 +125,7 @@ TRACKED_TASK_NAMES = frozenset(
         "Import from Stremio (Recurring)",
         "Import from Last.fm History",
         "Import from Hardcover",
+        "Import from Hardcover Account",
         "Import from StoryGraph",
         "Import from Koito History",
         "Scheduled backup export",
@@ -1151,6 +1172,21 @@ def refresh_history_cache_on_podcast_change(sender, instance, **kwargs):
     )
 
 
+@receiver([post_save, post_delete], sender=VideoPlay)
+def refresh_history_cache_on_video_play_change(sender, instance, **kwargs):
+    """Schedule history cache refresh when a video play is saved or removed."""
+    if kwargs.get("raw"):
+        return
+    day_key = history_cache.history_day_key(instance.end_date)
+    _handle_media_cache_change(
+        instance.video.user_id,
+        MediaTypes.VIDEO.value,
+        reason="video_play_change",
+        history_specs=[([day_key] if day_key else [], ("sessions", "repeats"))],
+        statistics_day_values=[day_key] if day_key else [],
+    )
+
+
 @receiver([post_save, post_delete], sender=TV)
 def refresh_statistics_cache_on_tv_change(sender, instance, **kwargs):
     """Schedule statistics cache refresh when TV activity changes.
@@ -1535,15 +1571,20 @@ def schedule_runtime_backfill_on_item_save(
         ):
             from app.tasks import enqueue_runtime_backfill_items
 
-            enqueue_runtime_backfill_items([instance.id])
+            transaction.on_commit(
+                lambda item_id=instance.id: enqueue_runtime_backfill_items([item_id]),
+                robust=True,
+            )
         elif (
             instance.media_type == MediaTypes.EPISODE.value
             and instance.season_number is not None
         ):
             from app.tasks import enqueue_episode_runtime_backfill
 
-            enqueue_episode_runtime_backfill(
-                [(instance.media_id, instance.source, instance.season_number)],
+            transaction.on_commit(
+                lambda coordinate=(instance.media_id, instance.source, instance.season_number):
+                    enqueue_episode_runtime_backfill([coordinate]),
+                robust=True,
             )
 
     genre_backfill_applicable = (
@@ -1570,7 +1611,10 @@ def schedule_runtime_backfill_on_item_save(
     ):
         from app.tasks import enqueue_genre_backfill_items
 
-        enqueue_genre_backfill_items([instance.id])
+        transaction.on_commit(
+            lambda item_id=instance.id: enqueue_genre_backfill_items([item_id]),
+            robust=True,
+        )
 
     if (
         instance.source == Sources.TMDB.value
@@ -1586,4 +1630,7 @@ def schedule_runtime_backfill_on_item_save(
     ):
         from app.tasks import enqueue_credits_backfill_items
 
-        enqueue_credits_backfill_items([instance.id])
+        transaction.on_commit(
+            lambda item_id=instance.id: enqueue_credits_backfill_items([item_id]),
+            robust=True,
+        )

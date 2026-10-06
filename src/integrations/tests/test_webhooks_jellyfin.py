@@ -1,10 +1,12 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import Client, TestCase, override_settings, tag
 from django.urls import reverse
+from django.utils import timezone
 
 from app import live_playback
 from app.models import (
@@ -421,6 +423,133 @@ class JellyfinWebhookTests(TestCase):
             movie.end_date,
             datetime(2026, 8, 6, 15, 30, tzinfo=UTC),
         )
+
+    def _play_then_backdate(self, movie_payload, minutes_ago):
+        """Send Play, then move the Now Playing session start back in time."""
+        processor = JellyfinWebhookProcessor()
+        processor.process_payload({**movie_payload, "Event": "Play"}, self.user)
+        state = cache.get(live_playback._cache_key(self.user.id))
+        started = timezone.now().replace(second=0, microsecond=0) - timedelta(
+            minutes=minutes_ago,
+        )
+        state["started_at_ts"] = int(started.timestamp())
+        live_playback.set_user_playback_state(self.user.id, state)
+        return processor, started
+
+    @patch("app.providers.tmdb.movie")
+    def test_movie_stop_uses_play_time_as_start_date(self, mock_movie):
+        """A skim-then-stop row starts when Play arrived, not when Stop did (#1482)."""
+        mock_movie.return_value = {
+            "title": "Zombie",
+            "image": "",
+            "max_progress": 1,
+            "provider_external_ids": {},
+        }
+        payload = {
+            "PlaybackPositionTicks": "2382910000",
+            "Item": {
+                "Id": "jf-1",
+                "Name": "Zombie",
+                "Type": "Movie",
+                "ProviderIds": {"Tmdb": "7219"},
+                "UserData": {"Played": False},
+            },
+        }
+        processor, started = self._play_then_backdate(payload, 21)
+
+        processor.process_payload({**payload, "Event": "Stop"}, self.user)
+
+        movie = Movie.objects.get(item__media_id="7219", user=self.user)
+        self.assertEqual(movie.status, Status.IN_PROGRESS.value)
+        self.assertEqual(movie.start_date, started)
+
+    @patch("app.providers.tmdb.movie")
+    def test_movie_watched_in_one_sitting_has_start_and_end_date(self, mock_movie):
+        """A completed one-sitting watch keeps the Play time as its start (#1482)."""
+        mock_movie.return_value = {
+            "title": "Zombie",
+            "image": "",
+            "max_progress": 1,
+            "provider_external_ids": {},
+        }
+        payload = {
+            "PlaybackPositionTicks": "54000000000",
+            "Item": {
+                "Id": "jf-1",
+                "Name": "Zombie",
+                "Type": "Movie",
+                "RunTimeTicks": "54000000000",
+                "ProviderIds": {"Tmdb": "7219"},
+                "UserData": {"Played": True},
+            },
+        }
+        processor, started = self._play_then_backdate(payload, 90)
+
+        processor.process_payload({**payload, "Event": "Stop"}, self.user)
+
+        movie = Movie.objects.get(item__media_id="7219", user=self.user)
+        self.assertEqual(movie.status, Status.COMPLETED.value)
+        self.assertEqual(movie.start_date, started)
+        self.assertGreater(movie.end_date, movie.start_date)
+
+    @patch("app.providers.tmdb.find")
+    @patch("app.providers.tmdb.movie")
+    def test_imdb_only_movie_stop_still_finds_the_play_session(
+        self,
+        mock_movie,
+        mock_find,
+    ):
+        """The Play state has no TMDB id; the Jellyfin item id still matches it."""
+        mock_find.return_value = {"movie_results": [{"id": 7219}]}
+        mock_movie.return_value = {
+            "title": "Zombie",
+            "image": "",
+            "max_progress": 1,
+            "provider_external_ids": {},
+        }
+        payload = {
+            "PlaybackPositionTicks": "2382910000",
+            "Item": {
+                "Id": "jf-1",
+                "Name": "Zombie",
+                "Type": "Movie",
+                "ProviderIds": {"Imdb": "tt0080057"},
+                "UserData": {"Played": False},
+            },
+        }
+        processor, started = self._play_then_backdate(payload, 21)
+
+        processor.process_payload({**payload, "Event": "Stop"}, self.user)
+
+        movie = Movie.objects.get(item__media_id="7219", user=self.user)
+        self.assertEqual(movie.start_date, started)
+
+    @patch("app.providers.tmdb.movie")
+    def test_movie_stop_without_play_falls_back_to_stop_time(self, mock_movie):
+        """With no Now Playing session (e.g. a restart), behaviour is unchanged."""
+        mock_movie.return_value = {
+            "title": "Zombie",
+            "image": "",
+            "max_progress": 1,
+            "provider_external_ids": {},
+        }
+        payload = {
+            "Event": "Stop",
+            "PlaybackPositionTicks": "2382910000",
+            "Item": {
+                "Id": "jf-1",
+                "Name": "Zombie",
+                "Type": "Movie",
+                "ProviderIds": {"Tmdb": "7219"},
+                "UserData": {"Played": False},
+            },
+        }
+
+        JellyfinWebhookProcessor().process_payload(payload, self.user)
+
+        movie = Movie.objects.get(item__media_id="7219", user=self.user)
+        self.assertEqual(movie.status, Status.IN_PROGRESS.value)
+        self.assertIsNotNone(movie.start_date)
 
     @tag("network")
     @patch("app.providers.mal.anime")
@@ -2938,6 +3067,42 @@ class JellyfinWebhookTests(TestCase):
         self.assertEqual(state["episode_number"], 1)
         self.assertEqual(state["duration_seconds"], 2666)
         self.assertEqual(state["view_offset_seconds"], 1447)
+
+    @patch("app.providers.tmdb.find")
+    def test_play_event_decodes_html_entities_in_titles(self, mock_find):
+        """The template HTML-escapes titles (#1387); live playback shows them decoded."""
+        mock_find.return_value = {
+            "tv_episode_results": [
+                {"show_id": 1668, "season_number": 1, "episode_number": 1},
+            ],
+            "tv_results": [],
+        }
+        payload = {
+            "Event": "Play",
+            "Item": {
+                "Type": "Episode",
+                "Name": "Caf&#233; de Paris &amp; &quot;Co&quot;",
+                "Id": "jf-episode-1",
+                "SeriesName": "Caf&#233; Society",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+                "RunTimeTicks": 26660000000,
+                "ProviderIds": {"Tvdb": "303821", "Imdb": "tt0583459"},
+                "UserData": {"Played": False},
+            },
+            "PlaybackPositionTicks": 14470000000,
+        }
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        state = live_playback.get_user_playback_state(self.user.id)
+        self.assertEqual(state["episode_title"], 'Café de Paris & "Co"')
+        self.assertEqual(state["series_title"], "Café Society")
 
     @patch("app.providers.tmdb.find")
     def test_pause_and_stop_events_update_live_playback_state(self, mock_find):

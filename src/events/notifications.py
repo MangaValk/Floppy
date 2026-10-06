@@ -296,7 +296,15 @@ def get_user_releases(users, target_events, skip_alerted_for_instant_users=False
 
     user_enabled_types = {}
     for user in users:
-        user_enabled_types[user.id] = user.get_active_media_types()
+        enabled_types = user.get_active_media_types()
+        # Episode events use the season media type, but TV Seasons is only a
+        # display setting: enabling TV Series is enough (same rule as the calendar).
+        if (
+            MediaTypes.TV.value in enabled_types
+            and MediaTypes.SEASON.value not in enabled_types
+        ):
+            enabled_types = [*enabled_types, MediaTypes.SEASON.value]
+        user_enabled_types[user.id] = enabled_types
 
     user_tracking_data = get_all_user_tracking_data(
         users,
@@ -323,6 +331,10 @@ def get_user_releases(users, target_events, skip_alerted_for_instant_users=False
                 and event.notification_sent
                 and (user.id, event.id) not in failed_alerts
             ):
+                continue
+
+            # Digital and physical dates only apply to the user's own region
+            if event.release_type and event.region != user.watch_provider_region:
                 continue
 
             # Check if a preferred cross-provider/cross-bucket duplicate exists

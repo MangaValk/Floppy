@@ -25,13 +25,19 @@ from users import helpers
 PLAYBACK_WEBHOOK_SECRET_MAX_LENGTH = 128
 
 EXCLUDED_SEARCH_TYPES = [MediaTypes.SEASON.value, MediaTypes.EPISODE.value]
+HOME_ALL_MEDIA_TYPE = "all"
+
+# Search-bar option that searches every enabled type in the user's own library
+# (tracked, collected or tagged items) instead of one provider (#1160).
+ALL_SEARCH_TYPE = "all"
 
 VALID_SEARCH_TYPES = [
     value for value in MediaTypes.values if value not in EXCLUDED_SEARCH_TYPES
-]
+] + [ALL_SEARCH_TYPE]
 
 VALID_HOME_SCREEN_MEDIA_TYPES = [
-    value for value in MediaTypes.values if value != MediaTypes.EPISODE.value
+    HOME_ALL_MEDIA_TYPE,
+    *[value for value in MediaTypes.values if value != MediaTypes.EPISODE.value],
 ]
 
 MULTI_STATUS_PREFERENCE_FIELDS = {
@@ -46,6 +52,7 @@ MULTI_STATUS_PREFERENCE_FIELDS = {
     "comic_status",
     "music_status",
     "podcast_status",
+    "video_status",
     "list_detail_status",
 }
 # Score-scaling constants: a user's display scale is either 1-5 or the
@@ -160,6 +167,14 @@ class LayoutChoices(models.TextChoices):
     TABLE = "table", _("Table")
 
 
+class ListDetailLayoutChoices(models.TextChoices):
+    """Choices for the list page layout: the media list layouts plus Tiers."""
+
+    GRID = "grid", _("Grid")
+    TABLE = "table", _("Table")
+    TIERS = "tiers", _("Tiers")
+
+
 class CalendarLayoutChoices(models.TextChoices):
     """Choices for calendar layout options."""
 
@@ -191,6 +206,7 @@ class ListDetailSortChoices(models.TextChoices):
     START_DATE = "start_date", _("Start Date")
     END_DATE = "end_date", _("End Date")
     PLATFORM = "platform", _("Platform")
+    TIER = "tier", _("Tier")
 
 
 class DateFormatChoices(models.TextChoices):
@@ -291,6 +307,7 @@ class RatingScaleChoices(models.TextChoices):
 
     TEN = "10", _("1-10 stars")
     FIVE = "5", _("1-5 stars")
+    DISABLED = "0", _("Disabled")
 
 
 class ActivityHistoryViewChoices(models.TextChoices):
@@ -406,13 +423,6 @@ class QuickSeasonUpdateChoices(models.TextChoices):
     BOTH = "both", _("Both")
 
 
-class MediaCardSubtitleDisplayChoices(models.TextChoices):
-    """Choices for media card subtitle visibility."""
-
-    HOVER = "hover", _("On hover")
-    ALWAYS = "always", _("Always visible")
-
-
 class TitleDisplayPreferenceChoices(models.TextChoices):
     """Choices for how item titles are displayed across the app."""
 
@@ -499,7 +509,7 @@ class User(AbstractUser):
     last_search_type = models.CharField(
         max_length=10,
         default=MediaTypes.TV.value,
-        choices=MediaTypes.choices,
+        choices=[*MediaTypes.choices, (ALL_SEARCH_TYPE, "All")],
     )
 
     last_discover_type = models.CharField(
@@ -787,16 +797,33 @@ class User(AbstractUser):
         choices=MediaStatusChoices,
     )
 
+    # Video preferences
+    video_enabled = models.BooleanField(default=True)
+    video_layout = models.CharField(
+        max_length=20,
+        default=LayoutChoices.GRID,
+        choices=LayoutChoices.choices,
+    )
+    video_direction = models.CharField(
+        max_length=4,
+        default=DirectionChoices.DESC,
+        choices=DirectionChoices.choices,
+    )
+    video_sort = models.CharField(
+        max_length=32,
+        default=MediaSortChoices.TITLE,
+        choices=MediaSortChoices.choices,
+    )
+    video_status = models.CharField(
+        max_length=128,
+        default=MediaStatusChoices.ALL,
+        choices=MediaStatusChoices,
+    )
+
     # UI preferences
     clickable_media_cards = models.BooleanField(
         default=False,
         help_text="Hide hover overlay on touch devices",
-    )
-    media_card_subtitle_display = models.CharField(
-        max_length=20,
-        default=MediaCardSubtitleDisplayChoices.HOVER,
-        choices=MediaCardSubtitleDisplayChoices.choices,
-        help_text="Control when media card subtitles are visible",
     )
     title_display_preference = models.CharField(
         max_length=20,
@@ -820,17 +847,17 @@ class User(AbstractUser):
     )
 
     # Progress visibility preferences
-    progress_bar = models.BooleanField(
-        default=True,
-        help_text="Show progress bar",
-    )
     hide_completed_recommendations = models.BooleanField(
         default=False,
         help_text="Hide completed media in recommendations",
     )
-    hide_zero_rating = models.BooleanField(
-        default=False,
-        help_text="Hide zero ratings from media cards",
+    show_recommendations = models.BooleanField(
+        default=True,
+        help_text="Show recommendations on media detail pages",
+    )
+    show_discover = models.BooleanField(
+        default=True,
+        help_text="Show the Discover page and keep its caches warm",
     )
     obfuscate_episodes = models.BooleanField(
         default=False,
@@ -866,6 +893,14 @@ class User(AbstractUser):
             ),
         ],
         help_text="Default metadata provider for TV details and search tabs.",
+    )
+    tv_auto_move_to_default_provider = models.BooleanField(
+        default=True,
+        help_text=(
+            "Let the nightly job move TV shows tracked on the other provider to "
+            "the default provider. Turned off when the user chooses to leave "
+            "their library as it is after switching providers."
+        ),
     )
     anime_metadata_source_default = models.CharField(
         max_length=20,
@@ -961,8 +996,8 @@ class User(AbstractUser):
     )
     list_detail_layout = models.CharField(
         max_length=20,
-        default=LayoutChoices.GRID,
-        choices=LayoutChoices,
+        default=ListDetailLayoutChoices.GRID,
+        choices=ListDetailLayoutChoices,
     )
 
     # Notification settings
@@ -1110,6 +1145,26 @@ class User(AbstractUser):
         default=Status.PLANNING.value,
         help_text="Status to set when adding media via Jellyseerr webhook",
     )
+    seerr_url = models.URLField(
+        blank=True,
+        help_text="Seerr server URL, used to request movies and shows from Floppy",
+    )
+    seerr_api_key = models.TextField(
+        blank=True,
+        default="",
+        help_text="Encrypted Seerr API key",
+    )
+    seerr_username = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Seerr login (username or email) the requests are made as",
+    )
+    seerr_user_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Seerr user id resolved from seerr_username when settings are saved",
+    )
     tmdb_proxy_url = models.TextField(
         blank=True,
         help_text=(
@@ -1139,6 +1194,12 @@ class User(AbstractUser):
         default=dict,
         blank=True,
         help_text="Visible and ordered sections for each detail page family",
+    )
+
+    card_metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Per-media-type subtitle fields shown under a card title",
     )
 
     ui_language = models.CharField(
@@ -1326,6 +1387,25 @@ class User(AbstractUser):
     home_show_media_type_headers = models.BooleanField(
         default=False,
         help_text="Show a media-type header (icon + name) above each group of home screen rows",
+    )
+    home_media_type_chips_enabled = models.BooleanField(
+        default=True,
+        help_text="Show media-type labels on mixed in-progress and finished Home rows",
+    )
+    home_media_type_chip_style = models.CharField(
+        max_length=12,
+        default="soft",
+        choices=[
+            ("solid", "Solid"),
+            ("soft", "Soft"),
+            ("outline", "Outline"),
+        ],
+        help_text="Appearance of media-type labels on mixed Home rows",
+    )
+    home_media_type_chip_colors = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Custom hexadecimal label colors keyed by media type",
     )
     home_screen_media_type_order = models.JSONField(
         default=list,
@@ -1546,12 +1626,6 @@ class User(AbstractUser):
                 condition=models.Q(duration_format__in=DurationFormatChoices.values),
             ),
             models.CheckConstraint(
-                name="media_card_subtitle_display_valid",
-                condition=models.Q(
-                    media_card_subtitle_display__in=MediaCardSubtitleDisplayChoices.values
-                ),
-            ),
-            models.CheckConstraint(
                 name="title_display_preference_valid",
                 condition=models.Q(
                     title_display_preference__in=TitleDisplayPreferenceChoices.values
@@ -1587,7 +1661,7 @@ class User(AbstractUser):
             ),
             models.CheckConstraint(
                 name="list_detail_layout_valid",
-                condition=models.Q(list_detail_layout__in=LayoutChoices.values),
+                condition=models.Q(list_detail_layout__in=ListDetailLayoutChoices.values),
             ),
             models.CheckConstraint(
                 name="music_layout_valid",
@@ -1612,6 +1686,18 @@ class User(AbstractUser):
             models.CheckConstraint(
                 name="podcast_direction_valid",
                 condition=models.Q(podcast_direction__in=DirectionChoices.values),
+            ),
+            models.CheckConstraint(
+                name="video_layout_valid",
+                condition=models.Q(video_layout__in=LayoutChoices.values),
+            ),
+            models.CheckConstraint(
+                name="video_sort_valid",
+                condition=models.Q(video_sort__in=MediaSortChoices.values),
+            ),
+            models.CheckConstraint(
+                name="video_direction_valid",
+                condition=models.Q(video_direction__in=DirectionChoices.values),
             ),
             models.CheckConstraint(
                 name="quick_watch_date_valid",
@@ -1749,11 +1835,19 @@ class User(AbstractUser):
 
     @property
     def rating_scale_max(self):
-        """Return the max rating value for the user's configured scale."""
+        """Return the max rating value for the user's configured scale.
+
+        Disabled ratings keep the 10-point maths so stored scores still convert.
+        """
         try:
-            return int(self.rating_scale)
+            return int(self.rating_scale) or 10
         except (TypeError, ValueError):
             return 10
+
+    @property
+    def ratings_enabled(self):
+        """Return whether the user's own rating controls should be shown."""
+        return self.rating_scale != RatingScaleChoices.DISABLED
 
     def _coerce_score_decimal(self, score):
         """Coerce a score into a Decimal, returning None on failure."""
@@ -1903,6 +1997,7 @@ class User(AbstractUser):
             "myanimelist": ["Import from MyAnimeList"],
             "anilist": ["Import from AniList"],
             "kitsu": ["Import from Kitsu"],
+            "mangabaka": ["Import from MangaBaka"],
             "yamtrack": ["Import from Yamtrack"],
             "hltb": ["Import from HowLongToBeat"],
             "grouvee": ["Import from Grouvee"],
@@ -1932,6 +2027,7 @@ class User(AbstractUser):
                 "Import from Audiobookshelf",
                 "Import from Audiobookshelf (Recurring)",
             ],
+            "kavita": ["Import from Kavita", "Import from Kavita (Recurring)"],
             "komga": ["Import from Komga", "Import from Komga (Recurring)"],
             "storyteller": [
                 "Import from Storyteller",
@@ -1948,7 +2044,10 @@ class User(AbstractUser):
                 "Import from Stremio (Recurring)",
             ],
             "lastfm": ["Import from Last.fm History"],
-            "hardcover": ["Import from Hardcover"],
+            "hardcover": [
+                "Import from Hardcover",
+                "Import from Hardcover Account",
+            ],
             "storygraph": ["Import from StoryGraph"],
             "koito": ["Import from Koito History"],
         }
@@ -1959,7 +2058,9 @@ class User(AbstractUser):
             "mylar": ["Import from Mylar3 (Recurring)"],
             "kapowarr": ["Import from Kapowarr (Recurring)"],
             "audiobookshelf": ["Import from Audiobookshelf (Recurring)"],
+            "kavita": ["Import from Kavita (Recurring)"],
             "komga": ["Import from Komga (Recurring)"],
+            "hardcover": ["Import from Hardcover Account"],
             "storyteller": ["Import from Storyteller (Recurring)"],
             "pocketcasts": ["Import from Pocket Casts (Recurring)"],
             "gpodder": ["Import from GPodder (Recurring)"],
@@ -2389,7 +2490,7 @@ class HomeScreenRow(models.Model):
     )
     media_type = models.CharField(
         max_length=16,
-        choices=MediaTypes.choices,
+        choices=[(HOME_ALL_MEDIA_TYPE, "All media"), *MediaTypes.choices],
     )
     position = models.PositiveIntegerField(default=0)
     enabled = models.BooleanField(default=True)
@@ -2444,17 +2545,25 @@ class HomeScreenRow(models.Model):
         return f"{self.user_id}:{self.media_type}:{self.row_type}:{self.position}"
 
 
+# Saved views of the History page live beside the media list ones, keyed by
+# this pseudo media type.
+HISTORY_VIEW_TYPE = "history"
+
+
 class SavedView(models.Model):
-    """A named media list view (filters, sort, layout) pinned under the sidebar."""
+    """A named media list or History view (filters, sort, layout) in the sidebar."""
 
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name="saved_views",
     )
-    media_type = models.CharField(max_length=16, choices=MediaTypes.choices)
+    media_type = models.CharField(
+        max_length=16,
+        choices=[*MediaTypes.choices, (HISTORY_VIEW_TYPE, "History")],
+    )
     name = models.CharField(max_length=100)
-    # The media list query string, e.g. "sort=score&direction=desc&status=Completed".
+    # The media list (or History) query string, e.g. "sort=score&direction=desc&status=Completed".
     query = models.TextField(blank=True, default="")
     position = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -2470,6 +2579,9 @@ class SavedView(models.Model):
         return f"{self.user_id}:{self.media_type}:{self.name}"
 
     def get_absolute_url(self):
-        """Return the media list URL that reproduces this view."""
-        base = reverse("medialist", args=[self.media_type])
+        """Return the media list or History URL that reproduces this view."""
+        if self.media_type == HISTORY_VIEW_TYPE:
+            base = reverse("history")
+        else:
+            base = reverse("medialist", args=[self.media_type])
         return f"{base}?{self.query}" if self.query else base

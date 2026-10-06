@@ -304,6 +304,7 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
 - `docs/agents/clz_import.md`: the CLZ importer's header-mapped contract and the shared custom-field resolution layer it sits on.
 - `docs/agents/migration_sync_playbook.md`: hard-gate flow for adapting accepted upstream migration outcomes to Floppy's current graph.
 - `docs/agents/view_authentication.md`: guide for view authentication and declaring public route exemptions.
+- `docs/agents/pr_screenshots.md`: `scripts/pr_screenshots.py` captures before/after screenshots of a PR and posts them to its description.
 - `docs/architecture/log-redaction.md`: the log boundary contract — where credentials are removed, what the rules match, and what they do not cover.
 - `docs/architecture/theming.md`: the theme resolution contract and the six theme states any colour change must hold.
 - `docs/architecture/webhook-write-rules.md`: when a media-server webhook may write tracking rows — the shared policy table every integration is listed in, its exceptions, and the test that catches a missing row.
@@ -315,6 +316,7 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
 - `docs/architecture/media-card.md`: the one media card and its surfaces — what may differ between pages and why, how a page loads the viewer's rating and status, and the test that catches a grid that drifts.
 - `docs/architecture/history-memory.md`: what a History request costs a web worker — the item columns history must not load, which paths are bounded by the response and which are still bounded by the history.
 - `docs/integrations/nuvio-client-guide.md`: what a third-party tracking client implements, with `api.tests.test_nuvio_conformance` as its runnable half.
+- `docs/integrations/recommendations-api.md`: the recommendations endpoint for media-server plugins, with `api.tests.test_fork_discover.RecommendationsTests` as its runnable half.
 
 
 ## Local Commands
@@ -350,6 +352,7 @@ Run tests through `scripts/test.sh`, in this priority order:
 3. **Full suite (rarely needed locally):** `scripts/test.sh --full` — all tags, including slow benchmarks/Playwright and live-provider `network` tests. Takes 20+ minutes and produces huge output. Only run it when the user asks or the risk clearly justifies it. Application-impacting PRs run the CI application suite, which excludes `network` tests; documentation-only trigger filtering is owned by `.github/workflows/app-tests.yml`.
 
 Notes:
+- **Diff selection:** `scripts/test.sh --affected` runs the tests that executed the changed lines, using `.floppy/affected.coverage` when that map exists. Record it with `scripts/test.sh --affected-record` (the CI suite: slow included, network excluded). A missing map, a new file, or a file coverage does not measure falls back to the import walk: a changed test module runs, a source module runs the tests that import it, and a file under one app with no importing test runs that app. Templates, static, the lockfile, settings, and the runner run the fast suite. A docs-only diff runs nothing. Pull requests download the map from the last successful run on `latest` and use the same selection.
 - Quick confidence: `uv run --no-sync ruff check src`
 - Deployment confidence: `uv run --no-sync python src/manage.py floppy_preflight` — paths,
   settings, database, migrations and Redis in one pass. Reads only, so it is safe against a
@@ -373,6 +376,7 @@ Notes:
 - Ruff config lives in `pyproject.toml` and excludes `migrations/`.
 - Djlint config is in `pyproject.toml`; Stylelint config is in `.stylelintrc`.
 - After model changes, keep migration files under `src/*/migrations/` and run `uv run --no-sync python src/manage.py migrate`.
+- A PR that touches a migration must contain every migration already on `latest` (`.github/workflows/migration-order.yml`, checked by `scripts/check_migration_order.py`). When it fails, merge `latest` into the branch and point your migration at the new leaf; never add your own merge migration.
 - Media type changes follow `docs/agents/media_type_integration.md` (`app.models.choices.MediaTypes` vocabulary + `app.config.MEDIA_TYPE_CONFIG` wiring).
 
 ## PR / Commit Expectations

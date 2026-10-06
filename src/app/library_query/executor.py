@@ -298,7 +298,11 @@ class LibraryQueryExecutor:
         """Return TMDB items hidden because their TVDB alias is also listed (#639)."""
         if not self.query.dedupe_cross_provider:
             return set()
-        show_types = {MediaTypes.TV.value, MediaTypes.ANIME.value, MediaTypes.SEASON.value}
+        show_types = {
+            MediaTypes.TV.value,
+            MediaTypes.ANIME.value,
+            MediaTypes.SEASON.value,
+        }
         if not show_types.intersection(self.query.media_types):
             return set()
         from app.services.item_merge import dedupe_cross_provider_items
@@ -306,10 +310,17 @@ class LibraryQueryExecutor:
         rows = queryset.filter(
             media_type__in=(MediaTypes.TV.value, MediaTypes.SEASON.value),
             source__in=(Sources.TMDB.value, Sources.TVDB.value),
-        ).only("id", "media_id", "media_type", "season_number", "source", "provider_external_ids")
-        items = list(rows)
-        if not any(item.source == Sources.TVDB.value for item in items):
+        ).only(
+            "id",
+            "media_id",
+            "media_type",
+            "season_number",
+            "source",
+            "provider_external_ids",
+        )
+        if not rows.filter(source=Sources.TVDB.value).exists():
             return set()
+        items = list(rows)
         kept = dedupe_cross_provider_items(
             items,
             getattr(self.user, "tv_metadata_source_default", Sources.TMDB.value),
@@ -522,7 +533,7 @@ def _attach_media(user, batch: list[Candidate], needs: set[str]) -> None:
         ).select_related("item")
         # Progress and derived status read episodes and seasons; fetch them
         # once for the batch instead of once per row.
-        rows = BasicMedia.objects._apply_prefetch_related(rows, media_type)
+        rows = BasicMedia.objects._apply_prefetch_related(rows, media_type, compact_episodes=True)
         aggregated = BasicMedia.objects._aggregate_duplicate_data(rows, user, media_type)
         latest = {}
         for media in aggregated:

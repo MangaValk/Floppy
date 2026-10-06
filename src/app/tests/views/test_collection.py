@@ -15,6 +15,7 @@ from app.models import (
     Season,
     Sources,
     Status,
+    Video,
 )
 from integrations.models import CollectionSourceState
 
@@ -47,6 +48,56 @@ class CollectionListViewTest(TestCase):
         response = self.client.get(reverse("collection_list"))
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login", response.url)
+
+    def test_collection_list_filtered_by_location(self):
+        """Filtering by location keeps only entries stored there, per user."""
+        self.client.login(**self.credentials)
+        other_user = get_user_model().objects.create_user(
+            username="other",
+            password="12345",
+        )
+        items = {}
+        for key, location in (
+            ("nas", "NAS"),
+            ("home", "Home"),
+            ("all", "all"),
+            ("none", ""),
+        ):
+            items[key] = Item.objects.create(
+                media_id=f"loc-{key}",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.MOVIE.value,
+                title=f"Movie {key}",
+                image="http://example.com/movie.jpg",
+            )
+            CollectionEntry.objects.create(
+                user=self.user,
+                item=items[key],
+                purchase_location=location,
+            )
+        CollectionEntry.objects.create(
+            user=other_user,
+            item=items["nas"],
+            purchase_location="Garage",
+        )
+
+        response = self.client.get(reverse("collection_list"), {"location": "NAS"})
+
+        entries = list(response.context["collection_entries"])
+        self.assertEqual([entry.item_id for entry in entries], [items["nas"].id])
+        self.assertEqual(response.context["location_filter"], "NAS")
+        self.assertEqual(
+            response.context["available_locations"],
+            ["Home", "NAS", "all"],
+        )
+
+        # A location literally called "all" filters like any other.
+        response = self.client.get(reverse("collection_list"), {"location": "all"})
+        entries = list(response.context["collection_entries"])
+        self.assertEqual([entry.item_id for entry in entries], [items["all"].id])
+
+        response = self.client.get(reverse("collection_list"))
+        self.assertEqual(len(response.context["collection_entries"]), 4)
 
     def test_collection_list_filtered_by_media_type(self):
         """Test filtering by media_type parameter."""
@@ -366,6 +417,32 @@ class CollectionAddViewTest(TestCase):
             title="Test Movie",
             image="http://example.com/image.jpg",
         )
+
+    def test_collecting_a_video_lists_it_without_tracking_it(self):
+        """A downloaded video can be collected; collecting never tracks it."""
+        video_item = Item.objects.create(
+            media_id="vid1",
+            source=Sources.YOUTUBE.value,
+            media_type=MediaTypes.VIDEO.value,
+            title="A Downloaded Video",
+            image="http://example.com/video.jpg",
+        )
+        self.client.login(**self.credentials)
+
+        self.client.post(
+            reverse("collection_add"),
+            {"item_id": video_item.id, "media_type": "Digital", "resolution": "1080p"},
+        )
+
+        self.assertTrue(
+            CollectionEntry.objects.filter(user=self.user, item=video_item).exists(),
+        )
+        self.assertFalse(Video.objects.filter(user=self.user).exists())
+        response = self.client.get(
+            reverse("collection_list_filtered", args=[MediaTypes.VIDEO.value]),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "A Downloaded Video")
 
     def test_collection_add_valid_data(self):
         """Test POST with valid data creates CollectionEntry."""

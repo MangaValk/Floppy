@@ -767,8 +767,9 @@ _DETAIL_LINK_BRANDS = {
         "fallback_text": "MU",
     },
     Sources.MANGABAKA.value: {
-        "chip_classes": "border-rose-400/18 bg-rose-500/[0.07]",
-        "badge_classes": "border-rose-400/28 bg-rose-500/14",
+        "logo_src": static("img/mangabaka-logo.png"),
+        "chip_classes": "border-violet-400/18 bg-violet-500/[0.07]",
+        "badge_classes": "border-violet-400/28 bg-violet-500/14",
         "accent_classes": _DETAIL_LINK_ACCENT_CLASSES,
         "fallback_text": "MB",
     },
@@ -882,6 +883,18 @@ _DETAIL_LINK_BRANDS = {
         "badge_classes": "border-rose-400/28 bg-rose-500/14",
         "accent_classes": _DETAIL_LINK_ACCENT_CLASSES,
         "fallback_text": "LFM",
+    },
+    "soundcloud": {
+        "chip_classes": "border-orange-400/18 bg-orange-500/[0.07]",
+        "badge_classes": "border-orange-400/28 bg-orange-500/14",
+        "accent_classes": _DETAIL_LINK_ACCENT_CLASSES,
+        "fallback_text": "SC",
+    },
+    "spotify": {
+        "chip_classes": "border-green-400/18 bg-green-500/[0.07]",
+        "badge_classes": "border-green-400/28 bg-green-500/14",
+        "accent_classes": _DETAIL_LINK_ACCENT_CLASSES,
+        "fallback_text": "SP",
     },
     "imdb": {
         "logo_src": static("img/imdb-logo.png"),

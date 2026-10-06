@@ -36,6 +36,7 @@ from app.models import (
     Status,
 )
 from app.providers import services
+from app.request_timing import boundary
 from app.services import metadata_resolution
 from app.services.episode_coordinates import (
     InvalidEpisodeCoordinateError,
@@ -204,16 +205,17 @@ def media_save(request):
         )
     else:
         try:
-            hydrated = ensure_item_metadata(
-                request.user,
-                media_type,
-                media_id,
-                source,
-                season_number,
-                identity_media_type=identity_media_type,
-                library_media_type=library_media_type,
-                edition_id=(request.POST.get("edition_id") or "").strip() or None,
-            )
+            with boundary("media_save_hydrate"):
+                hydrated = ensure_item_metadata(
+                    request.user,
+                    media_type,
+                    media_id,
+                    source,
+                    season_number,
+                    identity_media_type=identity_media_type,
+                    library_media_type=library_media_type,
+                    edition_id=(request.POST.get("edition_id") or "").strip() or None,
+                )
         except services.ProviderNotConfiguredError:
             # Setup guidance is rendered by the provider-error middleware.
             raise
@@ -290,14 +292,17 @@ def media_save(request):
         if not instance_id
         else pgettext("saved action", "Updated")
     )
-    if form.is_valid():
+    with boundary("media_save_validate"):
+        valid = form.is_valid()
+    if valid:
         if isinstance(instance, (Season, TV)):
             media = form.save(commit=False)
             media._pending_end_date = form.cleaned_data.get("end_date")
             # Recorded in history so an automatic change can be told apart
             # from the user's own edit (#1133).
             media._change_reason = USER_EDIT_REASON
-            media.save()
+            with boundary("media_save_persist"):
+                media.save()
             if (
                 isinstance(media, Season)
                 and old_status == Status.COMPLETED.value
@@ -317,7 +322,8 @@ def media_save(request):
                 with contextlib.suppress(RewatchAlreadyCompleteError):
                     media.start_rewatch()
         else:
-            media = form.save()
+            with boundary("media_save_persist"):
+                media = form.save()
         if (
             media_type == MediaTypes.BOOK.value
             and "koreader_document_id" in request.POST
@@ -348,7 +354,8 @@ def media_save(request):
                             "That KOReader document ID is already linked to another book."
                         ),
                     )
-        BasicMedia.objects.annotate_max_progress([media], media_type)
+        with boundary("media_save_progress"):
+            BasicMedia.objects.annotate_max_progress([media], media_type)
         image_url = form.cleaned_data.get("image_url")
         if image_url and media.item.image != image_url:
             media.item.image = image_url
@@ -379,6 +386,7 @@ def media_save(request):
                     "current_instance": media,
                     "return_url": return_url,
                     "track_action_update": True,
+                    "swap_oob": True,
                 },
             )
 
@@ -427,11 +435,26 @@ def media_save(request):
                     request=request,
                 )
 
+            def _progress_card_fragment():
+                if media_type not in (MediaTypes.TV.value, MediaTypes.SEASON.value):
+                    return None
+                return render_to_string(
+                    "app/components/detail_progress_card_slot.html",
+                    {
+                        "media": media.item,
+                        "media_type": media_type,
+                        "current_instance": media,
+                        "progress_card_slot_oob": True,
+                    },
+                    request=request,
+                )
+
             def _card_rating_fragment():
                 return render_to_string(
                     "app/components/media_card_rating_oob.html",
                     {
                         "media_instance_id": media.id,
+                        "rating_media_type": media.item.media_type,
                         "rating_value": media.formatted_score,
                         "rate_url": reverse(
                             "update_media_score",
@@ -489,6 +512,7 @@ def media_save(request):
             for label, build in (
                 ("activity subtitle", _activity_subtitle_fragment),
                 ("score chip", _score_chip_fragment),
+                ("progress card", _progress_card_fragment),
                 ("card rating", _card_rating_fragment),
                 ("status chip", _status_chip_fragment),
                 ("season cascade pill", _season_cascade_fragment),
@@ -552,6 +576,7 @@ def media_save(request):
                     "track_open": True,
                     "track_modal_content": modal_response.content.decode(),
                     "track_action_update": True,
+                    "swap_oob": True,
                 },
             )
             response["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -867,7 +892,7 @@ def _render_notes_section_oob(
     )
 
 
-def _render_track_action_oob(request, instance, return_url):
+def _render_track_action_oob(request, instance, return_url, *, polled=False):
     """Render a tracked instance's own status pill as an OOB swap.
 
     Watching an episode (or a webhook/scrobbler writing one with no open
@@ -877,6 +902,9 @@ def _render_track_action_oob(request, instance, return_url):
     to refresh this pill, so callers on any side of that need to push it
     explicitly. Works for any tracked instance with an `.item` (Season,
     TV, ...), not just seasons.
+
+    `polled` marks a background refresh: the page skips that swap while the
+    tracking dialog is open, so polling never closes it or drops the form.
     """
     return render_to_string(
         "app/components/detail_track_action.html",
@@ -886,6 +914,7 @@ def _render_track_action_oob(request, instance, return_url):
             "return_url": return_url,
             "track_action_update": True,
             "swap_oob": True,
+            "polled": polled,
         },
         request=request,
     )
@@ -1015,6 +1044,14 @@ def _write_episode_save_oob(
         ),
     )
     response.write(_render_season_progress_oob(related_season))
+    response["HX-Trigger-After-Swap"] = json.dumps(
+        {
+            "detail-progress-updated": {
+                "id": related_season.id,
+                "completed": related_season.completed_episode_count,
+            },
+        },
+    )
     response.write(
         _render_track_action_oob(request, related_season, parsed_next),
     )
@@ -1344,11 +1381,20 @@ def episode_history_poll(request, season_id):
         )
 
     response.write(_render_season_progress_oob(related_season))
+    response["HX-Trigger-After-Swap"] = json.dumps(
+        {
+            "detail-progress-updated": {
+                "id": related_season.id,
+                "completed": related_season.completed_episode_count,
+            },
+        },
+    )
     response.write(
         _render_track_action_oob(
             request,
             related_season,
             media_url(related_season.item),
+            polled=True,
         ),
     )
     response["Cache-Control"] = "no-cache, no-store, must-revalidate"

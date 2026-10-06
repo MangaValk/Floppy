@@ -258,6 +258,19 @@ MEDIA_TYPE_CONFIG = {
         "unit": ("m", gettext_noop("Minute")),
         "date_key": "published",
     },
+    MediaTypes.VIDEO.value: {
+        "sources": [Sources.YOUTUBE],
+        "default_source": Sources.YOUTUBE,
+        "unicode_icon": "▶️",
+        "verb": (gettext_noop("watch"), gettext_noop("watched")),
+        "text_color": COLORS["red"]["text"],
+        "stats_color": COLORS["red"]["hex"],
+        "svg_icon": """
+            <rect width="20" height="14" x="2" y="5" rx="3"/>
+            <path d="m10 9 5 3-5 3Z"/>""",
+        "unit": ("s", gettext_noop("Second")),
+        "date_key": "published",
+    },
 }
 
 # --- Collection Field Configuration ---
@@ -279,7 +292,7 @@ COLLECTION_FIELD_CONFIG = {
             "media_type": "Format",
             "is_3d": "3D",
             "purchase_price": "Purchase Price",
-            "purchase_location": "Purchased From",
+            "purchase_location": "Location",
             "collected_at": "Collected At",
         },
         "choices": {
@@ -322,7 +335,7 @@ COLLECTION_FIELD_CONFIG = {
         "labels": {
             "media_type": "Format",
             "purchase_price": "Purchase Price",
-            "purchase_location": "Purchased From",
+            "purchase_location": "Location",
             "collected_at": "Collected At",
         },
         "choices": {
@@ -337,7 +350,7 @@ COLLECTION_FIELD_CONFIG = {
         "labels": {
             "media_type": "Format",
             "purchase_price": "Purchase Price",
-            "purchase_location": "Purchased From",
+            "purchase_location": "Location",
             "collected_at": "Collected At",
         },
         "choices": {
@@ -364,7 +377,7 @@ COLLECTION_FIELD_CONFIG = {
             "resolution": "Platform",
             "hdr": "Edition",
             "purchase_price": "Purchase Price",
-            "purchase_location": "Purchased From",
+            "purchase_location": "Location",
             "collected_at": "Collected At",
         },
         "choices": {
@@ -401,7 +414,7 @@ COLLECTION_FIELD_CONFIG = {
         "labels": {
             "media_type": "Format",
             "purchase_price": "Purchase Price",
-            "purchase_location": "Purchased From",
+            "purchase_location": "Location",
             "collected_at": "Collected At",
         },
         "choices": {

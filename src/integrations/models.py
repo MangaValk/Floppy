@@ -436,25 +436,20 @@ class AudiobookshelfAccount(models.Model):
         return bool(self.base_url and self.api_token) and not self.connection_broken
 
 
-class KomgaAccount(models.Model):
-    """Store Komga connection settings and sync state for a user."""
+class ReadingServerAccount(models.Model):
+    """Connection settings and sync state shared by Komga and Kavita."""
 
     SYNC_INTERVAL_CHOICES = (5, 15, 30, 60)
 
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="komga_account",
-    )
-    base_url = models.URLField(help_text="Komga server URL")
-    api_key = models.TextField(help_text="Encrypted Komga API key")
+    base_url = models.URLField(help_text="Server URL")
+    api_key = models.TextField(help_text="Encrypted API key")
     create_missing = models.BooleanField(
         default=True,
-        help_text="Create Floppy items when Komga books cannot be matched",
+        help_text="Create Floppy items when server items cannot be matched",
     )
     sync_interval_minutes = models.PositiveSmallIntegerField(
         default=15,
-        help_text="How often Komga reading progress is synced",
+        help_text="How often reading progress is synced",
     )
     last_sync_at = models.DateTimeField(null=True, blank=True)
     connection_broken = models.BooleanField(default=False)
@@ -465,17 +460,32 @@ class KomgaAccount(models.Model):
     class Meta:
         """Model options."""
 
+        abstract = True
+
+    @property
+    def is_connected(self):
+        """Return True when the account appears connected."""
+        return bool(self.base_url and self.api_key) and not self.connection_broken
+
+
+class KomgaAccount(ReadingServerAccount):
+    """Store Komga connection settings and sync state for a user."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="komga_account",
+    )
+
+    class Meta:
+        """Model options."""
+
         verbose_name = "Komga account"
         verbose_name_plural = "Komga accounts"
 
     def __str__(self):
         """Readable representation."""
         return f"KomgaAccount({self.user.username})"
-
-    @property
-    def is_connected(self):
-        """Return True when the account appears connected."""
-        return bool(self.base_url and self.api_key) and not self.connection_broken
 
 
 class KomgaBookLink(models.Model):
@@ -509,6 +519,60 @@ class KomgaBookLink(models.Model):
     def __str__(self):
         """Readable representation."""
         return f"KomgaBookLink({self.user.username}, {self.komga_book_id})"
+
+
+class KavitaAccount(ReadingServerAccount):
+    """Store Kavita connection settings and sync state for a user."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="kavita_account",
+    )
+
+    class Meta:
+        """Model options."""
+
+        verbose_name = "Kavita account"
+        verbose_name_plural = "Kavita accounts"
+
+    def __str__(self):
+        """Readable representation."""
+        return f"KavitaAccount({self.user.username})"
+
+
+class KavitaLink(models.Model):
+    """Remember which Floppy item a Kavita series or chapter was matched to."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="kavita_links",
+    )
+    # "series:<id>" for manga and books, "chapter:<id>" for comic issues.
+    kavita_key = models.CharField(max_length=64)
+    item = models.ForeignKey(
+        "app.Item",
+        on_delete=models.CASCADE,
+        related_name="kavita_links",
+    )
+    linked_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Model options."""
+
+        verbose_name = "Kavita link"
+        verbose_name_plural = "Kavita links"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "kavita_key"],
+                name="integrations_kavitalink_unique_user_key",
+            ),
+        ]
+
+    def __str__(self):
+        """Readable representation."""
+        return f"KavitaLink({self.user.username}, {self.kavita_key})"
 
 
 class LastFMAccount(models.Model):
@@ -1522,12 +1586,26 @@ class ImportRun(models.Model):
     started_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     cancel_requested = models.BooleanField(default=False)
+    phase = models.CharField(max_length=24, blank=True, default="")
+    prepared_state = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
+    prepared_digest = models.CharField(max_length=64, blank=True, default="")
+    commit_cursor = models.PositiveIntegerField(default=0)
+    chunk_rows = models.PositiveIntegerField(default=100)
+    lease_owner = models.CharField(max_length=64, blank=True, default="")
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    fence = models.PositiveIntegerField(default=0)
+    terminal_error = models.JSONField(default=dict)
 
     class Meta:
         """Model options."""
 
         verbose_name = "import run"
         verbose_name_plural = "import runs"
+        constraints = [models.UniqueConstraint(
+            fields=["user", "source"],
+            condition=models.Q(source="trakt", status="running") & ~models.Q(phase=""),
+            name="one_active_durable_import",
+        )]
         indexes = [
             models.Index(fields=["user", "-started_at"]),
             models.Index(fields=["user", "status"]),
@@ -1536,6 +1614,74 @@ class ImportRun(models.Model):
     def __str__(self):
         """Readable representation."""
         return f"ImportRun({self.source}, {self.user.username}, {self.status})"
+
+
+class PreparedImportEntry(models.Model):
+    """Sealed, ordered persistence decisions; never contains provider credentials."""
+
+    run = models.ForeignKey(ImportRun, on_delete=models.CASCADE, related_name="prepared_entries")
+    ordinal = models.PositiveIntegerField()
+    model_label = models.CharField(max_length=100)
+    operation = models.CharField(max_length=16)
+    payload = models.JSONField(encoder=DjangoJSONEncoder)
+    digest = models.CharField(max_length=64)
+    persisted_pk = models.PositiveBigIntegerField(null=True, blank=True)
+
+    class Meta:
+        """Ordered cursor lookup and input identity."""
+
+        constraints = [models.UniqueConstraint(fields=["run", "ordinal"], name="import_entry_run_ordinal")]
+        ordering = ["ordinal"]
+
+    def __str__(self):
+        """Identify the staged ordinal without revealing history."""
+        return f"PreparedImportEntry({self.run_id}, {self.ordinal})"
+
+
+class ImportChunkReceipt(models.Model):
+    """Media/history and this receipt commit together; publication is repeatable."""
+
+    run = models.ForeignKey(ImportRun, on_delete=models.CASCADE, related_name="chunk_receipts")
+    phase = models.CharField(max_length=16, default="persist")
+    start = models.PositiveIntegerField()
+    end = models.PositiveIntegerField()
+    digest = models.CharField(max_length=64)
+    fence = models.PositiveIntegerField()
+    rows_persisted = models.PositiveIntegerField(default=0)
+    metrics = models.JSONField(default=dict)
+    publication_pending = models.BooleanField(default=True)
+    committed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Unique commit and bounded outbox lookup."""
+
+        constraints = [models.UniqueConstraint(fields=["run", "phase", "start"], name="import_chunk_run_start")]
+        indexes = [models.Index(fields=["publication_pending", "run"])]
+
+    def __str__(self):
+        """Identify the committed range."""
+        return f"ImportChunkReceipt({self.run_id}, {self.start}:{self.end})"
+
+
+class ImportOverwriteTarget(models.Model):
+    """Original row identities: a resumed delete never targets replacements."""
+
+    run = models.ForeignKey(ImportRun, on_delete=models.CASCADE, related_name="overwrite_targets")
+    ordinal = models.PositiveIntegerField()
+    model_label = models.CharField(max_length=100)
+    original_pk = models.PositiveBigIntegerField()
+    fingerprint = models.CharField(max_length=64)
+    deleted = models.BooleanField(default=False)
+
+    class Meta:
+        """Stable deletion identity and cursor."""
+
+        constraints = [models.UniqueConstraint(fields=["run", "model_label", "original_pk"], name="import_overwrite_original")]
+        indexes = [models.Index(fields=["run", "deleted", "ordinal"])]
+
+    def __str__(self):
+        """Identify the private target record."""
+        return f"ImportOverwriteTarget({self.run_id}, {self.ordinal})"
 
 
 # What a tracking client needs and no more. Mirrored by api.scopes.TRACKING_PRESET,

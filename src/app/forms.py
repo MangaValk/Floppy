@@ -33,6 +33,7 @@ from app.models import (
     Season,
     Sources,
     Status,
+    Video,
 )
 
 CHOICE_PAIR_LENGTH = 2
@@ -292,6 +293,10 @@ class RatingScaleFormMixin:
 
     def _apply_rating_scale(self):
         if not self.user or "score" not in self.fields:
+            return
+        if not self.user.ratings_enabled:
+            # Dropping the field keeps the stored score untouched on save.
+            del self.fields["score"]
             return
         scale_max = self.user.rating_scale_max
         self.fields["score"].widget.attrs.update(
@@ -1003,6 +1008,18 @@ class PodcastForm(MediaForm):
         }
 
 
+class VideoForm(MediaForm):
+    """Form for videos."""
+
+    class Meta(MediaForm.Meta):
+        """Bind form to model."""
+
+        model = Video
+        labels = {
+            "progress": _("Progress (Seconds)"),
+        }
+
+
 class ArtistTrackerForm(RatingScaleFormMixin, forms.ModelForm):
     """Form for tracking artists - mirrors MediaForm but without progress."""
 
@@ -1180,7 +1197,7 @@ class CollectionEntryForm(forms.ModelForm):
                 attrs={"placeholder": "9.99", "step": "0.01", "min": "0"},
             ),
             "purchase_location": forms.TextInput(
-                attrs={"placeholder": "Amazon, Steam, Best Buy"},
+                attrs={"placeholder": "Steam, NAS, Home, Storage"},
             ),
         }
 

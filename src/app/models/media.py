@@ -19,6 +19,7 @@ from app import providers
 from app.models.choices import MediaTypes, Sources, Status
 from app.models.item import Item
 from app.models.manager import MediaManager
+from integrations.import_scope import ImportScopedManager, ImportScopedQuerySet
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,7 @@ class Media(models.Model):
     # with it in the generic CSV export/import column mapping (both would
     # otherwise share the header name "source").
     entry_source = models.CharField(max_length=50, blank=True, default="")
+    objects = ImportScopedManager()
 
     class Meta:
         """Meta options for the model."""
@@ -217,9 +219,13 @@ class Media(models.Model):
         transaction.on_commit(send)
 
     def _get_local_max_progress(self):
-        """Return locally-derived runtime minutes for music/podcast without provider calls."""
+        """Return locally-derived length for music, podcasts, and videos without provider calls."""
         if self.item.media_type == MediaTypes.PODCAST.value:
             return self.item.runtime_minutes
+
+        if self.item.media_type == MediaTypes.VIDEO.value:
+            length_seconds = getattr(self, "length_seconds", None)
+            return length_seconds or None
 
         # Audiobooks track progress in minutes, so their total is the runtime.
         if (
@@ -262,6 +268,7 @@ class Media(models.Model):
                 MediaTypes.PODCAST.value,
                 MediaTypes.MUSIC.value,
                 MediaTypes.BOARDGAME.value,
+                MediaTypes.VIDEO.value,
             ) or (
                 self.item.media_type == MediaTypes.BOOK.value
                 and self.item.format == "audiobook"
@@ -310,8 +317,11 @@ class Media(models.Model):
                 MediaTypes.BOARDGAME.value,
             ):
                 max_progress = None
-            # For podcasts, use runtime_minutes from Item instead of external metadata.
-            elif self.item.media_type == MediaTypes.PODCAST.value:
+            # Podcasts and videos already know their length. Don't ask a provider.
+            elif self.item.media_type in (
+                MediaTypes.PODCAST.value,
+                MediaTypes.VIDEO.value,
+            ):
                 max_progress = self._get_local_max_progress()
             else:
                 try:
@@ -339,6 +349,7 @@ class Media(models.Model):
         if self.item.media_type not in (
             MediaTypes.MUSIC.value,
             MediaTypes.PODCAST.value,
+            MediaTypes.VIDEO.value,
         ):
             self.item.fetch_releases(delay=True)
 
@@ -823,7 +834,7 @@ class Manga(Media):
         _percentage_decrease_progress(self)
 
 
-class ActiveAnimeQuerySet(models.QuerySet):
+class ActiveAnimeQuerySet(ImportScopedQuerySet):
     """Anime rows that have not been migrated into grouped series."""
 
     def active(self):
@@ -853,7 +864,7 @@ class Anime(Media):
 
     tracker = FieldTracker()
     objects = ActiveAnimeManager()
-    all_objects = models.Manager()  # noqa: DJ012  # manager order is significant; objects must stay the default
+    all_objects = ImportScopedManager()  # manager order is significant; objects must stay the default
 
     def save(self, *args, **kwargs):
         """Save, then auto-migrate a completed flat MAL anime to episode tracking.
@@ -1024,6 +1035,7 @@ class MoviePlay(models.Model):
     end_date = models.DateTimeField(null=True, blank=True)
     external_id = models.CharField(max_length=255, null=True, blank=True)
     entry_source = models.CharField(max_length=50, blank=True, default="")
+    objects = ImportScopedManager()
 
     class Meta:
         """Meta options for MoviePlay."""
