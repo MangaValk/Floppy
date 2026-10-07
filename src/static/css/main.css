@@ -897,14 +897,14 @@
   .max-h-\[70svh\] {
     max-height: 70svh;
   }
-  .max-h-\[80vh\] {
-    max-height: 80vh;
+  .max-h-\[80dvh\] {
+    max-height: 80dvh;
   }
   .max-h-\[85dvh\] {
     max-height: 85dvh;
   }
-  .max-h-\[90vh\] {
-    max-height: 90vh;
+  .max-h-\[90dvh\] {
+    max-height: 90dvh;
   }
   .max-h-\[200px\] {
     max-height: 200px;
@@ -4715,6 +4715,24 @@
       }
     }
   }
+  .max-\[24rem\]\:sr-only {
+    @media (width < 24rem) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
+    }
+  }
+  .max-\[24rem\]\:hidden {
+    @media (width < 24rem) {
+      display: none;
+    }
+  }
   .sm\:inset-x-auto {
     @media (width >= 40rem) {
       inset-inline: auto;
@@ -5917,6 +5935,12 @@
   max-height: 60vh;
   overflow-y: auto;
 }
+[data-home-section-list] .sortable-ghost {
+  opacity: 0.4;
+}
+[data-home-section-list] .sortable-chosen {
+  outline: 1px solid var(--color-surface-hover);
+}
 @media (max-width: 63.999rem) {
   .home-settings-row-body {
     height: auto;
@@ -6871,6 +6895,7 @@ html.light .theme-toggle-icon-moon {
 }
 .modal-max-height {
   max-height: calc(100vh - 4rem);
+  max-height: calc(100dvh - 4rem);
 }
 .date-picker-closed-row {
   display: block;
@@ -6897,11 +6922,28 @@ html.light .theme-toggle-icon-moon {
   min-width: 0;
   overflow-x: auto;
 }
-.date-picker-quick-action {
-  min-height: 2.75rem;
+.date-picker-empty-label {
+  display: none;
+  align-items: center;
   flex: 0 0 auto;
   padding: 0.375rem;
-  border: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+@media (min-width: 40rem) {
+  .date-picker-empty-label {
+    display: flex;
+  }
+}
+.date-picker-quick-action {
+  align-self: center;
+  min-height: 2rem;
+  flex: 0 0 auto;
+  margin-inline-start: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
   color: var(--color-text);
   font-size: 0.875rem;
   white-space: nowrap;

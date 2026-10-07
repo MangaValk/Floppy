@@ -10,6 +10,14 @@
   overflow-y: auto;
 }
 
+[data-home-section-list] .sortable-ghost {
+  opacity: 0.4;
+}
+
+[data-home-section-list] .sortable-chosen {
+  outline: 1px solid var(--color-surface-hover);
+}
+
 @media (max-width: 63.999rem) {
   .home-settings-row-body {
     height: auto;
@@ -1145,6 +1153,8 @@ html.light .theme-toggle-icon-moon {
 /* Modal max height with padding from viewport */
 .modal-max-height {
   max-height: calc(100vh - 4rem);
+  /* iOS Safari counts vh with the toolbar hidden; dvh follows the visible height. */
+  max-height: calc(100dvh - 4rem);
 }
 
 /* Custom date/time picker: trigger + popover/sheet */
@@ -1178,11 +1188,30 @@ html.light .theme-toggle-icon-moon {
   overflow-x: auto;
 }
 
-.date-picker-quick-action {
-  min-height: 2.75rem;
+.date-picker-empty-label {
+  display: none;
+  align-items: center;
   flex: 0 0 auto;
   padding: 0.375rem;
-  border: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+@media (min-width: 40rem) {
+  .date-picker-empty-label {
+    display: flex;
+  }
+}
+
+.date-picker-quick-action {
+  align-self: center;
+  min-height: 2rem;
+  flex: 0 0 auto;
+  margin-inline-start: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
   color: var(--color-text);
   font-size: 0.875rem;
   white-space: nowrap;
