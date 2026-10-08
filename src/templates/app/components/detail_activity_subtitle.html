@@ -56,6 +56,11 @@
           </span>
         {% endif %}
       {% endif %}
+      {% with year=media.details|release_year runtime=media.details.runtime %}
+        {% if year or runtime %}
+          <span class="detail-activity-mobile-meta hidden"><span class="mx-1 text-gray-600">·</span>{% if year %}{{ year }}{% endif %}{% if year and runtime %} · {% endif %}{% if runtime %}{{ runtime }}{% endif %}</span>
+        {% endif %}
+      {% endwith %}
     </button>
     <button type="button"
             aria-haspopup="dialog"
