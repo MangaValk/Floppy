@@ -933,6 +933,9 @@
   .min-h-\[320px\] {
     min-height: 320px;
   }
+  .min-h-dvh {
+    min-height: 100dvh;
+  }
   .min-h-screen {
     min-height: 100vh;
   }
@@ -2893,6 +2896,9 @@
   .pt-8 {
     padding-top: calc(var(--spacing) * 8);
   }
+  .pt-\[max\(1rem\,env\(safe-area-inset-top\,0px\)\)\] {
+    padding-top: max(1rem, env(safe-area-inset-top,0px));
+  }
   .pr-1 {
     padding-right: calc(var(--spacing) * 1);
   }
@@ -2937,6 +2943,9 @@
   }
   .pb-16 {
     padding-bottom: calc(var(--spacing) * 16);
+  }
+  .pb-\[max\(1rem\,env\(safe-area-inset-bottom\,0px\)\)\] {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom,0px));
   }
   .pl-0 {
     padding-left: calc(var(--spacing) * 0);
@@ -7105,6 +7114,20 @@ html.light .theme-toggle-icon-moon {
   grid-area: header;
   margin-top: 1rem;
 }
+.detail-carousel-grid:is(:has(.detail-mobile-hero), :has(.detail-carousel-preview--overview)) [id^="detail-activity-subtitle-slot"] > div {
+  position: relative;
+  isolation: isolate;
+}
+.detail-carousel-grid:is(:has(.detail-mobile-hero), :has(.detail-carousel-preview--overview)) [id^="detail-activity-subtitle-slot"] > div::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -0.75rem -1rem;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  filter: blur(2rem);
+  pointer-events: none;
+}
 .detail-carousel-grid__header .shrink-0 > div {
   margin-top: 0;
   margin-bottom: 0;
@@ -7272,6 +7295,7 @@ html.light .theme-toggle-icon-moon {
     flex-wrap: wrap;
   }
   .detail-carousel-grid:has(.detail-mobile-hero) [id^="detail-activity-subtitle-slot"] > div {
+    container-type: normal;
     margin-bottom: 0;
   }
   .detail-carousel-grid:has(.detail-mobile-hero) .detail-activity-mobile-meta {
@@ -7282,6 +7306,12 @@ html.light .theme-toggle-icon-moon {
   }
   .detail-carousel-grid:has(.detail-mobile-hero) [id^="detail-activity-subtitle-slot"] button > .text-gray-600 {
     display: inline;
+  }
+  .detail-carousel-grid:has(.detail-mobile-hero) .detail-carousel-grid__actions {
+    margin-top: 0.5rem;
+  }
+  .detail-carousel-grid:has(.detail-mobile-hero) .detail-carousel-grid__actions > div > .mt-4 {
+    margin: 0;
   }
   .detail-mobile-hero {
     position: absolute;
@@ -7326,12 +7356,24 @@ html.light .theme-toggle-icon-moon {
 }
 @media (min-width: 640px) and (max-width: 767.98px) {
   .detail-carousel-grid, .detail-flat-top {
-    --hero-pad-y: 3rem;
     --hero-gutter-l: max(2rem, var(--safe-left));
     --hero-gutter-r: max(2rem, var(--safe-right));
   }
 }
 @media (min-width: 600px) and (max-width: 767.98px) {
+  .detail-carousel-grid:has(.detail-mobile-hero__logo) {
+    --hero-line: calc(50dvh - 6rem);
+  }
+  .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title {
+    padding-top: 6.75rem;
+  }
+  .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title > .mb-3 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
   .detail-carousel-grid:not(:has(.detail-mobile-hero)):not(.detail-hero-pending), .detail-flat-top {
     grid-template-columns: 210px minmax(0, 1fr);
   }
@@ -7406,6 +7448,11 @@ html.light .theme-toggle-icon-moon {
   }
   .detail-flat-top__info > .mb-6 {
     grid-column: 1 / -1;
+  }
+}
+@media (max-width: 599.98px) {
+  .detail-carousel-grid:has(.detail-mobile-hero) .detail-carousel-grid__chips {
+    margin-top: clamp(3rem, 8dvh, 5rem);
   }
 }
 @media (max-width: 767.98px) {
@@ -8099,6 +8146,21 @@ html.light .theme-toggle-icon-moon {
   }
   .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-progress-card) .detail-activity-progress-text, .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-progress-card) .detail-activity-progress-separator, .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-progress-card) .detail-activity-duration-separator--progress-only, .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-progress-card) [id^="season-progress-desktop-"], .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-progress-card) .detail-season-progress-date-separator, .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-progress-card) .detail-season-progress-history--no-dates, .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-progress-card) .detail-season-progress-leading-separator:has(+ .detail-season-progress-history--no-dates) {
     display: none;
+  }
+}
+@media (min-width: 768px) and (max-width: 1065px) and (orientation: landscape) and (max-height: 750px) {
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) .detail-carousel-preview {
+    height: 330px;
+  }
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) .detail-carousel-strip-wrap {
+    height: calc(330px / 4);
+  }
+  .detail-carousel-preview--overview .detail-carousel-main-image--overview {
+    left: calc(-73.333px - 1rem);
+    width: calc(100% + 146.666px + 2rem) !important;
   }
 }
 .detail-score-card-row::-webkit-scrollbar {

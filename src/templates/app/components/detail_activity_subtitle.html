@@ -18,6 +18,11 @@
           <span>
             {{ activity_subtitle.duration_text|cut:" watched"|cut:" played"|cut:" listened"|cut:" read" }}{% if activity_subtitle.primary_text %} ({{ activity_subtitle.primary_text|cut:"Progress: "|translate_activity_text:media_type }}){% endif %}
           </span>
+          {% with year=media.details|release_year runtime=media.details.runtime %}
+            {% if year or runtime %}
+              <span class="detail-activity-mobile-meta hidden"><span class="mx-1 text-gray-600">·</span>{% if year %}{{ year }}{% endif %}{% if year and runtime %} · {% endif %}{% if runtime %}{{ runtime }}{% endif %}</span>
+            {% endif %}
+          {% endwith %}
         </span>
         {% if activity_subtitle.date_start or activity_subtitle.date_end %}
           <span class="mx-1 text-gray-600 @max-[26rem]:hidden">•</span>
@@ -56,11 +61,13 @@
           </span>
         {% endif %}
       {% endif %}
-      {% with year=media.details|release_year runtime=media.details.runtime %}
-        {% if year or runtime %}
-          <span class="detail-activity-mobile-meta hidden"><span class="mx-1 text-gray-600">·</span>{% if year %}{{ year }}{% endif %}{% if year and runtime %} · {% endif %}{% if runtime %}{{ runtime }}{% endif %}</span>
-        {% endif %}
-      {% endwith %}
+      {% if not activity_subtitle.duration_text %}
+        {% with year=media.details|release_year runtime=media.details.runtime %}
+          {% if year or runtime %}
+            <span class="detail-activity-mobile-meta hidden"><span class="mx-1 text-gray-600">·</span>{% if year %}{{ year }}{% endif %}{% if year and runtime %} · {% endif %}{% if runtime %}{{ runtime }}{% endif %}</span>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
     </button>
     <button type="button"
             aria-haspopup="dialog"
