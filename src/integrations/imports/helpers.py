@@ -831,11 +831,10 @@ def create_import_schedule(
         so the schedule does not keep a dead token.
     """
     try:
+        # The entered time is already in the app's timezone; no conversion.
         import_time = (
             datetime.datetime.strptime(import_time, "%H:%M")
-            .astimezone(
-                timezone.get_default_timezone(),
-            )
+            .replace(tzinfo=timezone.get_default_timezone())
             .time()
         )
     except ValueError:
