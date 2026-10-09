@@ -166,6 +166,9 @@ class MALSyncModelHooks(TestCase):
                 manga.save()
 
         importer = PlexHistoryImporter.__new__(PlexHistoryImporter)
+        importer.user = self.user
+        importer.bulk_media = {}
+        importer._imported_mal_anime_ids = set()
         with patch.object(PlexHistoryImporter, "_import_data", side_effect=replay_a_play):
             importer.import_data()
 
@@ -4291,3 +4294,62 @@ class MultiUserIsolation(TestCase):
         self.client.post(reverse("mal_disconnect"))
         self.assertFalse(MALAccount.objects.filter(user=self.alice).exists())
         self.assertTrue(MALAccount.objects.filter(user=self.bob).exists())
+
+
+class PlexImportMALPush(TestCase):
+    """A Plex import pushes the anime it wrote once, after suppression ends."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = _make_user()
+        make_mal_account(self.user)
+        self.show = TV(
+            user=self.user, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="100", source="tmdb", media_type="tv",
+                library_media_type="anime", title="Grouped Anime",
+            ),
+        )
+        TV.objects.bulk_create([self.show])
+        self.season = Season(
+            user=self.user, related_tv=self.show, status=Status.IN_PROGRESS.value,
+            item=Item.objects.create(
+                media_id="100", source="tmdb", media_type="season",
+                library_media_type="anime", season_number=1, title="Season 1",
+            ),
+        )
+        Season.objects.bulk_create([self.season])
+
+    @patch("integrations.tasks.sync_mal_status.delay")
+    @patch("integrations.tasks.sync_mal_status.apply_async")
+    def test_imported_plays_are_pushed_after_the_import(self, apply_async, delay):
+        """Regression: bulk-created plays fire no signals and the replayed ones
+        were suppressed, so an imported episode never reached MAL.
+        """
+        from integrations.imports.plex import PlexHistoryImporter
+
+        importer = PlexHistoryImporter(
+            user=self.user, account=None, mode="new", library="all",
+        )
+
+        def import_rows():
+            self.assertFalse(mal_sync.per_item_sync_active(self.user.id))
+            importer.bulk_media[MediaTypes.EPISODE.value].append(
+                Episode(related_season=self.season),
+            )
+            importer._imported_mal_anime_ids.add(7)
+            return {"created": 1}
+
+        with (
+            patch.object(importer, "_import_data", side_effect=import_rows),
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            result = importer.import_data()
+
+        self.assertEqual(result, {"created": 1})
+        apply_async.assert_called_once()
+        self.assertEqual(
+            apply_async.call_args.kwargs["kwargs"],
+            {"media_type": "tv", "media_id": self.show.pk},
+        )
+        delay.assert_called_once_with(media_type="anime", media_id=7)

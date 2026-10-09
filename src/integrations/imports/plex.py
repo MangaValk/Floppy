@@ -201,6 +201,8 @@ class PlexHistoryImporter:
         # Store ratings from library items to apply during bulk media creation
         self._library_ratings: dict[tuple[str, str], float] = {}
         self._anime_import_keys: set[tuple[str, int]] = set()
+        # MAL-backed Anime rows the import wrote, pushed once it finishes.
+        self._imported_mal_anime_ids: set[int] = set()
         # One anime router for the whole run; see AnimeRouteResolver.
         self.anime_router = grouped_anime.AnimeRouteResolver(self.user)
         self._current_section_uri: str = ""
@@ -236,12 +238,48 @@ class PlexHistoryImporter:
         """Import history for the selected library.
 
         Replayed plays save rows one by one, so their per-item MyAnimeList
-        pushes are skipped; a full sync sends the imported state.
+        pushes are skipped; each anime the import touched is pushed once at
+        the end instead.
         """
         from integrations.mal_sync import suppress_per_item_push
 
         with suppress_per_item_push():
-            return self._import_data()
+            result = self._import_data()
+        self._push_imported_anime_to_mal()
+        return result
+
+    def _push_imported_anime_to_mal(self):
+        """Queue one MyAnimeList push per anime the import wrote.
+
+        Bulk-created episodes fire no save signals, so without this an imported
+        play reaches MAL only when the user runs or schedules a full sync.
+        """
+        from integrations.mal_sync import per_item_sync_active, queue_grouped_sync
+        from integrations.tasks import sync_mal_status
+
+        if not per_item_sync_active(self.user.id):
+            return
+        seasons = {
+            id(episode.related_season): episode.related_season
+            for episode in self.bulk_media.get(MediaTypes.EPISODE.value, [])
+        }
+        tv_items = {
+            season.related_tv.item_id: season.related_tv.item
+            for season in seasons.values()
+        }
+        # queue_grouped_sync skips non-anime shows and debounces per show.
+        for item in tv_items.values():
+            queue_grouped_sync(self.user.id, item)
+        for anime_id in self._imported_mal_anime_ids:
+            try:
+                sync_mal_status.delay(media_type=MediaTypes.ANIME.value, media_id=anime_id)
+            # The broker is down; the import already committed, so never raise.
+            except Exception as error:
+                logger.warning(
+                    "mal_sync_enqueue_failed media_type=anime media_id=%s error=%s",
+                    anime_id,
+                    error,
+                )
 
     def _import_data(self):
         self._ensure_account_id()
@@ -2228,6 +2266,7 @@ class PlexHistoryImporter:
         ).first()
         if anime:
             self._apply_import_timestamp(anime, record["watched_at"])
+            self._imported_mal_anime_ids.add(anime.pk)
 
         self.counts[MediaTypes.ANIME.value] += 1
         self.summary_counts["created"] += 1
