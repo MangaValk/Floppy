@@ -9,6 +9,7 @@ from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from simple_history.utils import bulk_create_with_history, bulk_update_with_history
 
@@ -273,10 +274,30 @@ def _completed_target(
     return target
 
 
-def _existing_grouped_tracking(user_id: int, provider: str, series_id: str) -> bool:
+def _existing_grouped_tracking(
+    user_id: int,
+    provider: str,
+    series_id: str,
+    mal_ids=(),
+) -> bool:
+    """Return whether the user already tracks this series as grouped anime.
+
+    The series can be tracked under the other grouped provider: a show added
+    through TMDB is the same show as its TVDB series. Missing that created a
+    second, TVDB-sourced show beside the one the user already had.
+    """
+    identities = Q(source=provider, media_id=series_id) | Q(
+        provider_links__provider=provider,
+        provider_links__provider_media_id=series_id,
+        provider_links__provider_media_type=MediaTypes.TV.value,
+    )
+    for other in {Sources.TMDB.value, Sources.TVDB.value} - {provider}:
+        for mal_id in mal_ids:
+            other_id = anime_mapping.resolve_provider_series_id(mal_id, other)
+            if other_id:
+                identities |= Q(source=other, media_id=str(other_id))
     target_items = Item.objects.filter(
-        media_id=series_id,
-        source=provider,
+        identities,
         media_type=MediaTypes.TV.value,
         library_media_type=MediaTypes.ANIME.value,
     )
@@ -369,7 +390,12 @@ def preflight_flat_anime_to_grouped(
             completed_target_item_id=completed_target.id,
         )
 
-    if _existing_grouped_tracking(user.id, provider, provider_series_id):
+    if _existing_grouped_tracking(
+        user.id,
+        provider,
+        provider_series_id,
+        mal_ids=[anime.item.media_id for anime, _mapping in mapped_entries],
+    ):
         raise _migration_error(
             AnimeMigrationState.AMBIGUOUS,
             AMBIGUOUS_CODE,
