@@ -2551,6 +2551,24 @@ class PlexHistoryImporter:
                         if existing:
                             item_source, item_media_id = other_source, other_media_id
                             tv_key = f"{item_source}:{item_media_id}"
+                if existing is None:
+                    # A show tracked under another id is linked to this one
+                    # only through its provider links; the webhook finds it
+                    # the same way, so the two paths can't split one show.
+                    linked_item = self.processor._find_existing_tracked_tv_item(
+                        self.user,
+                        {"tvdb_id": tv_metadata.get("tvdb_id")},
+                        actual_tmdb_id,
+                        preferred_library_media_type=anime_class,
+                    )
+                    if linked_item is not None:
+                        existing = self.existing_media[MediaTypes.TV.value][
+                            linked_item.source
+                        ].get(linked_item.media_id)
+                        if existing:
+                            item_source = linked_item.source
+                            item_media_id = linked_item.media_id
+                            tv_key = f"{item_source}:{item_media_id}"
                 if existing and self.mode == "new":
                     tv_obj = existing
                     # Apply rating from library items if available and different
