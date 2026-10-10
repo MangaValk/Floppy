@@ -18,10 +18,11 @@ class Migration(migrations.Migration):
         ('integrations', '0052_malaccount_split_sync_filters'),
         ('integrations', '0053_malaccount_pull_ratings_enabled'),
         ('integrations', '0054_merge_20260925_2341'),
+        ('integrations', '0050_malaccount'),
     ]
 
     dependencies = [
-        ('integrations', '0049_plexaccount_mark_watched_sync'),
+        ('integrations', '0058_psn_playtime_snapshots'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

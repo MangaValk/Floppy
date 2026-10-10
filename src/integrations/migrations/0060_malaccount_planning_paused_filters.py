@@ -37,10 +37,11 @@ class Migration(migrations.Migration):
     # Its number before the squash; a database that ran it records this one.
     replaces = [
         ('integrations', '0055_malaccount_planning_paused_filters'),
+        ('integrations', '0051_malaccount_planning_paused_filters'),
     ]
 
     dependencies = [
-        ('integrations', '0050_malaccount'),
+        ('integrations', '0059_malaccount'),
     ]
 
     operations = [

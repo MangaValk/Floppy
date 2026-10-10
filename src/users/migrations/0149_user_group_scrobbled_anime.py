@@ -34,8 +34,12 @@ class AddFieldIfNotExists(migrations.AddField):
 
 class Migration(migrations.Migration):
 
+    replaces = [
+        ("users", "0137_user_group_scrobbled_anime"),
+    ]
+
     dependencies = [
-        ("users", "0136_saved_view"),
+        ("users", "0148_list_detail_tier_options"),
     ]
 
     operations = [
