@@ -2554,10 +2554,12 @@ class PlexHistoryImporter:
                 if existing is None:
                     # A show tracked under another id is linked to this one
                     # only through its provider links; the webhook finds it
-                    # the same way, so the two paths can't split one show.
+                    # the same way, so the two paths can't split one show. Only
+                    # the TMDB id is matched: the TVDB id TMDB reports can be a
+                    # parent series (D.Gray-man Hallow reports D.Gray-man's).
                     linked_item = self.processor._find_existing_tracked_tv_item(
                         self.user,
-                        {"tvdb_id": tv_metadata.get("tvdb_id")},
+                        {},
                         actual_tmdb_id,
                         preferred_library_media_type=anime_class,
                     )
