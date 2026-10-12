@@ -4538,11 +4538,13 @@ def psn_connect(request):
         # Remembered totals belong to one PSN account: another account's totals
         # would read as fabricated (or hidden) play against the old ones.
         previous = PSNAccount.objects.filter(user=request.user).first()
-        if previous is None or previous.account_id != account_id:
+        new_account = previous is None or previous.account_id != account_id
+        if new_account:
             PlaytimeSnapshot.objects.filter(user=request.user, source="psn").delete()
         PSNAccount.objects.update_or_create(
             user=request.user,
             defaults={
+                **({"last_sync_at": None} if new_account else {}),
                 "npsso": helpers.encrypt(npsso),
                 "account_id": account_id,
                 "online_id": online_id,
