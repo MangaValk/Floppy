@@ -96,9 +96,9 @@ class ImportMAL(TestCase):
     @patch("requests.Session.get")
     def test_import_does_not_bring_back_a_deleted_anime(self, mock_request):
         """An anime the user deleted by hand stays deleted across syncs (#1133)."""
-        with Path(mock_path / "import_mal_anime.json").open() as file:
+        with Path(mock_path / "import_mal_anime.json").open(encoding="utf-8") as file:
             anime_response = json.load(file)
-        with Path(mock_path / "import_mal_manga.json").open() as file:
+        with Path(mock_path / "import_mal_manga.json").open(encoding="utf-8") as file:
             manga_response = json.load(file)
         anime_mock = MagicMock()
         anime_mock.json.return_value = anime_response
