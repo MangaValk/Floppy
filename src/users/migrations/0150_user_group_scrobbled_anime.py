@@ -36,10 +36,11 @@ class Migration(migrations.Migration):
 
     replaces = [
         ("users", "0137_user_group_scrobbled_anime"),
+        ("users", "0149_user_group_scrobbled_anime"),
     ]
 
     dependencies = [
-        ("users", "0148_list_detail_tier_options"),
+        ("users", "0149_onboarding_metadata_step"),
     ]
 
     operations = [

@@ -23,6 +23,7 @@ from app.history_cache_utils import history_deferred_item_fields
 from app.models import Episode, MediaTypes, Status
 from app.services.completion import normalize_completed_entries
 from app.services.watch_state import PROJECTED_MEDIA_TYPES, project_watch_state
+from app.signals import importer_replacing_rows
 from integrations import import_progress
 from integrations.models import ImportRun
 
@@ -283,7 +284,8 @@ def cleanup_existing_media(to_delete, user):
                     user=user,
                 ).delete()
 
-            deleted_count, _ = retry_on_lock(delete_media)
+            with importer_replacing_rows():
+                deleted_count, _ = retry_on_lock(delete_media)
             total_deleted += deleted_count
 
         if total_deleted > 0:
