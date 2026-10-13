@@ -142,6 +142,13 @@ class BaseWebhookProcessor:
         """
         return None, None
 
+    def _payload_numbering_is_tvdb(self):
+        """Return whether payload season/episode numbers follow TVDB, not TMDB.
+
+        Override in subclasses whose clients number episodes the TVDB way.
+        """
+        return False
+
     def _extract_series_title(self, payload):
         """Extract TV series title from payload for title-based TMDB search.
 
@@ -443,6 +450,37 @@ class BaseWebhookProcessor:
 
         tvdb_id = tv_metadata.get("tvdb_id") if tv_metadata else None
 
+        # A TVDB-numbered payload can name a season TMDB also has but fills
+        # differently (TVDB Medabots S2E1 is TMDB S1E27), which the
+        # missing-season remap never sees. Lookups keyed by TVDB keep the
+        # payload's numbers; everything filed under the TMDB show uses these.
+        tmdb_season, tmdb_episode = season_number, episode_number
+        if self._payload_numbering_is_tvdb():
+            try:
+                translated = anime_mappings.get_tmdb_episode_from_tvdb(
+                    anime_mappings.fetch_mapping_data(),
+                    tvdb_id,
+                    media_id,
+                    season_number,
+                    episode_number,
+                )
+            except Exception as exc:  # pragma: no cover - defensive network guard
+                logger.warning(
+                    "Failed to fetch anime mappings for TVDB numbering: %s",
+                    exception_summary(exc),
+                )
+                translated = None
+            if translated is not None and translated != (season_number, episode_number):
+                tmdb_season, tmdb_episode = translated
+                logger.info(
+                    "Translated TVDB-numbered episode %s S%sE%s to TMDB S%sE%s",
+                    media_id,
+                    season_number,
+                    episode_number,
+                    tmdb_season,
+                    tmdb_episode,
+                )
+
         prefers_grouped_anime = _metadata_resolution.prefers_grouped_anime(user)
 
         grouped_anime_match = None
@@ -455,8 +493,8 @@ class BaseWebhookProcessor:
                 )
                 return self._handle_tv_episode(
                     media_id,
-                    season_number,
-                    episode_number,
+                    tmdb_season,
+                    tmdb_episode,
                     payload,
                     user,
                     library_media_type=MediaTypes.ANIME.value,
@@ -491,8 +529,8 @@ class BaseWebhookProcessor:
                 )
                 return self._handle_tv_episode(
                     media_id,
-                    season_number,
-                    episode_number,
+                    tmdb_season,
+                    tmdb_episode,
                     payload,
                     user,
                     library_media_type=existing_tv_item.library_media_type or None,
@@ -504,8 +542,8 @@ class BaseWebhookProcessor:
                     *self._get_mal_id_from_provider_links(
                         Sources.TMDB.value,
                         media_id,
-                        season_number,
-                        episode_number,
+                        tmdb_season,
+                        tmdb_episode,
                     ),
                 ),
                 (
@@ -633,8 +671,8 @@ class BaseWebhookProcessor:
                     )
                     return self._handle_tv_episode(
                         media_id,
-                        season_number,
-                        episode_number,
+                        tmdb_season,
+                        tmdb_episode,
                         payload,
                         user,
                         library_media_type=MediaTypes.ANIME.value,
@@ -669,8 +707,8 @@ class BaseWebhookProcessor:
                     )
                     return self._handle_tv_episode(
                         media_id,
-                        season_number,
-                        episode_number,
+                        tmdb_season,
+                        tmdb_episode,
                         payload,
                         user,
                         library_media_type=MediaTypes.ANIME.value,
@@ -704,8 +742,8 @@ class BaseWebhookProcessor:
         )
         return self._handle_tv_episode(
             media_id,
-            season_number,
-            episode_number,
+            tmdb_season,
+            tmdb_episode,
             payload,
             user,
             library_media_type=MediaTypes.TV.value if classified_not_anime else None,

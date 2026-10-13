@@ -2489,6 +2489,52 @@ class TestPlexIdentityAndScorePreservation(TestCase):
         self.assertEqual(record["tmdb_id"], "888")
         self.assertEqual((record["season_number"], record["episode_number"]), (2, 5))
 
+    @override_settings(ANIBRIDGE_MAPPING_DATA_OVERRIDE={
+        "tvdb_show:76906:s2": {"anilist:1138": {"1-26": "27-52"}},
+        "tmdb_show:888:s1": {"anilist:1138": {"1-52": "1-52"}, "mal:1138": {"1-52": "1-52"}},
+        "tmdb_show:888:s2": {"mal:4052": {"1-39": "1-39"}},
+    })
+    @patch("integrations.imports.plex.plex_api.fetch_metadata")
+    @patch(
+        "app.providers.tmdb.find",
+        return_value={"tv_results": [], "tv_episode_results": []},
+    )
+    def test_tvdb_season_that_tmdb_fills_differently_is_translated(
+        self,
+        _mock_find,
+        mock_fetch_metadata,
+    ):
+        """Plex S2E1 of Medabots is TMDB S1E27, though TMDB has an S2 too.
+
+        Regression: the play was filed as TMDB S2E1, which belongs to the
+        sequel, and pushed the sequel's MAL entry to 26.
+        """
+        mock_fetch_metadata.return_value = {
+            **self._show_metadata(),
+            "Guid": [{"id": "tmdb://888"}, {"id": "tvdb://76906"}],
+        }
+        importer = self._importer()
+        importer._current_section_uri = "http://plex"
+        ids = {
+            "tmdb_id": None,
+            "tvdb_id": "220131",
+            "imdb_id": None,
+            "anidb_id": None,
+            "plex_guid": None,
+        }
+
+        importer._record_episode_entry(
+            self._episode_row(grandparentRatingKey="gp1", parentIndex=2, index=1),
+            ids,
+        )
+
+        record = importer._episode_records[0]
+        self.assertEqual(record["tmdb_id"], "888")
+        self.assertEqual((record["season_number"], record["episode_number"]), (1, 27))
+        self.assertEqual(
+            (record["plex_season_number"], record["plex_episode_number"]), (2, 1),
+        )
+
 
     @patch("app.providers.tvdb.enabled", return_value=False)
     @patch(

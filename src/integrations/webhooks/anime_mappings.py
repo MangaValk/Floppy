@@ -189,6 +189,93 @@ def get_series_episode_from_mal(mapping_data, mal_id, mal_episode, provider="tmd
     return candidates.pop() if len(candidates) == 1 else None
 
 
+# Highest TMDB season probed when pivoting a TVDB episode onto a TMDB show.
+TMDB_SEASON_PROBE_LIMIT = 100
+
+
+def _one_to_one_target(ranges, episode):
+    """Map an episode through ranges that send it to exactly one target episode."""
+    candidates = set()
+    for source_range, target_range in (ranges or {"1-": "1-"}).items():
+        if "|" in target_range or "," in target_range:
+            continue
+        source_start, source_end = _parse_episode_range(source_range)
+        if episode < source_start or (source_end is not None and episode > source_end):
+            continue
+        candidates.add(_map_target_episode_number(target_range, episode - source_start))
+    return candidates.pop() if len(candidates) == 1 else None
+
+
+def _one_to_one_source(ranges, target_episode):
+    """Return the source episode that ranges map onto target_episode, if unique."""
+    candidates = set()
+    for source_range, target_range in (ranges or {"1-": "1-"}).items():
+        if "|" in target_range or "," in target_range:
+            continue
+        target_start, target_end = _parse_episode_range(target_range)
+        if target_episode < target_start or (
+            target_end is not None and target_episode > target_end
+        ):
+            continue
+        source_start, source_end = _parse_episode_range(source_range)
+        episode = source_start + target_episode - target_start
+        if source_end is None or episode <= source_end:
+            candidates.add(episode)
+    return candidates.pop() if len(candidates) == 1 else None
+
+
+def get_tmdb_episode_from_tvdb(mapping_data, tvdb_show_id, tmdb_show_id, season, episode):
+    """Return TMDB's (season, episode) for a TVDB-numbered episode, or None.
+
+    Plex follows TVDB numbering, which can differ from TMDB's even where both
+    have the season: TVDB splits Medabots' 52 episodes into S1 and S2, while
+    TMDB keeps them in S1 and puts Medabots Spirits in S2. A direct link to
+    the TMDB show wins; otherwise the episode pivots through the MAL or
+    AniList entry both sides map. AniDB is left out: its season links are
+    not reliable enough to move a watch. Only a single answer counts.
+    """
+    if not tvdb_show_id or not tmdb_show_id:
+        return None
+    try:
+        season, episode = int(season), int(episode)
+        targets = mapping_data.get(f"tvdb_show:{tvdb_show_id}:s{season}") or {}
+        tmdb_prefix = f"tmdb_show:{tmdb_show_id}:s"
+
+        direct = set()
+        for descriptor, ranges in targets.items():
+            if descriptor.startswith(tmdb_prefix):
+                mapped = _one_to_one_target(ranges, episode)
+                if mapped is not None:
+                    direct.add((int(descriptor[len(tmdb_prefix):]), mapped))
+        if direct:
+            return direct.pop() if len(direct) == 1 else None
+
+        tmdb_seasons = {
+            number: mapping_data[f"{tmdb_prefix}{number}"]
+            for number in range(TMDB_SEASON_PROBE_LIMIT)
+            if f"{tmdb_prefix}{number}" in mapping_data
+        }
+        for pivot in ("mal:", "anilist:"):
+            candidates = set()
+            for descriptor, ranges in targets.items():
+                if not descriptor.startswith(pivot) or "," in descriptor:
+                    continue
+                pivot_episode = _one_to_one_target(ranges, episode)
+                if pivot_episode is None:
+                    continue
+                for number, tmdb_targets in tmdb_seasons.items():
+                    if descriptor not in tmdb_targets:
+                        continue
+                    mapped = _one_to_one_source(tmdb_targets[descriptor], pivot_episode)
+                    if mapped is not None:
+                        candidates.add((number, mapped))
+            if candidates:
+                return candidates.pop() if len(candidates) == 1 else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return None
+
+
 def find_entries_for_mal_id(mapping_data, mal_id):
     """Find TVDB/TMDB provider link dicts for a given MAL ID (reverse lookup)."""
     results = []

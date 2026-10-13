@@ -1717,6 +1717,31 @@ class PlexHistoryImporter:
             # Don't log a warning yet; return False to allow fallback to Movie
             return False
 
+        # Plex's season can exist on TMDB yet hold different episodes (TVDB
+        # Medabots S2E1 is TMDB S1E27), which the missing-season remap never
+        # sees. A TMDB-numbered find result or a correction is already right;
+        # a cached match that only repeats Plex's numbers is not.
+        if not corrected and (found_season, found_episode) in {
+            (None, None),
+            (plex_season_number, plex_episode_number),
+        }:
+            try:
+                translated = anime_mappings.get_tmdb_episode_from_tvdb(
+                    anime_mappings.fetch_mapping_data(),
+                    show_ids.get("tvdb_id"),
+                    media_id,
+                    plex_season_number,
+                    plex_episode_number,
+                )
+            except Exception as exc:  # pragma: no cover - defensive network guard
+                logger.warning(
+                    "Failed to fetch anime mappings during Plex import: %s",
+                    exception_summary(exc),
+                )
+                translated = None
+            if translated is not None:
+                season_number, episode_number = translated
+
         season_number, episode_number = external_references.map_episode_coordinates(
             reference,
             season_number,

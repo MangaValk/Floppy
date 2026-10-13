@@ -926,6 +926,46 @@ class PlexWebhookTests(TestCase):
             ],
         }
 
+    @patch(
+        "integrations.webhooks.anime_mappings.fetch_mapping_data",
+        return_value={
+            "tvdb_show:76906:s2": {"anilist:1138": {"1-26": "27-52"}},
+            "tvdb_show:76906:s3": {"tmdb_show:11235:s2": {"1-39": "1-39"}},
+            "tmdb_show:11235:s1": {"anilist:1138": {"1-52": "1-52"}},
+        },
+    )
+    @patch.object(PlexWebhookProcessor, "_handle_tv_episode")
+    @patch.object(
+        PlexWebhookProcessor, "_find_tv_media_id", return_value=("11235", None, None),
+    )
+    @patch(
+        "app.providers.tmdb.tv_with_seasons",
+        return_value={"title": "Medabots", "tvdb_id": "76906"},
+    )
+    def test_tvdb_numbered_episode_is_filed_under_tmdb_numbering(
+        self, _tv_with_seasons, _find_tv_media_id, handle_tv_episode, _mapping_data,
+    ):
+        """Plex's Medabots S2 and S3 exist on TMDB but hold other episodes.
+
+        Regression: Plex S3E11 (Medabots Spirits) was filed as a local-only
+        TMDB S3E11, so it never reached the sequel's MAL entry.
+        """
+        self.user.anime_enabled = False
+        ids = {"tmdb_id": None, "tvdb_id": None, "imdb_id": None}
+        processor = PlexWebhookProcessor()
+
+        for plex_coordinates, tmdb_coordinates in (((2, 1), (1, 27)), ((3, 11), (2, 11))):
+            processor._process_tv(
+                self._rag_payload(*plex_coordinates), self.user, ids, *plex_coordinates,
+            )
+            self.assertEqual(handle_tv_episode.call_args.args[1:3], tmdb_coordinates)
+
+        processor._active_match_reference = ExternalReference(
+            review_status=ExternalReferenceReviewStatus.CORRECTED,
+        )
+        processor._process_tv(self._rag_payload(2, 1), self.user, ids, 2, 1)
+        self.assertEqual(handle_tv_episode.call_args.args[1:3], (2, 1))
+
     @patch("app.providers.tmdb.search", return_value={"results": []})
     @patch("app.providers.tmdb.find")
     @patch("app.providers.tmdb.tv_with_seasons")

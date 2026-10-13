@@ -2051,6 +2051,15 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             defer_cover_prefetch=bool(payload.get("_import_batch")),
         )
 
+    def _payload_numbering_is_tvdb(self):
+        """Plex numbers episodes the TVDB way; a user's correction is TMDB's."""
+        reference = getattr(self, "_active_match_reference", None)
+        return not (
+            reference is not None
+            and reference.review_status
+            == external_references.ExternalReferenceReviewStatus.CORRECTED
+        )
+
     def _extract_season_episode_from_payload(self, payload):
         """Extract season and episode numbers from Plex payload."""
         metadata = payload.get("Metadata", {})
