@@ -16,6 +16,7 @@ from django.core.cache import cache
 from django.db import models
 from django.utils import timezone
 
+from app.models.choices import Sources
 from app.providers import services
 from integrations import connection_health, mal_sync
 from integrations.models import STALE_FULL_SYNC_AGE, MALAccount, MALFullSyncStatus
@@ -195,6 +196,27 @@ def sync_mal_status(media_type, media_id, clear_score=False):
             mal_sync.grouped_sync_entries(media.user, tv=media)
             if media_type == "tv" else [media]
         )
+        if media_type == "tv":
+            # Push the row full sync would push: a flat row for the same MAL
+            # entry with at least the cour's count speaks for it, so episode
+            # history with gaps can't lower a completed MAL entry.
+            flat_rows = {}
+            for row in apps.get_model("app", "anime").objects.filter(
+                user=media.user,
+                item__source=Sources.MAL.value,
+                item__media_id__in=[str(entry.item.media_id) for entry in entries],
+                status__isnull=False,
+            ).select_related("item"):
+                best = flat_rows.get(row.item.media_id)
+                if best is None or (row.progress or 0) > (best.progress or 0):
+                    flat_rows[row.item.media_id] = row
+            entries = [
+                flat_rows[entry.item.media_id]
+                if entry.item.media_id in flat_rows
+                and (flat_rows[entry.item.media_id].progress or 0) >= (entry.progress or 0)
+                else entry
+                for entry in entries
+            ]
     except mal_sync.MALAuthError as error:
         _mark_connection_broken(mal_account, error)
         return

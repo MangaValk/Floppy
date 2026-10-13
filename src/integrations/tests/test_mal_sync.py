@@ -2265,6 +2265,63 @@ class GroupedMALSync(TestCase):
         entries.assert_called_once_with(self.user, tv=self.show)
         push.assert_called_once_with(entries.return_value[0], self.account, clear_score=False)
 
+    def _projected_cour(self, mal_id, progress):
+        return Anime(
+            user=self.user,
+            item=Item(
+                media_id=mal_id, source=Sources.MAL.value,
+                media_type=MediaTypes.ANIME.value, title="Cour",
+            ),
+            status=Status.IN_PROGRESS.value,
+            progress=progress,
+        )
+
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_per_item_task_pushes_a_higher_flat_row_like_full_sync(self, entries, push):
+        """Episode history with gaps doesn't lower a completed MAL entry.
+
+        Regression: after a Plex import, the per-show push sent 43 of 52
+        for a show whose flat MAL row was completed, and the next full sync
+        put it back to 52.
+        """
+        item = Item.objects.create(
+            media_id="1138", source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value, title="Medabots",
+        )
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            completed = Anime.objects.create(
+                user=self.user, item=item,
+                status=Status.COMPLETED.value, progress=52,
+            )
+        other_cour = self._projected_cour("4052", 10)
+        entries.return_value = [self._projected_cour("1138", 43), other_cour]
+
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+
+        self.assertEqual(
+            [call.args[0] for call in push.call_args_list], [completed, other_cour],
+        )
+
+    @patch("integrations.mal_sync.push_status")
+    @patch("integrations.mal_sync.grouped_sync_entries")
+    def test_per_item_task_keeps_a_cour_ahead_of_its_flat_row(self, entries, push):
+        item = Item.objects.create(
+            media_id="4052", source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value, title="Medarot Damashii",
+        )
+        with patch("integrations.tasks.sync_mal_status.delay"):
+            Anime.objects.create(
+                user=self.user, item=item,
+                status=Status.PAUSED.value, progress=5,
+            )
+        cour = self._projected_cour("4052", 10)
+        entries.return_value = [cour]
+
+        tasks.sync_mal_status(media_type="tv", media_id=self.show.pk)
+
+        push.assert_called_once_with(cour, self.account, clear_score=False)
+
     @patch("integrations.mal_sync.push_status")
     @patch("integrations.mal_sync.grouped_sync_entries")
     def test_rejected_cour_does_not_block_the_next_one(self, entries, push):
