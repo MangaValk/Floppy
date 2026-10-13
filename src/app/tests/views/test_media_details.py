@@ -4471,6 +4471,7 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertContains(response, 'aria-label="More tracking actions"', html=False)
         self.assertContains(response, "Add new entry")
+        self.assertContains(response, "Check-in")
         self.assertContains(response, '"is_create": true', html=False)
         self.assertNotContains(response, "Your History")
         self.assertNotContains(response, "FIRST PLAYED")

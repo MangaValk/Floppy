@@ -23,6 +23,7 @@ from app import helpers
 from app.discover import tab_cache as discover_tab_cache
 from app.models import Item, MediaTypes
 from app.providers import services
+from integrations.imports.helpers import find_item_across_buckets
 from lists.models import (
     CustomList,
     CustomListItem,
@@ -33,6 +34,7 @@ from lists.views_helpers import (
     _extract_list_search_results,
     _list_item_title_fields_from_metadata,
     _maybe_backfill_episode_title,
+    list_has_item_identity,
 )
 
 logger = logging.getLogger(__name__)
@@ -284,16 +286,17 @@ def add_list_item_submit(request, list_id):
     season_number = int(season_number) if season_number else None
     episode_number = int(episode_number) if episode_number else None
 
-    try:
-        item = Item.objects.get(
-            media_id=media_id,
-            source=source,
-            media_type=media_type,
-            season_number=season_number,
-            episode_number=episode_number,
-        )
+    item = find_item_across_buckets(
+        user=request.user,
+        media_id=media_id,
+        source=source,
+        media_type=media_type,
+        season_number=season_number,
+        episode_number=episode_number,
+    )
+    if item is not None:
         _maybe_backfill_episode_title(item, force=True)
-    except Item.DoesNotExist:
+    else:
         metadata = services.get_media_metadata(
             media_type,
             media_id,
@@ -318,7 +321,7 @@ def add_list_item_submit(request, list_id):
         fallback_media_type=item.media_type,
     )
 
-    if custom_list.items.filter(id=item.id).exists():
+    if list_has_item_identity(custom_list, item):
         messages.info(
             request,
             gettext('"%(value_1)s" is already in this list.') % {"value_1": item.title},
@@ -395,7 +398,14 @@ def apply_reorder_action(custom_list, item_id, action):
 
 
 def apply_full_order(custom_list, item_ids):
-    """Reorder items by an ordered ID list; returns an HTTP status code."""
+    """Reorder items by an ordered ID list; returns an HTTP status code.
+
+    ``item_ids`` are ``Item`` ids and may name every item in the list or only
+    a subset: the submitted items take the slots they already occupy, in the
+    submitted order, and the others stay where they are. A duplicate, or an id
+    that is not in this list, rejects the whole request with 400 and changes
+    nothing.
+    """
     if not item_ids:
         return 400
 
@@ -404,20 +414,20 @@ def apply_full_order(custom_list, item_ids):
             "date_added", "id"
         ),
     )
-    submitted_set = {str(i) for i in item_ids}
+    submitted = [str(i) for i in item_ids]
     item_map = {str(li.item_id): li for li in all_items}
+    submitted_set = set(submitted)
+    if len(submitted_set) != len(submitted) or not submitted_set <= set(item_map):
+        return 400
 
     # Positions in the full list currently occupied by the submitted subset
     original_positions = sorted(
         i for i, li in enumerate(all_items) if str(li.item_id) in submitted_set
     )
-    if not original_positions:
-        return 400
 
     # Place submitted items in their new DnD order at those same positions
-    for pos, item_id in zip(original_positions, item_ids, strict=False):
-        if str(item_id) in item_map:
-            all_items[pos] = item_map[str(item_id)]
+    for pos, item_id in zip(original_positions, submitted, strict=True):
+        all_items[pos] = item_map[item_id]
 
     base_time = timezone.now().replace(microsecond=0)
     for index, li in enumerate(all_items):

@@ -382,8 +382,6 @@ EXPECTED_SCHEMA_ERRORS: frozenset[SchemaFinding] = frozenset(
         ("api.fork_views_integrations.ImportDispatchView", "serializer-unresolved"),
         ("api.fork_views_lists.ListActivityView", "serializer-unresolved"),
         ("api.fork_views_lists.ListCollaboratorsView", "serializer-unresolved"),
-        ("api.fork_views_lists.ListItemsOrderView", "serializer-unresolved"),
-        ("api.fork_views_lists.ListItemsReorderView", "serializer-unresolved"),
         (
             "api.fork_views_lists.ListRecommendationDecisionView",
             "serializer-unresolved",
