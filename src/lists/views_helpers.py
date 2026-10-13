@@ -613,17 +613,20 @@ def _resolve_list_table_media_type(selected_media_types, filtered_media_types):
 
 
 def _get_trakt_credentials(user):
-    """Return decrypted Trakt client credentials for a user, if configured."""
+    """Return decrypted Trakt ``(client_id, client_secret)`` for a user, if set.
+
+    The secret is empty for a PKCE app, which has none.
+    """
     trakt_account = TraktAccount.objects.filter(user=user).first()
-    if (
-        not trakt_account
-        or not trakt_account.client_id
-        or not trakt_account.client_secret
-    ):
+    if not trakt_account or not trakt_account.client_id:
         return None
     try:
         client_id = import_helpers.decrypt(trakt_account.client_id)
-        client_secret = import_helpers.decrypt(trakt_account.client_secret)
+        client_secret = (
+            import_helpers.decrypt(trakt_account.client_secret)
+            if trakt_account.client_secret
+            else ""
+        )
     except Exception:
         logger.exception(
             "Failed to decrypt Trakt credentials for user %s", user.username
