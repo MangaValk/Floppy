@@ -226,6 +226,11 @@ class MediaDetailsViewTests(TestCase):
         self.assertTemplateUsed(response, "app/media_details.html")
         self.assertContains(response, 'id="detail-secondary-content"', html=False)
         self.assertContains(response, "fragment=secondary")
+        # The loading placeholder stacks like the real content (metadata first on phones).
+        self.assertContains(
+            response, "detail-secondary-layout flex flex-col md:flex-row", html=False
+        )
+        self.assertNotContains(response, "flex-col-reverse", html=False)
         self.assertNotContains(response, "Your Notes")
         self.assertNotContains(
             response, '<h2 class="text-xl font-bold">Collection</h2>', html=False
@@ -1009,7 +1014,7 @@ class MediaDetailsViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
         self.assertIn(
-            'class="detail-secondary-layout flex flex-col-reverse md:flex-row gap-0 md:gap-10"', content
+            'class="detail-secondary-layout flex flex-col md:flex-row gap-6 md:gap-10"', content
         )
         self.assertIn('class="detail-media-grid"', content)
         self.assertIn("window.matchMedia('(max-width: 768px)').matches", content)
@@ -1020,6 +1025,12 @@ class MediaDetailsViewTests(TestCase):
             'class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"', content
         )
         self.assertIn('class="w-full md:w-3/4"', content)
+        # Phones stack in DOM order: the metadata column comes before the content column.
+        self.assertNotIn("flex-col-reverse", content)
+        self.assertLess(
+            content.index('class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"'),
+            content.index('class="w-full md:w-3/4"'),
+        )
         self.assertIn(
             'class="mt-4 inline-flex text-sm font-medium text-[var(--color-link)] hover:text-[var(--color-link-hover)] focus:outline-none transition-colors cursor-pointer md:hidden"',
             content,
