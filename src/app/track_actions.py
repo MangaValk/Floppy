@@ -7,7 +7,7 @@ needs no template change.
 
 from django.utils.translation import gettext as _
 
-from app import checkin
+from app import checkin, checkin_session
 from app.models import MediaTypes, Status
 
 # Every play is its own entry, so adding one is always the forward action.
@@ -34,8 +34,15 @@ def track_actions(media_type, status, checkin_phase=None):
     """
     edit = {"key": "edit", "label": _("Edit"), "icon": "edit"}
     add_entry = {"key": "create", "label": _("Add new entry"), "icon": "plus"}
+    if checkin_phase is not None and checkin_phase.get("kind") == "session":
+        return _session_actions(media_type, status, checkin_phase, edit, add_entry)
     if checkin_phase is not None:
-        start = {"key": "start", "label": _("Check-in"), "icon": "play"}
+        code = checkin_phase.get("code", "")
+        start = {
+            "key": "start",
+            "label": _("Check-in %(code)s") % {"code": code} if code else _("Check-in"),
+            "icon": "play",
+        }
         phase = checkin_phase["phase"]
         if phase == checkin.PHASE_ACTIVE:
             return [
@@ -52,10 +59,16 @@ def track_actions(media_type, status, checkin_phase=None):
             ]
         if phase == checkin.PHASE_PAUSED:
             return [
-                {"key": "resume", "label": _("Resume"), "icon": "play"},
+                {
+                    "key": "resume",
+                    "label": _("Resume %(code)s") % {"code": code}
+                    if code
+                    else _("Resume"),
+                    "icon": "play",
+                },
                 edit,
             ]
-        if status == Status.COMPLETED.value:
+        if status == Status.COMPLETED.value and media_type == MediaTypes.MOVIE.value:
             return [add_entry, start, edit]
         return [start, edit]
     if media_type in ALWAYS_ADD_ENTRY or (
@@ -63,3 +76,29 @@ def track_actions(media_type, status, checkin_phase=None):
     ):
         return [add_entry, edit]
     return [edit]
+
+
+def _session_actions(media_type, status, checkin_phase, edit, add_entry):
+    """Return the actions for a type that is checked in as a session."""
+    if checkin_phase["phase"] == checkin_session.PHASE_SESSION:
+        stop = {"key": "stop", "label": _("Stop"), "icon": "stop"}
+        if media_type in checkin_session.READING:
+            # Only the reader knows the pages, so Stop hands over to the edit dialog.
+            stop["then"] = "edit"
+        return [
+            stop,
+            {"key": "cancel", "label": _("Cancel check-in"), "icon": "x"},
+            edit,
+        ]
+    start = {"key": "start", "label": _("Check-in"), "icon": "play"}
+    if media_type == MediaTypes.BOARDGAME.value:
+        return [
+            {"key": "log_play", "label": _("Log a play"), "icon": "plus"},
+            start,
+            edit,
+        ]
+    if media_type in ALWAYS_ADD_ENTRY or (
+        media_type in ADD_ENTRY_WHEN_COMPLETED and status == Status.COMPLETED.value
+    ):
+        return [add_entry, start, edit]
+    return [start, edit]
