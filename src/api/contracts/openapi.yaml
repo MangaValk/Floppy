@@ -646,6 +646,14 @@ paths:
           type: string
           pattern: ^\d+$
         required: true
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: Order of the entries. Omit for the list's custom order (see PUT
+          .../items/order/). `rank` or `rank_desc` orders by each entry's rank (see
+          PUT .../items/ranks/), unranked last, ties in custom order. Other values
+          are the media sort keys.
       tags:
       - api
       security:

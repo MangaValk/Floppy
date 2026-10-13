@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus as HTTP  # noqa: N814
 
-from django.db.models import Count, OuterRef, Subquery
+from django.db.models import Count, F, OuterRef, Subquery
 from django.utils.dateparse import parse_date
 from django.utils.timezone import localdate
 from rest_framework.response import Response
@@ -568,7 +568,18 @@ def paginate_list_items(request, user, user_list):
     sort_filter = request.GET.get("sort", "")
     if sort_filter:
         sort, sort_order = parse_sort_filter(sort_filter)
-        if sort not in get_sorts(None, sort_type="all"):
+        if sort == "rank" and sort_order in {"", "asc", "desc"}:
+            # Ranked items first (unranked last), ties in the list's own order.
+            rank_order = F("customlistitem__rank")
+            items = items.order_by(
+                rank_order.desc(nulls_last=True)
+                if sort_order == "desc"
+                else rank_order.asc(nulls_last=True),
+                "customlistitem__date_added",
+                "customlistitem__pk",
+            )
+            sort = sort_order = None
+        elif sort not in get_sorts(None, sort_type="all"):
             return None, Response(
                 {"detail": "Invalid sorting"},
                 status=HTTP.NOT_FOUND,

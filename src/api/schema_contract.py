@@ -470,7 +470,6 @@ EXPECTED_SCHEMA_ERRORS: frozenset[SchemaFinding] = frozenset(
         ("api.views.InfoView", "serializer-unresolved"),
         ("api.views.ListDetailView", "serializer-unresolved"),
         ("api.views.ListItemView", "serializer-unresolved"),
-        ("api.views.ListItemsView", "serializer-unresolved"),
         ("api.views.ListsView", "serializer-unresolved"),
         ("api.views.MediaChangesHistoryView", "serializer-unresolved"),
         ("api.views.MediaEpisodeListDetailView", "serializer-unresolved"),

@@ -315,7 +315,9 @@ class ReorderTests(FloppyApiTestCase):
                 self.assertEqual(response.status_code, HTTP.BAD_REQUEST)
                 self.assertIn("errors", response.json())
 
-        response = self._post_reorder(favorites, {"item_id": foreign, "action": "first"})
+        response = self._post_reorder(
+            favorites, {"item_id": foreign, "action": "first"}
+        )
 
         self.assertEqual(response.status_code, HTTP.NOT_FOUND)
         self.assertEqual(self._ordered_item_ids(favorites), original)
@@ -369,6 +371,231 @@ class ReorderSchemaTests(SimpleTestCase):
         self.assertIn("204", operation["responses"])
         for status in ("400", "401", "403", "404"):
             self.assertIn(status, operation["responses"])
+
+
+class RankTests(FloppyApiTestCase):
+    """Per-list item ranks: set, clear, read, sort."""
+
+    def setUp(self):
+        """Use the seeded three-item list and a second list for foreign ids."""
+        super().setUp()
+        self.favorites = self.lists_by_name["favorites"]
+        self.ids = [
+            entry.item_id
+            for entry in CustomListItem.objects.filter(
+                custom_list=self.favorites,
+            ).order_by("date_added", "id")
+        ]
+        self.foreign = (
+            CustomListItem.objects.filter(
+                custom_list=self.lists_by_name["watching"],
+            )
+            .first()
+            .item_id
+        )
+
+    def _put_ranks(self, payload, custom_list=None, headers=None):
+        return self.call_api(
+            "put",
+            "api_list_items_ranks",
+            args=((custom_list or self.favorites).id,),
+            payload=payload,
+            headers=headers or self.auth_headers,
+        )
+
+    def _ranks(self):
+        return {
+            entry.item_id: entry.rank
+            for entry in CustomListItem.objects.filter(custom_list=self.favorites)
+        }
+
+    def _get_items(self, query=""):
+        response = self.client.get(
+            f"/api/v1/lists/{self.favorites.id}/items/{query}",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, HTTP.OK)
+        return response.json()["results"]
+
+    def test_existing_lists_have_no_ranks(self):
+        """Nothing is ranked until someone ranks it, and order is unchanged."""
+        self.assertEqual(set(self._ranks().values()), {None})
+        results = self._get_items()
+        self.assertEqual([entry["id"] for entry in results], self.ids)
+        self.assertEqual({entry["rank"] for entry in results}, {None})
+
+    def test_set_ranks_partially_and_keep_the_custom_order(self):
+        """Sparse ranks save, other items stay unranked, order does not move."""
+        response = self._put_ranks(
+            {
+                "ranks": [
+                    {"item_id": self.ids[0], "rank": 81},
+                    {"item_id": str(self.ids[2]), "rank": 100},
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, HTTP.NO_CONTENT)
+        self.assertEqual(
+            self._ranks(),
+            {self.ids[0]: 81, self.ids[1]: None, self.ids[2]: 100},
+        )
+        results = self._get_items()
+        self.assertEqual([entry["id"] for entry in results], self.ids)
+        self.assertEqual([entry["rank"] for entry in results], [81, None, 100])
+
+    def test_later_call_adds_ranks_and_null_clears(self):
+        """A second call changes only what it lists; null clears a rank."""
+        self._put_ranks({"ranks": [{"item_id": self.ids[0], "rank": 81}]})
+
+        response = self._put_ranks(
+            {
+                "ranks": [
+                    {"item_id": self.ids[1], "rank": 5},
+                    {"item_id": self.ids[0], "rank": None},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, HTTP.NO_CONTENT)
+        self.assertEqual(
+            self._ranks(),
+            {self.ids[0]: None, self.ids[1]: 5, self.ids[2]: None},
+        )
+
+    def test_sort_by_rank_puts_unranked_last_and_reverses(self):
+        """sort=rank is ascending with unranked last; rank_desc reverses."""
+        self._put_ranks(
+            {
+                "ranks": [
+                    {"item_id": self.ids[0], "rank": 90},
+                    {"item_id": self.ids[2], "rank": 81},
+                ],
+            },
+        )
+
+        ascending = [entry["id"] for entry in self._get_items("?sort=rank")]
+        descending = [entry["id"] for entry in self._get_items("?sort=rank_desc")]
+
+        self.assertEqual(ascending, [self.ids[2], self.ids[0], self.ids[1]])
+        self.assertEqual(descending, [self.ids[0], self.ids[2], self.ids[1]])
+
+    def test_tied_ranks_keep_the_custom_order(self):
+        """Items that share a rank stay in the list's own order."""
+        self._put_ranks(
+            {
+                "ranks": [
+                    {"item_id": self.ids[2], "rank": 7},
+                    {"item_id": self.ids[0], "rank": 7},
+                ],
+            },
+        )
+
+        results = self._get_items("?sort=rank")
+
+        self.assertEqual(
+            [entry["id"] for entry in results],
+            [self.ids[0], self.ids[2], self.ids[1]],
+        )
+
+    def test_unknown_sort_is_still_rejected(self):
+        """Adding the rank sort does not loosen sort validation."""
+        response = self.client.get(
+            f"/api/v1/lists/{self.favorites.id}/items/?sort=nonsense",
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, HTTP.NOT_FOUND)
+
+    def test_invalid_requests_change_nothing(self):
+        """Malformed bodies, repeats and foreign ids are 400 and all-or-none."""
+        good = {"item_id": self.ids[0], "rank": 3}
+        cases = {
+            "missing": {},
+            "empty": {"ranks": []},
+            "not a list": {"ranks": good},
+            "zero rank": {"ranks": [{"item_id": self.ids[0], "rank": 0}]},
+            "text rank": {"ranks": [{"item_id": self.ids[0], "rank": "high"}]},
+            "no rank": {"ranks": [{"item_id": self.ids[0]}]},
+            "no item": {"ranks": [{"rank": 3}]},
+            "repeated item": {"ranks": [good, {"item_id": self.ids[0], "rank": 4}]},
+            "foreign item": {"ranks": [good, {"item_id": self.foreign, "rank": 4}]},
+            "unknown item": {"ranks": [good, {"item_id": 999999, "rank": 4}]},
+        }
+        for label, payload in cases.items():
+            with self.subTest(label):
+                response = self._put_ranks(payload)
+
+                self.assertEqual(response.status_code, HTTP.BAD_REQUEST)
+                self.assertIn("detail", response.json())
+                self.assertEqual(set(self._ranks().values()), {None})
+
+    def test_no_access_is_not_found(self):
+        """A list the caller cannot see answers 404 and stays unranked."""
+        response = self._put_ranks(
+            {"ranks": [{"item_id": self.ids[0], "rank": 1}]},
+            headers={"HTTP_X_API_KEY": self.user2.token},
+        )
+
+        self.assertEqual(response.status_code, HTTP.NOT_FOUND)
+        self.assertEqual(set(self._ranks().values()), {None})
+
+    def test_removing_and_readding_an_item_drops_its_rank(self):
+        """Rank belongs to the list entry, so it leaves with the entry."""
+        self._put_ranks({"ranks": [{"item_id": self.ids[0], "rank": 81}]})
+
+        CustomListItem.objects.filter(
+            custom_list=self.favorites,
+            item_id=self.ids[0],
+        ).delete()
+        CustomListItem.objects.create(custom_list=self.favorites, item_id=self.ids[0])
+
+        self.assertIsNone(self._ranks()[self.ids[0]])
+
+
+class RankSchemaTests(SimpleTestCase):
+    """The published schema describes ranks and the rank sort."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Generate the schema served at /api/schema/ once."""
+        super().setUpClass()
+        cls.schema = generate_schema_contract().schema
+
+    def test_ranks_request_body_is_documented(self):
+        """PUT ranks requires a nonempty list of item_id/rank pairs."""
+        operation = self.schema["paths"]["/api/v1/lists/{list_id}/items/ranks/"]["put"]
+        content = operation["requestBody"]["content"]["application/json"]
+        components = self.schema["components"]["schemas"]
+        body = components[content["schema"]["$ref"].rsplit("/", 1)[-1]]
+        ranks = body["properties"]["ranks"]
+        pair = components[ranks["items"]["$ref"].rsplit("/", 1)[-1]]
+
+        self.assertEqual(body["required"], ["ranks"])
+        self.assertEqual(ranks["minItems"], 1)
+        self.assertEqual(sorted(pair["required"]), ["item_id", "rank"])
+        self.assertTrue(pair["properties"]["rank"]["nullable"])
+        self.assertEqual(pair["properties"]["rank"]["minimum"], 1)
+        for status in ("204", "400", "401", "403", "404"):
+            self.assertIn(status, operation["responses"])
+
+    def test_list_items_response_documents_rank_and_sort(self):
+        """GET items lists `rank` on each entry and the `sort` parameter."""
+        operation = self.schema["paths"]["/api/v1/lists/{list_id}/items/"]["get"]
+        components = self.schema["components"]["schemas"]
+        envelope = components[
+            operation["responses"]["200"]["content"]["application/json"]["schema"][
+                "$ref"
+            ].rsplit("/", 1)[-1]
+        ]
+        entry = components[
+            envelope["properties"]["results"]["items"]["$ref"].rsplit("/", 1)[-1]
+        ]
+        sort = next(p for p in operation["parameters"] if p["name"] == "sort")
+
+        self.assertIn("rank", entry["properties"])
+        self.assertTrue(entry["properties"]["rank"]["nullable"])
+        self.assertIn("rank_desc", sort["description"])
 
 
 class RecommendationTests(FloppyApiTestCase):
