@@ -141,6 +141,35 @@ class TrackModalViewTests(TestCase):
             count,
         )
 
+    def test_focus_notes_opens_and_focuses_the_notes_field(self):
+        """focus=notes (the detail-page Notes button) opens the collapsed notes field."""
+        url = reverse(
+            "track_modal",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.MOVIE.value,
+                "media_id": "238",
+            },
+        )
+
+        focused = self.client.get(
+            url,
+            {"instance_id": self.movie.id, "focus": "notes"},
+            HTTP_HX_REQUEST="true",
+        )
+        plain = self.client.get(
+            url,
+            {"instance_id": self.movie.id},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertTrue(focused.context["notes_focus"])
+        self.assertContains(focused, "notesOpen: true")
+        self.assertContains(focused, "textarea[name=notes]")
+        self.assertFalse(plain.context["notes_focus"])
+        self.assertContains(plain, "notesOpen: false")
+        self.assertNotContains(plain, "textarea[name=notes]")
+
     @patch("app.services.metadata_resolution.ItemProviderLink.objects.update_or_create")
     def test_existing_tv_modal_does_not_write_provider_links(self, upsert):
         """Opening a home card editor must not wait on optional persistence."""

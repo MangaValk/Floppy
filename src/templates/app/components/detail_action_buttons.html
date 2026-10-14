@@ -55,7 +55,7 @@
             {% endif %}
           </div>
 
-          <div class="flex w-full items-center gap-2 md:w-auto md:flex-wrap">
+          <div class="grid w-full grid-cols-[repeat(auto-fit,minmax(2.75rem,1fr))] items-center gap-2 md:flex md:w-auto md:flex-wrap">
             {% if detail_link_sections %}
               <div x-data="{ linksOpen: false, linksPinned: false }"
                    class="relative z-40 flex-1 md:flex-none"
@@ -163,6 +163,35 @@
               </div>
               </template>
             </div>
+
+            {# Podcast shows keep notes in their own tracker modal, so they have no Notes button here. #}
+            {% if not podcast_show %}
+              <div x-data="{ trackOpen: false }" class="flex-1 md:flex-none">
+                <button type="button"
+                        class="inline-flex h-11 w-full items-center justify-center rounded-xl border border-[var(--color-surface-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm transition-colors duration-200 hover:bg-[var(--color-surface-muted)] cursor-pointer md:size-11 md:w-11"
+                        title="{% translate "Add or edit notes" %}"
+                        aria-label="{% translate "Add or edit notes" %}"
+                        hx-get="{% media_view_url 'track_modal' media %}"
+                        hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "focus": "notes", "track_action_update": "1"{% if current_instance %}, "instance_id": "{{ current_instance.id }}"{% endif %}{% if hardcover_edition_id %}, "edition_id": "{{ hardcover_edition_id }}"{% endif %}}'
+                        hx-target="#{% component_id 'notes-track' media %}"
+                        hx-trigger="click"
+                        @click="trackOpen = true">{% include "app/icons/page.svg" with classes="w-4 h-4" %}</button>
+
+                <template x-teleport="body">
+                <div x-show="trackOpen"
+                @mousedown.self="trackOpen = false"
+                     x-cloak
+                     @keydown.escape.window="trackOpen = false"
+                     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div class="modal-max-height overflow-y-auto px-4 md:px-0 relative z-60 w-full"
+                       style="width: min(96vw, 72rem)"
+                       @click.stop>
+                    <div id="{% component_id 'notes-track' media %}"></div>
+                  </div>
+                </div>
+                </template>
+              </div>
+            {% endif %}
 
             <div x-data="{ listsOpen: false }" class="flex-1 md:flex-none">
               <button class="inline-flex h-11 w-full items-center justify-center rounded-xl border border-[var(--color-surface-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm transition-colors duration-200 hover:bg-[var(--color-surface-muted)] cursor-pointer md:size-11 md:w-11"

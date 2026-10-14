@@ -414,6 +414,9 @@
   .bottom-2 {
     bottom: calc(var(--spacing) * 2);
   }
+  .bottom-3 {
+    bottom: calc(var(--spacing) * 3);
+  }
   .bottom-6 {
     bottom: calc(var(--spacing) * 6);
   }
@@ -1306,6 +1309,9 @@
   .grid-cols-\[repeat\(auto-fill\,minmax\(150px\,1fr\)\)\] {
     grid-template-columns: repeat(auto-fill,minmax(150px,1fr));
   }
+  .grid-cols-\[repeat\(auto-fit\,minmax\(2\.75rem\,1fr\)\)\] {
+    grid-template-columns: repeat(auto-fit,minmax(2.75rem,1fr));
+  }
   .grid-rows-3 {
     grid-template-rows: repeat(3, minmax(0, 1fr));
   }
@@ -1939,6 +1945,18 @@
       border-color: color-mix(in oklab, var(--color-orange-400) 28%, transparent);
     }
   }
+  .border-red-400\/18 {
+    border-color: color-mix(in srgb, oklch(70.4% 0.191 22.216) 18%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-red-400) 18%, transparent);
+    }
+  }
+  .border-red-400\/28 {
+    border-color: color-mix(in srgb, oklch(70.4% 0.191 22.216) 28%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-red-400) 28%, transparent);
+    }
+  }
   .border-red-400\/30 {
     border-color: color-mix(in srgb, oklch(70.4% 0.191 22.216) 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -2500,6 +2518,12 @@
   .bg-indigo-600 {
     background-color: var(--color-indigo-600);
   }
+  .bg-indigo-600\/15 {
+    background-color: color-mix(in srgb, oklch(51.1% 0.262 276.966) 15%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-indigo-600) 15%, transparent);
+    }
+  }
   .bg-indigo-600\/20 {
     background-color: color-mix(in srgb, oklch(51.1% 0.262 276.966) 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -2576,6 +2600,18 @@
     background-color: color-mix(in srgb, oklch(63.7% 0.237 25.331) 10%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-red-500) 10%, transparent);
+    }
+  }
+  .bg-red-500\/14 {
+    background-color: color-mix(in srgb, oklch(63.7% 0.237 25.331) 14%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-red-500) 14%, transparent);
+    }
+  }
+  .bg-red-500\/\[0\.07\] {
+    background-color: color-mix(in srgb, oklch(63.7% 0.237 25.331) 7.000000000000001%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-red-500) 7.000000000000001%, transparent);
     }
   }
   .bg-red-600 {
