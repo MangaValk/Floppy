@@ -63,7 +63,6 @@ from integrations import (
     stremio_catalog,
     stremio_events,
     stremio_queue,
-    stremio_tracker,
     tasks,
     xbox_api,
 )
@@ -5538,6 +5537,27 @@ def stremio_addon_subtitles(request, token, media_type, media_id, extra=None, co
     return _stremio_addon_response({"subtitles": []})
 
 
+def _dispatch_stremio_tracker_event(kind, user, media_type, media_id, extra):
+    """Queue one player or library event so the web worker never does its writes.
+
+    A first-viewed episode can ask the provider for season metadata and a batched
+    library event writes up to a hundred rows, so both run on the Celery worker.
+    Stremio ignores the body and a 500 only makes the client retry, so a dispatch
+    failure is logged and accepted.
+    """
+    try:
+        tasks.process_stremio_tracker_event.delay(
+            kind,
+            user.id,
+            media_type,
+            media_id,
+            extra,
+            timezone.now().isoformat(),
+        )
+    except Exception:
+        logger.exception("stremio_%s status=dispatch_failed user_id=%s", kind, user.id)
+
+
 @login_not_required
 @csrf_exempt
 @require_GET
@@ -5561,12 +5581,7 @@ def stremio_addon_player(
         return validated
     user, _grant, media_id = validated
 
-    try:
-        stremio_tracker.record_player_event(user, media_type, media_id, extra)
-    except Exception:
-        # Stremio ignores the body; a 500 only makes the client retry and
-        # achieves nothing. Log and accept.
-        logger.exception("stremio_player status=handler_failed user_id=%s", user.id)
+    _dispatch_stremio_tracker_event("player", user, media_type, media_id, extra)
 
     return _stremio_addon_response({"success": True})
 
@@ -5594,12 +5609,7 @@ def stremio_addon_library(
         return validated
     user, _grant, media_id = validated
 
-    try:
-        stremio_tracker.record_library_event(user, media_type, media_id, extra)
-    except Exception:
-        # Stremio ignores the body; a 500 only makes the client retry and
-        # achieves nothing. Log and accept.
-        logger.exception("stremio_library status=handler_failed user_id=%s", user.id)
+    _dispatch_stremio_tracker_event("library", user, media_type, media_id, extra)
 
     return _stremio_addon_response({"success": True})
 

@@ -146,6 +146,7 @@ _EXPORT_MODULES = {
         (
             "WEBHOOK_PROCESSORS",
             "_webhook_history_user",
+            "process_stremio_tracker_event",
             "process_stremio_webhook",
             "process_webhook",
             "verify_stremio_playback",
@@ -279,6 +280,7 @@ __all__ = [
     "poll_all_lastfm_scrobbles",
     "poll_koito_for_user",
     "poll_lastfm_for_user",
+    "process_stremio_tracker_event",
     "process_stremio_webhook",
     "process_webhook",
     "pull_jellyfin_history",
