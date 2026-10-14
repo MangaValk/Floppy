@@ -76,3 +76,25 @@ class ItemRankTests(TestCase):
             "rank",
             [value for value, _ in response.context["sort_choices"]],
         )
+
+
+class SortButtonTests(TestCase):
+    """The sort control looks like the other filters, for Custom too."""
+
+    def setUp(self):
+        """Create an owner with an empty list."""
+        self.owner = get_user_model().objects.create_user(
+            username="owner",
+            password="12345",
+        )
+        self.custom_list = CustomList.objects.create(name="Top 100", owner=self.owner)
+        self.client.force_login(self.owner)
+        self.url = reverse("list_detail", args=[self.custom_list.public_reference])
+
+    def test_custom_sort_is_not_a_filled_split_button(self):
+        """Editing the order is a menu entry, not a coloured second button."""
+        html = self.client.get(self.url, {"layout": "grid"}).content.decode()
+
+        self.assertNotIn("Custom sort options", html)
+        self.assertNotIn("rounded-l-md bg-indigo-600", html)
+        self.assertEqual(html.count("Edit Item Order"), 1)
