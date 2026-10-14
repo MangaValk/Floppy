@@ -5,6 +5,7 @@ import logging
 from http import HTTPStatus as HTTP  # noqa: N814
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework import views as drf_views
 from rest_framework.response import Response
@@ -24,6 +25,7 @@ from lists.views_recommendations import get_or_create_recommendation_item
 from .contract_serializers import (
     DetailErrorSerializer,
     ListItemsOrderRequestSerializer,
+    ListItemsRanksRequestSerializer,
     ListItemsReorderRequestSerializer,
 )
 
@@ -282,6 +284,84 @@ class ListItemsOrderView(drf_views.APIView):
                 status=status,
             )
         return Response(status=status)
+
+
+def _arrange_by_rank(custom_list):
+    """Put the list's ranked items in rank order, in the slots they hold.
+
+    Unranked items do not move; ranked items that share a rank keep their
+    current relative order.
+    """
+    ranked = list(
+        CustomListItem.objects.filter(custom_list=custom_list, rank__isnull=False)
+        .order_by("rank", "date_added", "id")
+        .values_list("item_id", flat=True),
+    )
+    if ranked:
+        apply_full_order(custom_list, ranked)
+
+
+# /api/v1/lists/[list_id]/items/ranks/
+class ListItemsRanksView(drf_views.APIView):
+    """Set or clear the ranks of some items in a list."""
+
+    @extend_schema(
+        request=ListItemsRanksRequestSerializer,
+        responses={204: None, 400: DetailErrorSerializer, **_ORDER_ERRORS},
+        description=(
+            "Record where items stand in an outside ranking, such as #81 of "
+            "100. The list keeps one order, its custom order: after the ranks "
+            "are saved, every ranked item of the list sits in rank order in "
+            "the positions the ranked items already hold, and unranked items "
+            "do not move, so #1-80 can be added in a later call. The rank "
+            "stays on the item as a number, and a drag in the custom order "
+            "moves the item without changing it. `GET "
+            "/api/v1/lists/{list_id}/items/` returns each entry's `rank`, "
+            "null when unset. Items with the same rank keep their relative "
+            "order. Requires edit access to the list. Returns 204 with no "
+            "body. Returns 400 when `ranks` is missing, empty or malformed, "
+            "an `item_id` repeats, or an `item_id` is not in this list; "
+            "nothing is changed then. Returns 404 when the list is not found. "
+            "Like PUT .../items/order/, it rewrites the date added of every "
+            "item in the list, since that is where the custom order is stored."
+        ),
+    )
+    def put(self, request, list_id):
+        """Apply the ranks to the listed items, all or none."""
+        custom_list, error = _get_editable_list(request, list_id)
+        if error:
+            return error
+        serializer = ListItemsRanksRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"detail": "Invalid ranks.", "errors": serializer.errors},
+                status=HTTP.BAD_REQUEST,
+            )
+        entries = serializer.validated_data["ranks"]
+        ranks = {entry["item_id"]: entry["rank"] for entry in entries}
+        if len(ranks) != len(entries):
+            return Response(
+                {"detail": "Each item_id may appear once."},
+                status=HTTP.BAD_REQUEST,
+            )
+        with transaction.atomic():
+            CustomListItem.objects.lock_custom_lists([custom_list.id])
+            rows = list(
+                CustomListItem.objects.filter(
+                    custom_list=custom_list,
+                    item_id__in=ranks,
+                ),
+            )
+            if len(rows) != len(ranks):
+                return Response(
+                    {"detail": "Every item_id must be an item of this list."},
+                    status=HTTP.BAD_REQUEST,
+                )
+            for row in rows:
+                row.rank = ranks[row.item_id]
+            CustomListItem.objects.bulk_update(rows, ["rank"])
+            _arrange_by_rank(custom_list)
+        return Response(status=HTTP.NO_CONTENT)
 
 
 def _serialize_recommendation(recommendation):

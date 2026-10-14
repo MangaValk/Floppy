@@ -68,6 +68,7 @@ from .contract_serializers import (
     CompleteMediaResponseSerializer,
     ConsumptionResponseSerializer,
     DetailErrorSerializer,
+    ListItemsEnvelopeSerializer,
     MediaUpdateRequestSerializer,
     SearchEnvelopeSerializer,
     TrackedMediaEnvelopeSerializer,
@@ -610,6 +611,7 @@ class ListDetailView(drf_views.APIView):
 class ListItemsView(drf_views.APIView):
     """List items view."""
 
+    @extend_schema(responses={200: ListItemsEnvelopeSerializer})
     def get(self, request, list_id):
         """Get items of a list."""
         user = request.user
@@ -646,6 +648,14 @@ class ListItemsView(drf_views.APIView):
             },
             homogeneous=False,
         )
+        ranks = dict(
+            CustomListItem.objects.filter(
+                custom_list=user_list,
+                item_id__in=[entry.get("id") for entry in serialized_data],
+            ).values_list("item_id", "rank"),
+        )
+        for entry in serialized_data:
+            entry["rank"] = ranks.get(entry.get("id"))
         paginated_data["results"] = serialized_data
         return Response(paginated_data, status=HTTP.OK)
 
