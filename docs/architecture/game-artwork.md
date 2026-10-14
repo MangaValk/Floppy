@@ -41,6 +41,19 @@ looked up again after 6 hours, so adding a key takes effect without any reset.
 A lookup where a provider *errored* and found nothing stores nothing and backs
 off for 5 minutes; a row never records an outage as "no artwork".
 
+Two things reopen a stored row before its time limit. A manual **Refresh metadata**
+(web or API) calls `app.game_artwork.expire`, which makes that game due whatever it
+holds. Saving a SteamGridDB, TheGamesDB or ScreenScraper key calls `keys_saved`,
+which notes the time in the cache; a row with a gap saved before that is due for
+requests the key applies to (the member who saved a personal key, or everyone for an
+instance key). Nothing is rewritten in the database for a key, so a member without
+the key cannot search, find nothing and settle the row before its owner visits. A
+saved key also starts a fresh error backoff. The lookup runs on the next game page
+view, in the viewer's request, because a personal key applies only there. Whatever
+was stored stays until a lookup finds something better. During an error backoff a
+view searches nothing and stores nothing. A found image whose URL is too long for the
+column is treated as not found.
+
 ## ScreenScraper credentials
 
 ScreenScraper identifies the application with `devid`, `devpassword` and

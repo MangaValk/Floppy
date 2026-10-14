@@ -364,7 +364,12 @@ def _render_standard_track_modal(
                 season_number=season_number,
                 episode_number=episode_number,
             )
-            media = user_medias.first()
+            if request.GET.get("focus") == "notes":
+                # The Notes shortcut edits the entry the detail page treats as
+                # current, resolved now so it stays right after a new entry.
+                media = max(user_medias, key=helpers.entry_activity_key, default=None)
+            else:
+                media = user_medias.first()
         if media:
             instance_id = media.id
 
@@ -931,6 +936,7 @@ def _render_standard_track_modal(
         "track_action_update": track_action_update,
         "initial_active_tab": initial_active_tab,
         "notes_count": notes_count,
+        "notes_focus": request.GET.get("focus") == "notes",
         "episode_plays_tab_available": episode_plays_tab_available,
         "episode_plays_form": episode_plays_form,
         "episode_plays_formaction": reverse("episode_bulk_save"),
