@@ -594,6 +594,9 @@ def apply_playback_event(
 
     set_user_playback_state(user_id, state)
 
+    if not checkin_token:
+        _learn_runtime(state, dur_seconds)
+
     if store_progress:
         store_media_id, store_season, store_episode = _identifiers_from_state(
             existing_state,
@@ -722,6 +725,29 @@ def _format_clock(total_seconds: int) -> str:
     if hours:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes}:{secs:02d}"
+
+
+def _learn_runtime(state: dict, duration_seconds: int | None) -> None:
+    """Fill an unknown runtime from the duration the media server reported.
+
+    Only items marked unknown (999998/999999) are touched, so a runtime from a
+    provider is never overwritten by a server's file length.
+    """
+    minutes = (_coerce_int(duration_seconds, 0) or 0) // 60
+    if minutes < 1 or usable_runtime_minutes(minutes) is None:
+        return
+    if state.get("media_type") not in (
+        MediaTypes.MOVIE.value,
+        MediaTypes.EPISODE.value,
+    ):
+        return
+    item = _resolve_state_item(state)
+    if item is None or item.runtime_minutes not in EXCLUDED_RUNTIME_SENTINELS:
+        return
+    Item.objects.filter(
+        pk=item.pk,
+        runtime_minutes__in=EXCLUDED_RUNTIME_SENTINELS,
+    ).update(runtime_minutes=minutes)
 
 
 def _resolve_state_item(state: dict):

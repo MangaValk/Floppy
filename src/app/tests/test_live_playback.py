@@ -859,3 +859,70 @@ class UnknownRuntimeCardTests(TestCase):
         payload = build_now_playing_payload(self.user)
 
         self.assertFalse(payload["duration_seconds"])
+
+    def _runtime(self):
+        return Item.objects.get(media_id="5").runtime_minutes
+
+    def test_the_server_reported_duration_fills_an_unknown_runtime(self):
+        for marker in (999998, 999999):
+            with self.subTest(marker=marker):
+                Item.objects.all().delete()
+                self._play(runtime_minutes=marker, duration_seconds=2700)
+
+                self.assertEqual(self._runtime(), 45)
+
+    def test_a_known_runtime_is_not_overwritten_by_the_server(self):
+        self._play(runtime_minutes=42, duration_seconds=2700)
+
+        self.assertEqual(self._runtime(), 42)
+
+    def test_no_server_duration_leaves_the_marker_for_a_later_try(self):
+        self._play(runtime_minutes=999998)
+
+        self.assertEqual(self._runtime(), 999998)
+
+    def test_a_sub_minute_server_duration_is_not_a_runtime(self):
+        self._play(runtime_minutes=999998, duration_seconds=30)
+
+        self.assertEqual(self._runtime(), 999998)
+
+    def test_a_later_play_fills_the_runtime_once_the_server_reports_it(self):
+        self._play(runtime_minutes=999998)
+        with patch("app.live_playback._attach_resolved_image"):
+            live_playback.apply_playback_event(
+                user_id=self.user.id,
+                event_type="media.pause",
+                playback_media_type=MediaTypes.EPISODE.value,
+                media_id="5",
+                source=Sources.TMDB.value,
+                season_number=1,
+                episode_number=5,
+                title="Show",
+                view_offset_seconds=500,
+                duration_seconds=3000,
+            )
+
+        self.assertEqual(self._runtime(), 50)
+
+    def test_a_movie_runtime_is_filled_the_same_way(self):
+        Item.objects.create(
+            media_id="88",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Movie",
+            image="https://example.com/m.jpg",
+            runtime_minutes=999999,
+        )
+        with patch("app.live_playback._attach_resolved_image"):
+            live_playback.apply_playback_event(
+                user_id=self.user.id,
+                event_type="media.play",
+                playback_media_type=MediaTypes.MOVIE.value,
+                media_id="88",
+                source=Sources.TMDB.value,
+                title="Movie",
+                view_offset_seconds=0,
+                duration_seconds=6000,
+            )
+
+        self.assertEqual(Item.objects.get(media_id="88").runtime_minutes, 100)
