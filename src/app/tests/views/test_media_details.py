@@ -226,6 +226,11 @@ class MediaDetailsViewTests(TestCase):
         self.assertTemplateUsed(response, "app/media_details.html")
         self.assertContains(response, 'id="detail-secondary-content"', html=False)
         self.assertContains(response, "fragment=secondary")
+        # The loading placeholder stacks like the real content (metadata first on phones).
+        self.assertContains(
+            response, "detail-secondary-layout flex flex-col md:flex-row", html=False
+        )
+        self.assertNotContains(response, "flex-col-reverse", html=False)
         self.assertNotContains(response, "Your Notes")
         self.assertNotContains(
             response, '<h2 class="text-xl font-bold">Collection</h2>', html=False
@@ -587,7 +592,8 @@ class MediaDetailsViewTests(TestCase):
             content,
         )
         self.assertIn(
-            'class="flex w-full items-center gap-2 md:w-auto md:flex-wrap"', content
+            'class="flex w-full flex-wrap items-center gap-2 md:w-auto"',
+            content,
         )
         self.assertIn(
             'class="inline-flex h-11 w-full items-center justify-center rounded-xl border border-[var(--color-surface-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm transition-colors duration-200 hover:bg-[var(--color-surface-muted)] cursor-pointer md:size-11 md:w-11"',
@@ -596,7 +602,7 @@ class MediaDetailsViewTests(TestCase):
         self.assertIn("Add to tracker", content)
         self.assertIn('title="Add to custom lists"', content)
         self.assertIn('title="Manage tags"', content)
-        self.assertIn('title="Sync metadata with provider"', content)
+        self.assertIn('title="Sync metadata"', content)
         self.assertIn('method="post"', content)
         self.assertIn(
             reverse(
@@ -1009,7 +1015,7 @@ class MediaDetailsViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
         self.assertIn(
-            'class="detail-secondary-layout flex flex-col-reverse md:flex-row gap-0 md:gap-10"', content
+            'class="detail-secondary-layout flex flex-col md:flex-row gap-6 md:gap-10"', content
         )
         self.assertIn('class="detail-media-grid"', content)
         self.assertIn("window.matchMedia('(max-width: 768px)').matches", content)
@@ -1020,6 +1026,14 @@ class MediaDetailsViewTests(TestCase):
             'class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"', content
         )
         self.assertIn('class="w-full md:w-3/4"', content)
+        # Phones stack in DOM order: the metadata column comes before the content column.
+        self.assertNotIn("flex-col-reverse", content)
+        # Watch providers stay first on phones, directly under the synopsis.
+        self.assertIn('class="md:hidden -order-2"', content)
+        self.assertLess(
+            content.index('class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"'),
+            content.index('class="w-full md:w-3/4"'),
+        )
         self.assertIn(
             'class="mt-4 inline-flex text-sm font-medium text-[var(--color-link)] hover:text-[var(--color-link-hover)] focus:outline-none transition-colors cursor-pointer md:hidden"',
             content,
@@ -2390,6 +2404,100 @@ class MediaDetailsViewTests(TestCase):
             external_entry["chip_classes"], "border-amber-400/18 bg-amber-500/[0.07]"
         )
         self.assertEqual(external_entry["logo_src"], "/static/img/hltb-logo.png")
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_media_details_notes_button_opens_notes_for_latest_entry(
+        self,
+        mock_get_metadata,
+    ):
+        """The Notes shortcut sits beside tags/lists and targets the tracked entry."""
+        item = Item.objects.create(
+            media_id="238",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Test Movie",
+            image="http://example.com/image.jpg",
+        )
+        mock_get_metadata.return_value = {
+            "media_id": "238",
+            "title": "Test Movie",
+            "media_type": MediaTypes.MOVIE.value,
+            "source": Sources.TMDB.value,
+            "image": "http://example.com/image.jpg",
+            "synopsis": "Test overview",
+            "max_progress": 1,
+            "details": {},
+            "related": {},
+        }
+        movie = Movie.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            progress=1,
+        )
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                    "title": "test-movie",
+                },
+            ),
+        )
+
+        content = response.content.decode()
+        self.assertEqual(content.count('title="Add or edit notes"'), 1)
+        self.assertLess(
+            content.index('title="Manage tags"'),
+            content.index('title="Add or edit notes"'),
+        )
+        self.assertLess(
+            content.index('title="Add or edit notes"'),
+            content.index('title="Add to custom lists"'),
+        )
+        button = content[content.index('title="Add or edit notes"') :]
+        button = button[: button.index("</button>")]
+        self.assertIn('"focus": "notes"', button)
+        # The entry is resolved when the button is clicked, not baked in here.
+        self.assertNotIn("instance_id", button)
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_media_details_notes_button_for_untracked_item_has_no_instance(
+        self,
+        mock_get_metadata,
+    ):
+        """With nothing tracked the shortcut opens the modal to add a first entry."""
+        mock_get_metadata.return_value = {
+            "media_id": "238",
+            "title": "Test Movie",
+            "media_type": MediaTypes.MOVIE.value,
+            "source": Sources.TMDB.value,
+            "image": "http://example.com/image.jpg",
+            "synopsis": "Test overview",
+            "details": {},
+            "related": {},
+        }
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                    "title": "test-movie",
+                },
+            ),
+        )
+
+        content = response.content.decode()
+        button = content[content.index('title="Add or edit notes"') :]
+        button = button[: button.index("</button>")]
+        self.assertIn('"focus": "notes"', button)
+        self.assertNotIn("instance_id", button)
 
     @patch("app.providers.services.get_media_metadata")
     def test_media_details_renders_tag_preview_sections_next_to_links(
@@ -11714,6 +11822,15 @@ class MediaDetailsViewTests(TestCase):
         ]
         self.assertEqual(targets, expected)
         self.assertEqual(anchors, expected)
+
+        # The Notes shortcut in the action row opens the same modal with the
+        # notes field focused; the modal picks the latest watch when it opens.
+        button = html[html.index('title="Add or edit notes"') :]
+        button = button[: button.index("</button>")]
+        self.assertIn('"focus": "notes"', button)
+        self.assertNotIn("instance_id", button)
+        self.assertNotIn("is_create", button)
+        self.assertIn('"episode_number": "1"', button)
 
 
 class AnimeNextEpisodeRedirectTests(TestCase):

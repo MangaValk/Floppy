@@ -7,7 +7,17 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 
-from app.models import TV, Episode, Item, MediaTypes, PodcastShow, Season, Sources
+from app import game_artwork
+from app.models import (
+    TV,
+    Episode,
+    GameArtwork,
+    Item,
+    MediaTypes,
+    PodcastShow,
+    Season,
+    Sources,
+)
 from app.providers import tmdb, tvdb
 
 User = get_user_model()
@@ -96,6 +106,105 @@ class SyncMetadataViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
+
+    @patch("app.tasks_imdb.refresh_imdb_game_credits_from_datasets.apply_async")
+    @patch("app.metadata_sync_views._sync_plex_rating")
+    @patch("app.views.Item.fetch_releases")
+    @patch("app.views.game_length_services.refresh_game_lengths")
+    @patch("app.views.services.get_media_metadata")
+    def test_sync_metadata_reopens_the_artwork_lookup_for_igdb_games(
+        self,
+        mock_get_media_metadata,
+        _mock_refresh_game_lengths,
+        _mock_fetch_releases,
+        _mock_sync_plex_rating,
+        _mock_refresh_imdb_credits,
+    ):
+        """The new providers must be asked again after a manual refresh.
+
+        A game page that found nothing waits hours before asking again, so a
+        refresh that left the stored lookup alone looked like it did nothing.
+        """
+        mock_get_media_metadata.return_value = {
+            "media_id": "325609",
+            "title": "Dispatch",
+            "media_type": MediaTypes.GAME.value,
+            "source": Sources.IGDB.value,
+            "image": "https://example.com/dispatch.jpg",
+            "details": {"format": "Main game"},
+            "genres": [],
+            "related": {},
+        }
+        row = GameArtwork.objects.create(
+            source=Sources.IGDB.value,
+            media_id="325609",
+            backdrop_url="https://images.igdb.com/a.jpg",
+            backdrop_provider="igdb",
+        )
+        other = GameArtwork.objects.create(
+            source=Sources.IGDB.value,
+            media_id="1",
+            backdrop_url="https://images.igdb.com/b.jpg",
+            backdrop_provider="igdb",
+        )
+        cache.set("igdb_carousel_v4_325609", {"video": None, "photos": []}, 60)
+        url = reverse(
+            "sync_metadata",
+            kwargs={
+                "source": Sources.IGDB.value,
+                "media_type": MediaTypes.GAME.value,
+                "media_id": "325609",
+            },
+        )
+
+        response = self.client.post(url, {"next": "/"})
+
+        self.assertEqual(response.status_code, 302)
+        row.refresh_from_db()
+        other.refresh_from_db()
+        self.assertTrue(game_artwork.is_stale(row))
+        self.assertFalse(game_artwork.is_stale(other))
+        self.assertIsNone(cache.get("igdb_carousel_v4_325609"))
+
+    @patch("app.tasks_imdb.refresh_imdb_game_credits_from_datasets.apply_async")
+    @patch("app.metadata_sync_views._sync_plex_rating")
+    @patch("app.views.Item.fetch_releases")
+    @patch("app.views.game_length_services.refresh_game_lengths")
+    @patch("app.views.services.get_media_metadata")
+    def test_sync_metadata_survives_an_artwork_failure(
+        self,
+        mock_get_media_metadata,
+        _mock_refresh_game_lengths,
+        _mock_fetch_releases,
+        _mock_sync_plex_rating,
+        _mock_refresh_imdb_credits,
+    ):
+        mock_get_media_metadata.return_value = {
+            "media_id": "325609",
+            "title": "Dispatch",
+            "media_type": MediaTypes.GAME.value,
+            "source": Sources.IGDB.value,
+            "image": "https://example.com/dispatch.jpg",
+            "details": {"format": "Main game"},
+            "genres": [],
+            "related": {},
+        }
+
+        with patch("app.game_artwork.expire", side_effect=RuntimeError("db down")):
+            response = self.client.post(
+                reverse(
+                    "sync_metadata",
+                    kwargs={
+                        "source": Sources.IGDB.value,
+                        "media_type": MediaTypes.GAME.value,
+                        "media_id": "325609",
+                    },
+                ),
+                {"next": "/"},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Item.objects.filter(media_id="325609").exists())
 
     @patch("app.tasks_imdb.refresh_imdb_game_credits_from_datasets.apply_async")
     @patch("app.metadata_sync_views._sync_plex_rating")

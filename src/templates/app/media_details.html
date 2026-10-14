@@ -47,9 +47,9 @@
                  hx-on::after-request="this.closest('.detail-carousel-grid').classList.remove('detail-hero-pending')"></div>
           </div>
 
-          <div class="detail-carousel-grid__header flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div class="detail-carousel-grid__title min-w-0 flex-1"><div id="detail-carousel-logo-slot"></div>{% include "app/components/detail_title_block.html" %}{% include "app/components/detail_mobile_meta.html" %}</div>
-            <div class="detail-carousel-grid__actions shrink-0">{% include "app/components/detail_action_buttons.html" %}</div>
+          <div class="detail-carousel-grid__header flex flex-col md:flex-row md:flex-wrap md:items-center md:justify-between gap-4">
+            <div class="detail-carousel-grid__title min-w-0 flex-1 md:basis-64"><div id="detail-carousel-logo-slot"></div>{% include "app/components/detail_title_block.html" %}{% include "app/components/detail_mobile_meta.html" %}</div>
+            <div class="detail-carousel-grid__actions max-w-full shrink-0">{% include "app/components/detail_action_buttons.html" %}</div>
           </div>
           <div class="detail-carousel-grid__chips">{% include "app/components/detail_score_chips.html" %}</div>
           <div class="detail-carousel-grid__synopsis">{% include "app/components/detail_synopsis.html" %}</div>
@@ -77,7 +77,7 @@
              hx-get="{{ detail_secondary_fragment_url }}"
              hx-trigger="load delay:150ms"
              hx-swap="outerHTML">
-          <div class="detail-secondary-layout flex flex-col-reverse md:flex-row gap-0 md:gap-10">
+          <div class="detail-secondary-layout flex flex-col md:flex-row gap-6 md:gap-10">
             <div class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0">
               <div class="h-64 rounded-lg bg-[var(--color-surface)] animate-pulse"></div>
               <div class="mt-6 h-56 rounded-lg bg-[var(--color-surface)] animate-pulse"></div>
