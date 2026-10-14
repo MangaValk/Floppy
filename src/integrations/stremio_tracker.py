@@ -14,10 +14,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 from urllib.parse import unquote
 
+import redis
 from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from django_redis import get_redis_connection
 
 # The shared durable-progress sink. Imported at module scope: `api.urls` is
 # included ahead of `integrations.urls` in the root URLconf, and neither
@@ -26,7 +28,6 @@ from django.utils import timezone
 from api.fork_views_playback import upsert_playback_progress
 from app import fork_services_episode
 from app import fork_services_play_dedupe as play_dedupe
-from app.cache_safety import ON_ERROR_PROCEED, acquire_lock, release_lock
 from app.models import Item, Movie, PlaybackProgress
 from app.models.choices import MediaTypes, Sources
 from app.services.progress_changes import record_progress_deletion
@@ -55,6 +56,12 @@ _SESSION_TTL_SECONDS = 6 * 60 * 60
 # running can never have its lock expire and be taken by a second event; a killed
 # worker's lock clears on its own after this.
 _SESSION_LOCK_TTL_SECONDS = 180
+_RELEASE_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
 _SESSION_LOCK_WAIT_SECONDS = 10
 _SESSION_LOCK_POLL_SECONDS = 0.05
 
@@ -588,6 +595,26 @@ def _load_session(user_id, media_type, media_id, video_id, now):
         session = new_session(video_id=video_id, started_at=now)
     return key, session
 
+def _lock_client():
+    """Return the raw Redis client, or None when the cache is unavailable."""
+    try:
+        return get_redis_connection("default")
+    except Exception as error:  # pragma: no cover - backend-specific failure
+        logger.info("stremio_tracker status=lock_unavailable error=%s", error)
+        return None
+
+
+def _take_lock(client, redis_key, token):
+    """Claim the lock; an unavailable cache counts as claimed."""
+    if client is None:
+        return True
+    try:
+        return bool(client.set(redis_key, token, nx=True, ex=_SESSION_LOCK_TTL_SECONDS))
+    except redis.RedisError as error:
+        logger.info("stremio_tracker status=lock_unavailable error=%s", error)
+        return True
+
+
 @contextmanager
 def _session_lock(key):
     """Serialize folds of one session so overlapping events cannot clobber it.
@@ -596,34 +623,32 @@ def _session_lock(key):
     cached session and the later write would replace the stop's higher position
     and completion with a stale merge. Waiting is bounded: past the wait the fold
     proceeds, because losing an event is worse than the narrow race the lock
-    closes. An unavailable cache counts as acquired.
+    closes.
 
-    The lock value is a per-call token and release only deletes a lock that is
-    still ours, so a holder never frees a successor's lock.
+    The lock value is a per-call token and release is one atomic compare-and-
+    delete, so a holder whose lease ran out or was evicted never frees a
+    successor's lock. The key is written raw, not through the cache API, because
+    the cache pickles values and the script must compare the stored bytes.
     """
-    lock_key = f"{key}:lock"
+    client = _lock_client()
+    redis_key = cache.make_key(f"{key}:lock")
     token = uuid.uuid4().hex
     deadline = time.monotonic() + _SESSION_LOCK_WAIT_SECONDS
 
-    def acquire():
-        return acquire_lock(
-            lock_key,
-            timeout=_SESSION_LOCK_TTL_SECONDS,
-            on_error=ON_ERROR_PROCEED,
-            value=token,
-        )
-
-    held = acquire()
+    held = _take_lock(client, redis_key, token)
     while not held and time.monotonic() < deadline:
         time.sleep(_SESSION_LOCK_POLL_SECONDS)
-        held = acquire()
+        held = _take_lock(client, redis_key, token)
     if not held:
         logger.warning("stremio_tracker status=session_lock_timeout")
     try:
         yield
     finally:
-        if held and cache.get(lock_key) == token:
-            release_lock(lock_key)
+        if held and client is not None:
+            try:
+                client.eval(_RELEASE_LOCK_SCRIPT, 1, redis_key, token)
+            except redis.RedisError as error:
+                logger.info("stremio_tracker status=lock_unavailable error=%s", error)
 
 
 def _fold_observation(user, item, media_type, media_id, video_id, observation, now):
