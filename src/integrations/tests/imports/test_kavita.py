@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django_celery_beat.models import PeriodicTask
 
@@ -115,7 +115,9 @@ class KavitaImporterTests(TestCase):
         self.assertEqual(counts[MediaTypes.MANGA.value], 1)
         self.assertEqual(warnings, "")
 
-    @patch("integrations.imports.reading_server.import_progress.get_current_import_run_id")
+    @patch(
+        "integrations.imports.reading_server.import_progress.get_current_import_run_id"
+    )
     def test_reading_progress_records_the_active_import_run(self, mock_run_id):
         run = ImportRun.objects.create(user=self.user, source="kavita")
         mock_run_id.return_value = run.id
@@ -403,7 +405,9 @@ class KavitaImporterTests(TestCase):
         with patch("integrations.imports.kavita.request_json", side_effect=fake):
             kavita.importer(None, self.user, "new")
 
-        self.assertTrue(Comic.objects.filter(user=self.user, item__media_id="900").exists())
+        self.assertTrue(
+            Comic.objects.filter(user=self.user, item__media_id="900").exists()
+        )
         self.assertTrue(
             ComicIssue.objects.filter(
                 user=self.user,
@@ -591,6 +595,61 @@ class KavitaImporterTests(TestCase):
             1,
         )
 
+    def test_explicit_comic_vine_id_beats_a_same_titled_issue_from_another_volume(
+        self,
+    ):
+        other = Item.objects.create(
+            media_id="111",
+            source=Sources.COMICVINE.value,
+            media_type=MediaTypes.COMIC_ISSUE.value,
+            library_media_type=MediaTypes.COMIC_ISSUE.value,
+            title="Saga #1",
+        )
+        series = _series(2, name="Saga")
+        chapters = [_chapter(21, pages_read=20, number=1, comicVineId="4000-222")]
+
+        self._sync([series], {2: _detail(COMIC, chapters)})
+
+        issue = ComicIssue.objects.get(user=self.user)
+        self.assertEqual(issue.item.media_id, "222")
+        self.assertNotEqual(issue.item_id, other.id)
+
+    def test_matching_comic_vine_id_reuses_the_same_titled_issue(self):
+        existing = Item.objects.create(
+            media_id="222",
+            source=Sources.COMICVINE.value,
+            media_type=MediaTypes.COMIC_ISSUE.value,
+            library_media_type=MediaTypes.COMIC_ISSUE.value,
+            title="Saga #1",
+        )
+        series = _series(2, name="Saga")
+        chapters = [_chapter(21, pages_read=20, number=1, comicVineId="4000-222")]
+
+        self._sync([series], {2: _detail(COMIC, chapters)})
+
+        self.assertEqual(ComicIssue.objects.get(user=self.user).item_id, existing.id)
+
+    @patch("integrations.imports.kavita.settings.TESTING", False)
+    @patch("integrations.imports.kavita._volume_issue_id")
+    def test_comic_vine_rate_limit_skips_issue_instead_of_aborting_import(
+        self,
+        mock_volume_issue,
+    ):
+        response = requests.Response()
+        response.status_code = 429
+        mock_volume_issue.side_effect = ProviderAPIError(
+            "comicvine",
+            requests.HTTPError(response=response),
+        )
+        series = _series(2, name="Saga", comicVineId="900")
+        chapters = [_chapter(21, pages_read=20, number=1)]
+
+        counts, warnings = self._sync([series], {2: _detail(COMIC, chapters)})
+
+        self.assertFalse(ComicIssue.objects.filter(user=self.user).exists())
+        self.assertEqual(counts["skipped"], 2)
+        self.assertIn("Comic Vine unavailable; skipped Kavita issue Saga #1", warnings)
+
     @patch("integrations.imports.kavita.settings.TESTING", False)
     @patch("integrations.imports.kavita._volume_issue_id", return_value="1114005")
     @patch("integrations.imports.kavita.services.get_media_metadata")
@@ -626,9 +685,13 @@ class KavitaImporterTests(TestCase):
 
         self._sync([series], {2: _detail(COMIC, chapters)})
 
-        self.assertFalse(ComicIssue.objects.filter(user=self.user, item=manual).exists())
+        self.assertFalse(
+            ComicIssue.objects.filter(user=self.user, item=manual).exists()
+        )
         self.assertTrue(
-            ComicIssue.objects.filter(user=self.user, item__media_id="1114005").exists(),
+            ComicIssue.objects.filter(
+                user=self.user, item__media_id="1114005"
+            ).exists(),
         )
         manual.refresh_from_db()
         self.assertFalse(KavitaLink.objects.filter(item=manual).exists())
@@ -821,3 +884,51 @@ class KavitaViewTests(TestCase):
         )
         self.assertContains(response, reverse("kavita_connect"))
         self.assertContains(response, reverse("komga_connect"))
+
+
+class ComicVineProviderErrorTests(SimpleTestCase):
+    """Cover which Comic Vine failures the sync treats as temporary."""
+
+    @staticmethod
+    def _error(status_code):
+        response = requests.Response()
+        response.status_code = status_code
+        return ProviderAPIError("comicvine", requests.HTTPError(response=response))
+
+    def test_transient_failures_count_as_unavailable(self):
+        for status_code in (408, 429, 500, 503):
+            with self.subTest(status_code=status_code):
+                self.assertTrue(kavita._provider_unavailable(self._error(status_code)))
+        self.assertTrue(
+            kavita._provider_unavailable(
+                ProviderAPIError("comicvine", requests.ConnectionError()),
+            ),
+        )
+
+    def test_permanent_failures_stay_fatal(self):
+        for status_code in (400, 401, 403, 404):
+            with self.subTest(status_code=status_code):
+                self.assertFalse(kavita._provider_unavailable(self._error(status_code)))
+
+    @patch("integrations.imports.kavita.comicvine.get_volume_issues")
+    def test_volume_lookup_reads_every_page_of_issues(self, mock_issues):
+        first_page = [
+            {"media_id": str(n), "issue_number": str(n)} for n in range(1, 101)
+        ]
+        second_page = [{"media_id": "9101", "issue_number": "101"}]
+        mock_issues.side_effect = [first_page, second_page]
+
+        issue_id = kavita._volume_issue_id("900", "101", None)
+
+        self.assertEqual(issue_id, "9101")
+        self.assertEqual(
+            [call.kwargs["offset"] for call in mock_issues.call_args_list],
+            [0, 100],
+        )
+
+    @patch("integrations.imports.kavita.comicvine.get_volume_issues")
+    def test_volume_lookup_stops_after_a_short_page(self, mock_issues):
+        mock_issues.return_value = [{"media_id": "5", "issue_number": "5"}]
+
+        self.assertEqual(kavita._volume_issue_id("900", "5", None), "5")
+        mock_issues.assert_called_once()

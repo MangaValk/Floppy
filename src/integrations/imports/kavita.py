@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 ENTRY_SOURCE = "kavita"
 PLUGIN_NAME = "Floppy"
 PAGE_SIZE = 100
+COMICVINE_PAGE_SIZE = 100
+COMICVINE_MAX_VOLUME_PAGES = 50
 
 # Kavita's LibraryType enum.
 MANGA_LIBRARY = 0
@@ -264,8 +266,19 @@ def _search_issue_id(series_title, issue_number, user):
 def _volume_issue_id(volume_id, issue_number, user):
     """Return an exact issue from a known Comic Vine volume."""
     expected = str(issue_number).strip().lstrip("0") or "0"
+    issues = []
+    # Comic Vine pages issues 100 at a time; long-running series have more.
+    for page in range(COMICVINE_MAX_VOLUME_PAGES):
+        batch = comicvine.get_volume_issues(
+            volume_id,
+            user=user,
+            offset=page * COMICVINE_PAGE_SIZE,
+        )
+        issues.extend(batch)
+        if len(batch) < COMICVINE_PAGE_SIZE:
+            break
     matches = []
-    for issue in comicvine.get_volume_issues(volume_id, user=user):
+    for issue in issues:
         number = str(issue.get("issue_number") or "").strip().lstrip("0") or "0"
         if number == expected:
             matches.append(issue)
@@ -352,8 +365,15 @@ def _provider_item(media_id, media_type, title, user, enrich):
 
 
 def _provider_unavailable(error):
-    """Return whether a provider error is a transient connectivity failure."""
-    return isinstance(error, services.ProviderAPIError) and error.status_code is None
+    """Return whether a provider error is transient: no response, 429 or a 5xx."""
+    if not isinstance(error, services.ProviderAPIError):
+        return False
+    status = error.status_code
+    return (
+        status is None
+        or status in (HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS)
+        or status >= HTTPStatus.INTERNAL_SERVER_ERROR
+    )
 
 
 def _provider_not_found(error):
@@ -626,9 +646,22 @@ class KavitaImporter(ReadingServerImporter):
             manual_existing = (
                 existing if existing and existing.source == Sources.MANUAL.value else None
             )
-            if existing and manual_existing is None:
-                return existing
             issue_id = chapter.get("comicVineId")
+            # An explicit Comic Vine ID outranks a title match, which can
+            # belong to another volume with the same name.
+            explicit_id = _comicvine_id(issue_id, 4000)
+            if (
+                existing
+                and manual_existing is None
+                and (
+                    not explicit_id
+                    or (
+                        existing.source == Sources.COMICVINE.value
+                        and str(existing.media_id) == explicit_id
+                    )
+                )
+            ):
+                return existing
             volume_id = _comicvine_id(series.get("comicVineId"), 4050)
             if (
                 self.enable_provider_enrichment
