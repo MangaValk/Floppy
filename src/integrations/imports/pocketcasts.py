@@ -1057,7 +1057,9 @@ class PocketCastsImporter:
 
         for episode in episode_items:
             duration_seconds = None
-            minutes = usable_runtime_minutes(episode.item.runtime_minutes)
+            minutes = usable_runtime_minutes(
+                episode.item.runtime_minutes if episode.item else None,
+            )
             if minutes:
                 duration_seconds = minutes * 60
 
