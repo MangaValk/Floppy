@@ -17,10 +17,11 @@ See ``docs/architecture/game-artwork.md``.
 
 import logging
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from django.core.cache import cache
 from django.db import IntegrityError
+from django.db.models import Q
 from django.utils import timezone
 
 from app.game_artwork import (
@@ -44,6 +45,7 @@ INCOMPLETE_TTL = timedelta(hours=6)
 # After a provider error nothing is stored; this stops every page view retrying.
 ERROR_BACKOFF_SECONDS = 300
 IGDB_PROVIDER = "igdb"
+MAX_URL_LENGTH = GameArtwork._meta.get_field("logo_url").max_length
 
 
 def query_for(media_id, metadata):
@@ -72,6 +74,13 @@ def provider_order(query):
     return [steamgriddb, thegamesdb]
 
 
+# Providers whose credentials decide what a lookup can find.
+CREDENTIAL_PROVIDERS = frozenset(
+    provider.PROVIDER for provider in (screenscraper, steamgriddb, thegamesdb)
+)
+_DUE_NOW = datetime(1970, 1, 1, tzinfo=UTC)
+
+
 def _error_key(media_id):
     return f"game_artwork_error_{media_id}"
 
@@ -92,7 +101,15 @@ def _search(query):
             errored = True
             break
         try:
-            found.update(provider.find(query, wanted))
+            # A URL the column cannot hold would fail the save for every asset
+            # of the game, so such an image is treated as not found.
+            found.update(
+                {
+                    kind: art
+                    for kind, art in provider.find(query, wanted).items()
+                    if art.url and len(art.url) <= MAX_URL_LENGTH
+                },
+            )
         except Exception:
             errored = True
             logger.warning(
@@ -109,6 +126,24 @@ def is_stale(row):
     complete = bool(row.logo_url) and row.backdrop_provider not in ("", IGDB_PROVIDER)
     ttl = COMPLETE_TTL if complete else INCOMPLETE_TTL
     return timezone.now() - row.resolved_at > ttl
+
+
+def expire(media_id=None):
+    """Make stored artwork due for a new lookup on the next game page view.
+
+    With a ``media_id`` (a manual metadata refresh) that game is looked up again
+    whatever it holds. Without one (a provider credential changed) only rows with
+    a gap are, since a complete row has nothing a new key could add. The stored
+    assets stay in place: a lookup that finds nothing keeps them.
+    """
+    rows = GameArtwork.objects.filter(source=Sources.IGDB.value)
+    if media_id is None:
+        rows = rows.filter(Q(logo_url="") | Q(backdrop_provider__in=("", IGDB_PROVIDER)))
+    else:
+        rows = rows.filter(media_id=str(media_id))
+        cache.delete(_error_key(media_id))
+    # update() skips auto_now, so resolved_at really becomes the old date.
+    rows.update(resolved_at=_DUE_NOW)
 
 
 def _art(row, kind):

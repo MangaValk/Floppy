@@ -718,6 +718,23 @@ def instance_value(slug, field_name):
     return _instance_map().get(slug, {}).get(field_name, "")
 
 
+def _expire_game_artwork(slug):
+    """Let games that lack artwork look again once a game artwork key is saved.
+
+    A game page that found nothing waits hours before asking again, so without
+    this a freshly added key would seem to do nothing.
+    """
+    from app import game_artwork
+
+    if slug not in game_artwork.CREDENTIAL_PROVIDERS:
+        return
+    try:
+        game_artwork.expire()
+    except Exception:
+        # The key is already saved; a missed expiry only delays the new lookup.
+        logger.warning("Could not expire game artwork for %s", slug, exc_info=True)
+
+
 def set_instance(slug, values, actor=None):
     """Store instance credentials for a provider.
 
@@ -745,6 +762,7 @@ def set_instance(slug, values, actor=None):
                 field=field_name,
             ).delete()
     invalidate_cache()
+    _expire_game_artwork(slug)
 
 
 def clear_instance(slug):
@@ -797,6 +815,7 @@ def set_user(slug, user, values):
                 field=field_name,
             ).delete()
     invalidate_user_cache(user)
+    _expire_game_artwork(slug)
 
 
 def clear_user(slug, user):

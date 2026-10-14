@@ -450,6 +450,19 @@ class ResolverTests(TestCase):
         self.assertEqual(result, {LOGO: None, BACKDROP: None})
         self.assertFalse(GameArtwork.objects.exists())
 
+    def test_an_image_url_too_long_to_store_is_skipped_not_fatal(self):
+        too_long = Art("https://cdn2.steamgriddb.com/" + "a" * 1000, "steamgriddb", "1")
+        logo = Art("https://x.test/l.png", "thegamesdb", "2")
+
+        with (
+            patch.object(steamgriddb, "find", return_value={LOGO: too_long, BACKDROP: too_long}),
+            patch.object(thegamesdb, "find", return_value={LOGO: logo}),
+        ):
+            result = game_artwork.resolve(query())
+
+        self.assertEqual(result[LOGO], logo)
+        self.assertIsNone(result[BACKDROP])
+
     def test_after_an_error_the_next_views_do_not_hammer_providers(self):
         with patch.object(steamgriddb, "find", side_effect=requests.ConnectionError("down")), patch.object(thegamesdb, "find", return_value={}):
             game_artwork.resolve(query())
@@ -492,3 +505,143 @@ class ResolverTests(TestCase):
         built = game_artwork.query_for(12, {"title": "X", "details": {"release_date": None, "platforms": None}})
 
         self.assertEqual((built.year, built.platforms, built.steam_app_id), (None, (), ""))
+
+
+class ExpiryTests(TestCase):
+    """A refresh or a new key must not wait hours behind a stored lookup."""
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def row(self, media_id="7", *, complete=False):
+        values = {"backdrop_url": "https://images.igdb.com/a.jpg", "backdrop_provider": "igdb"}
+        if complete:
+            values = {
+                "logo_url": "https://x.test/l.png",
+                "logo_provider": "steamgriddb",
+                "backdrop_url": "https://x.test/b.jpg",
+                "backdrop_provider": "steamgriddb",
+            }
+        return GameArtwork.objects.create(source="igdb", media_id=media_id, **values)
+
+    def test_a_refreshed_game_is_looked_up_again_even_when_complete(self):
+        row = self.row(complete=True)
+
+        game_artwork.expire("7")
+        row.refresh_from_db()
+
+        self.assertTrue(game_artwork.is_stale(row))
+        self.assertEqual(row.logo_url, "https://x.test/l.png")
+
+    def test_a_refresh_leaves_other_games_alone(self):
+        other = self.row("8", complete=True)
+
+        game_artwork.expire("7")
+        other.refresh_from_db()
+
+        self.assertFalse(game_artwork.is_stale(other))
+
+    def test_a_refresh_ends_the_error_backoff(self):
+        cache.set(game_artwork._error_key("7"), 1, 300)
+
+        game_artwork.expire("7")
+
+        self.assertIsNone(cache.get(game_artwork._error_key("7")))
+
+    def test_a_refreshed_game_gets_the_new_art_on_its_next_lookup(self):
+        self.row()
+        logo = Art("https://cdn2.steamgriddb.com/logo/1.png", "steamgriddb", "1")
+        backdrop = Art("https://cdn2.steamgriddb.com/hero/2.png", "steamgriddb", "2")
+        game_artwork.expire("7")
+
+        with patch.object(steamgriddb, "find", return_value={LOGO: logo, BACKDROP: backdrop}):
+            result = game_artwork.resolve(query())
+
+        self.assertEqual(result, {LOGO: logo, BACKDROP: backdrop})
+
+    def test_a_refresh_that_finds_nothing_keeps_the_stored_art(self):
+        self.row(complete=True)
+        game_artwork.expire("7")
+
+        with (
+            patch.object(steamgriddb, "find", side_effect=requests.ConnectionError("down")),
+            patch.object(thegamesdb, "find", return_value={}),
+        ):
+            result = game_artwork.resolve(query())
+
+        self.assertEqual(result[LOGO].url, "https://x.test/l.png")
+        self.assertEqual(result[BACKDROP].url, "https://x.test/b.jpg")
+
+    def test_refreshing_a_game_with_no_row_does_nothing(self):
+        game_artwork.expire("7")
+
+        self.assertFalse(GameArtwork.objects.exists())
+
+    def test_a_new_key_only_reopens_games_with_a_gap(self):
+        gap = self.row("7")
+        no_logo = GameArtwork.objects.create(
+            source="igdb",
+            media_id="9",
+            backdrop_url="https://x.test/b.jpg",
+            backdrop_provider="steamgriddb",
+        )
+        done = self.row("8", complete=True)
+
+        game_artwork.expire()
+
+        for row in (gap, no_logo, done):
+            row.refresh_from_db()
+        self.assertTrue(game_artwork.is_stale(gap))
+        self.assertTrue(game_artwork.is_stale(no_logo))
+        self.assertFalse(game_artwork.is_stale(done))
+
+    def test_saving_a_game_artwork_key_reopens_games_with_a_gap(self):
+        from django.contrib.auth import get_user_model
+
+        from app.providers import credentials
+
+        user = get_user_model().objects.create_user(username="keys", password="x")
+        for slug in ("steamgriddb", "thegamesdb"):
+            for save in (
+                lambda slug=slug: credentials.set_user(slug, user, {"api_key": "k"}),
+                lambda slug=slug: credentials.set_instance(slug, {"api_key": "k"}),
+            ):
+                with self.subTest(slug=slug):
+                    row = self.row()
+                    GameArtwork.objects.filter(pk=row.pk).update(resolved_at=timezone.now())
+
+                    save()
+                    row.refresh_from_db()
+
+                    self.assertTrue(game_artwork.is_stale(row))
+                    row.delete()
+
+    def test_saving_another_providers_key_leaves_artwork_alone(self):
+        from app.providers import credentials
+
+        row = self.row()
+
+        credentials.set_instance("tmdb", {"api_key": "k"})
+        row.refresh_from_db()
+
+        self.assertFalse(game_artwork.is_stale(row))
+
+    def test_a_failure_while_reopening_artwork_does_not_fail_saving_the_key(self):
+        from app.providers import credentials
+
+        with patch.object(game_artwork, "expire", side_effect=RuntimeError("db")):
+            credentials.set_instance("steamgriddb", {"api_key": "k"})
+
+        self.assertEqual(credentials.instance_value("steamgriddb", "api_key"), "k")
+
+    def test_the_game_page_loads_its_carousel_again_after_a_refresh(self):
+        from app import carousel
+
+        self.row()
+        cache.set("igdb_carousel_v4_7", {"video": None, "photos": []}, 60)
+        self.assertTrue(carousel.confirmed_empty("game", "igdb", "7"))
+
+        game_artwork.expire("7")
+
+        self.assertFalse(carousel.confirmed_empty("game", "igdb", "7"))

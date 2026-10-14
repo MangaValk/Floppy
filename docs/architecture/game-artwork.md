@@ -41,6 +41,14 @@ looked up again after 6 hours, so adding a key takes effect without any reset.
 A lookup where a provider *errored* and found nothing stores nothing and backs
 off for 5 minutes; a row never records an outage as "no artwork".
 
+Two things reopen a stored row at once instead of waiting for its time limit
+(`app.game_artwork.expire`): a manual **Refresh metadata** (web or API) reopens
+that game whatever it holds, and saving a SteamGridDB, TheGamesDB or ScreenScraper
+key reopens every row with a gap. Reopening only marks the row due; the lookup
+runs on the next game page view, in the viewer's request, because a personal key
+applies only there. Whatever was stored stays until a lookup finds something better.
+A found image whose URL is too long for the column is treated as not found.
+
 ## ScreenScraper credentials
 
 ScreenScraper identifies the application with `devid`, `devpassword` and
