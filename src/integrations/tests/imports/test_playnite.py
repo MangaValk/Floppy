@@ -1,6 +1,7 @@
 import io
 from unittest.mock import patch
 
+from billiard.exceptions import SoftTimeLimitExceeded
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -23,6 +24,8 @@ class PlayniteImporterTests(TestCase):
     def _search(_media_type, title, _page, **_kwargs):
         if title == "Unmatched Game":
             return {"results": []}
+        if title == "Slow Game":
+            raise SoftTimeLimitExceeded
         return {
             "results": [
                 {
@@ -73,3 +76,30 @@ class PlayniteImporterTests(TestCase):
 
         with self.assertRaises(MediaImportError):
             playnite.importer(io.BytesIO(csv_data.encode()), self.user, "new")
+
+    def test_maps_playing_to_in_progress(self):
+        csv_data = "Name,CompletionStatus,TimePlayedHours\nMatched Game,Playing,2\n"
+
+        playnite.importer(io.BytesIO(csv_data.encode()), self.user, "new")
+
+        matched = Game.objects.get(user=self.user, item__media_id="42")
+        self.assertEqual(matched.status, Status.IN_PROGRESS.value)
+
+    def test_time_limit_keeps_games_already_processed(self):
+        csv_data = (
+            "Name,CompletionStatus,TimePlayedHours\n"
+            "Matched Game,Completed,2\n"
+            "Slow Game,Played,3\n"
+        )
+
+        counts, warnings = playnite.importer(
+            io.BytesIO(csv_data.encode()),
+            self.user,
+            "new",
+        )
+
+        self.assertEqual(counts["game"], 1)
+        self.assertTrue(
+            Game.objects.filter(user=self.user, item__media_id="42").exists()
+        )
+        self.assertIn("Import stopped partway through", warnings)

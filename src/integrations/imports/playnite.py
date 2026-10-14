@@ -6,6 +6,7 @@ import logging
 import re
 from collections import defaultdict
 
+from billiard.exceptions import SoftTimeLimitExceeded
 from django.db.models import F
 
 import app
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 STATUS_MAP = {
     "played": Status.IN_PROGRESS.value,
+    "playing": Status.IN_PROGRESS.value,
     "beaten": Status.COMPLETED.value,
     "completed": Status.COMPLETED.value,
     "abandoned": Status.DROPPED.value,
@@ -64,6 +66,21 @@ class PlayniteImporter:
             import_progress.report(index, len(games), "Playnite")
             try:
                 self._process_game(game, unmatched)
+            except SoftTimeLimitExceeded:
+                # Every game is an IGDB lookup, so a big library can trip the
+                # task's soft time limit. Keep what was staged so far; "new"
+                # mode skips those games when the import is run again.
+                logger.warning(
+                    "Playnite import for %s hit the time limit at entry %s/%s",
+                    self.user.username,
+                    index,
+                    len(games),
+                )
+                self.warnings.append(
+                    "Import stopped partway through because it was taking too "
+                    "long. Run the import again to pick up the remaining games.",
+                )
+                break
             except Exception as error:
                 self._increment_run_count("failed")
                 message = f"Error processing Playnite entry: {game['name']}"
