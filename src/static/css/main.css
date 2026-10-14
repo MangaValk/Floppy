@@ -1509,6 +1509,9 @@
       margin-inline-end: calc(calc(var(--spacing) * 4) * calc(1 - var(--tw-space-x-reverse)));
     }
   }
+  .gap-y-0\.5 {
+    row-gap: calc(var(--spacing) * 0.5);
+  }
   .gap-y-1 {
     row-gap: calc(var(--spacing) * 1);
   }
@@ -5706,6 +5709,11 @@
       padding-inline: calc(var(--spacing) * 0);
     }
   }
+  .md\:px-3 {
+    @media (width >= 48rem) {
+      padding-inline: calc(var(--spacing) * 3);
+    }
+  }
   .md\:px-5 {
     @media (width >= 48rem) {
       padding-inline: calc(var(--spacing) * 5);
@@ -5714,6 +5722,11 @@
   .md\:px-6 {
     @media (width >= 48rem) {
       padding-inline: calc(var(--spacing) * 6);
+    }
+  }
+  .md\:py-2 {
+    @media (width >= 48rem) {
+      padding-block: calc(var(--spacing) * 2);
     }
   }
   .md\:pl-8 {
@@ -5730,6 +5743,12 @@
     @media (width >= 48rem) {
       font-size: var(--text-2xl);
       line-height: var(--tw-leading, var(--text-2xl--line-height));
+    }
+  }
+  .md\:text-lg {
+    @media (width >= 48rem) {
+      font-size: var(--text-lg);
+      line-height: var(--tw-leading, var(--text-lg--line-height));
     }
   }
   .lg\:sticky {
@@ -7460,6 +7479,9 @@ html.light .theme-toggle-icon-moon {
   }
   .detail-carousel-grid__actions > div > .mt-4 > .flex .h-11 {
     width: 2.75rem;
+  }
+  .detail-carousel-grid:not(:has(.detail-mobile-hero)) .detail-carousel-grid__actions > div > .mt-4 > .flex {
+    gap: 0.25rem;
   }
   .detail-carousel-grid__actions [data-track-action-root], .detail-carousel-grid__actions [x-data*="editTrackOpen"] {
     width: auto;

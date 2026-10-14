@@ -240,8 +240,9 @@
 
             <button type="button"
                     id="detail-action-history"
+                    title="{% translate "View history" %}"
                     aria-haspopup="dialog"
-                    aria-label="{% translate "View your activity history" %}"
+                    aria-label="{% translate "View history" %}"
                     class="inline-flex h-11 w-full flex-1 items-center justify-center rounded-xl border border-[var(--color-surface-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm transition-colors duration-200 hover:bg-[var(--color-surface-muted)] cursor-pointer md:size-11 md:w-11 md:flex-none{% if "history" in row.overflow %} max-[400px]:hidden{% endif %}"
                     hx-get="{% url 'activity_sessions_modal' %}?{% if media_type == MediaTypes.SEASON.value %}media_type={{ MediaTypes.TV.value }}&media_id={{ media.media_id|urlencode }}&source={{ media.source|urlencode }}&season_number={{ media.season_number }}{% elif media_type == MediaTypes.TV.value %}media_type={{ MediaTypes.TV.value }}&media_id={{ media.media_id|urlencode }}&source={{ media.source|urlencode }}{% elif media_type == MediaTypes.PODCAST.value and podcast_show %}media_type={{ MediaTypes.PODCAST.value }}&podcast_show={{ podcast_show.id }}{% else %}media_type={{ media_type }}&media_id={{ media.media_id|urlencode }}&source={{ media.source|urlencode }}{% endif %}{% if media_type == MediaTypes.GAME.value or media_type == MediaTypes.BOARDGAME.value %}&logging_style=sessions{% endif %}"
                     hx-target="#session-history-modal-host"
@@ -263,7 +264,7 @@
                      value="{% if media_type == MediaTypes.ANIME.value or parent_media_type == MediaTypes.ANIME.value %}anime{% endif %}">
               <button type="submit"
                       id="detail-action-sync"
-                      title="{% translate "Sync metadata with provider" %}"
+                      title="{% translate "Sync metadata" %}"
                       class="inline-flex h-11 w-full items-center justify-center rounded-xl border border-[var(--color-surface-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm transition-colors duration-200 hover:bg-[var(--color-surface-muted)] cursor-pointer disabled:opacity-75 md:size-11 md:w-11"
                       :disabled="loading">
                 <div :class="{ 'animate-spin': loading }">
@@ -299,13 +300,13 @@
                             @click="moreOpen = false; document.getElementById('detail-action-{{ key }}').click()">
                       {% if key == "history" %}
                         {% include "app/icons/history.svg" with classes="w-4 h-4 shrink-0" %}
-                        {% translate "View your activity history" %}
+                        {% translate "View history" %}
                       {% elif key == "seerr" %}
                         {% include "app/icons/download.svg" with classes="w-4 h-4 shrink-0" %}
                         {% translate "Request in Seerr" %}
                       {% elif key == "sync" %}
                         {% include "app/icons/circle-spinning-clockwise.svg" with classes="w-4 h-4 shrink-0" %}
-                        {% translate "Sync metadata with provider" %}
+                        {% translate "Sync metadata" %}
                       {% endif %}
                     </button>
                   {% endfor %}

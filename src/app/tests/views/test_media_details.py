@@ -597,7 +597,7 @@ class MediaDetailsViewTests(TestCase):
         self.assertIn("Add to tracker", content)
         self.assertIn('title="Add to custom lists"', content)
         self.assertIn('title="Manage tags"', content)
-        self.assertIn('title="Sync metadata with provider"', content)
+        self.assertIn('title="Sync metadata"', content)
         self.assertIn('method="post"', content)
         self.assertIn(
             reverse(
