@@ -779,3 +779,83 @@ class SessionCardTests(TestCase):
 
         self.assertEqual(payload["media_type"], MediaTypes.BOOK.value)
         self.assertEqual(payload["title"], "Checked In")
+
+
+class UnknownRuntimeCardTests(TestCase):
+    """The unknown-runtime marker on an item must never become a duration."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="unknownruntime")
+
+    def tearDown(self):
+        live_playback.clear_user_playback_state(self.user.id)
+        cache.clear()
+        super().tearDown()
+
+    def _play(self, *, runtime_minutes, duration_seconds=None, offset=479):
+        Item.objects.create(
+            media_id="5",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            title="Episode",
+            image="https://example.com/still.jpg",
+            season_number=1,
+            episode_number=5,
+            runtime_minutes=runtime_minutes,
+        )
+        with patch("app.live_playback._attach_resolved_image"):
+            live_playback.apply_playback_event(
+                user_id=self.user.id,
+                event_type="media.play",
+                playback_media_type=MediaTypes.EPISODE.value,
+                media_id="5",
+                source=Sources.TMDB.value,
+                season_number=1,
+                episode_number=5,
+                title="Show",
+                view_offset_seconds=offset,
+                duration_seconds=duration_seconds,
+            )
+        return live_playback.build_home_playback_card(self.user)
+
+    def test_aired_but_unknown_runtime_hides_the_total(self):
+        card = self._play(runtime_minutes=999998)
+
+        self.assertEqual(card["duration_seconds"], 0)
+        self.assertEqual(card["progress_percent"], 0)
+        self.assertNotIn("16666", card["progress_display"])
+        self.assertNotIn("/", card["progress_display"])
+
+    def test_failed_lookup_runtime_hides_the_total(self):
+        card = self._play(runtime_minutes=999999)
+
+        self.assertEqual(card["duration_seconds"], 0)
+        self.assertNotIn("/", card["progress_display"])
+
+    def test_a_real_runtime_still_gives_the_total(self):
+        card = self._play(runtime_minutes=45)
+
+        self.assertEqual(card["duration_seconds"], 45 * 60)
+        self.assertIn("/ 45:00", card["progress_display"])
+
+    def test_the_server_reported_duration_wins_over_the_marker(self):
+        card = self._play(runtime_minutes=999998, duration_seconds=2400)
+
+        self.assertEqual(card["duration_seconds"], 2400)
+        self.assertIn("/ 40:00", card["progress_display"])
+
+    def test_a_card_cached_with_the_marker_is_repaired_on_read(self):
+        """Cards written before the fix still hold 999998 minutes in seconds."""
+        card = self._play(runtime_minutes=45, duration_seconds=999998 * 60)
+
+        self.assertEqual(card["duration_seconds"], 45 * 60)
+        self.assertNotIn("16666", card["progress_display"])
+
+    def test_the_now_playing_api_reports_no_duration_for_the_marker(self):
+        from api.fork_views_playback import build_now_playing_payload
+
+        self._play(runtime_minutes=999998)
+
+        payload = build_now_playing_payload(self.user)
+
+        self.assertFalse(payload["duration_seconds"])
