@@ -8,11 +8,13 @@ skips the write.
 
 import logging
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from urllib.parse import unquote
 
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -49,9 +51,10 @@ WATCHED_THRESHOLD_COEF = 0.7
 # A session is short-lived; the poller reconciles anything that outlives it.
 _SESSION_TTL_SECONDS = 6 * 60 * 60
 
-# One fold is a few queries (a provider lookup on a first-viewed episode is the
-# slow case), so the lock expires well before a stuck holder could matter.
-_SESSION_LOCK_TTL_SECONDS = 60
+# The lease outlasts the task's hard time limit (120s), so a fold that is still
+# running can never have its lock expire and be taken by a second event; a killed
+# worker's lock clears on its own after this.
+_SESSION_LOCK_TTL_SECONDS = 180
 _SESSION_LOCK_WAIT_SECONDS = 10
 _SESSION_LOCK_POLL_SECONDS = 0.05
 
@@ -275,13 +278,20 @@ def session_for_observation(session, observation, *, now=None):
             started_at=observation.observed_at,
         )
 
-    if observation.action in _REWATCH_START_ACTIONS and session.get("settled"):
+    # A start that predates the settled session's last event is not a rewatch:
+    # queued events can run out of order, and an old start arriving after its own
+    # stop would otherwise replace the finished session with an empty one.
+    last_event_at = session.get("last_event_at")
+    if (
+        observation.action in _REWATCH_START_ACTIONS
+        and session.get("settled")
+        and (last_event_at is None or observation.observed_at >= last_event_at)
+    ):
         return new_session(
             video_id=observation.video_id or session.get("video_id"),
             started_at=observation.observed_at,
         )
 
-    last_event_at = session.get("last_event_at")
     if (
         session.get("settled")
         and last_event_at is not None
@@ -572,8 +582,6 @@ def _load_session(user_id, media_type, media_id, video_id, now):
     The cached session is the raw stored value; callers MUST still pass it
     through `session_for_observation` to cross a session boundary.
     """
-    from django.core.cache import cache
-
     key = _session_key(user_id, media_type, media_id, video_id)
     session = cache.get(key)
     if session is None:
@@ -589,27 +597,32 @@ def _session_lock(key):
     and completion with a stale merge. Waiting is bounded: past the wait the fold
     proceeds, because losing an event is worse than the narrow race the lock
     closes. An unavailable cache counts as acquired.
+
+    The lock value is a per-call token and release only deletes a lock that is
+    still ours, so a holder never frees a successor's lock.
     """
     lock_key = f"{key}:lock"
+    token = uuid.uuid4().hex
     deadline = time.monotonic() + _SESSION_LOCK_WAIT_SECONDS
-    held = acquire_lock(
-        lock_key,
-        timeout=_SESSION_LOCK_TTL_SECONDS,
-        on_error=ON_ERROR_PROCEED,
-    )
-    while not held and time.monotonic() < deadline:
-        time.sleep(_SESSION_LOCK_POLL_SECONDS)
-        held = acquire_lock(
+
+    def acquire():
+        return acquire_lock(
             lock_key,
             timeout=_SESSION_LOCK_TTL_SECONDS,
             on_error=ON_ERROR_PROCEED,
+            value=token,
         )
+
+    held = acquire()
+    while not held and time.monotonic() < deadline:
+        time.sleep(_SESSION_LOCK_POLL_SECONDS)
+        held = acquire()
     if not held:
         logger.warning("stremio_tracker status=session_lock_timeout")
     try:
         yield
     finally:
-        if held:
+        if held and cache.get(lock_key) == token:
             release_lock(lock_key)
 
 
@@ -620,8 +633,6 @@ def _fold_observation(user, item, media_type, media_id, video_id, observation, n
     session is keyed under — the series id for an episode — while `video_id` is
     the episode coordinate.
     """
-    from django.core.cache import cache
-
     key = _session_key(user.id, media_type, media_id, video_id)
     with _session_lock(key):
         key, session = _load_session(user.id, media_type, media_id, video_id, now)

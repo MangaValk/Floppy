@@ -565,3 +565,16 @@ class SessionLockTests(TestCase):
         self.assertTrue(ran)
         # The other holder's lock is still theirs to release.
         self.assertIsNotNone(cache.get(self.lock_key))
+
+    def test_a_slow_holder_never_frees_a_successors_lock(self):
+        with tracker._session_lock(self.key):
+            # The lease ran out and another event took the lock.
+            cache.set(self.lock_key, "someone-else", timeout=60)
+
+        self.assertEqual(cache.get(self.lock_key), "someone-else")
+
+    def test_the_lease_outlasts_the_task_time_limit(self):
+        from integrations.tasks import _webhook
+
+        limit = _webhook.process_stremio_tracker_event.time_limit
+        self.assertGreater(tracker._SESSION_LOCK_TTL_SECONDS, limit)

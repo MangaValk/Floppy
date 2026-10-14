@@ -361,6 +361,28 @@ class MergePolicyTests(SimpleTestCase):
         self.assertFalse(session["completed"])
         self.assertFalse(session["play_recorded"])
 
+    def test_a_start_older_than_the_stop_is_not_a_rewatch(self):
+        """Queued events can run out of order; the old start must not reset.
+
+        The stop was observed after the start, so a start arriving late is part
+        of the same viewing and must not replace the finished session.
+        """
+        self._settle()
+        late_start = self._obs(observed_at=self.now - timedelta(minutes=30))
+
+        session = tracker.session_for_observation(self.session, late_start)
+
+        self.assertIs(session, self.session)
+        self.assertTrue(session["settled"])
+
+    def test_a_start_after_the_stop_is_still_a_rewatch(self):
+        self._settle()
+        replay = self._obs(observed_at=self.now + timedelta(minutes=1))
+
+        session = tracker.session_for_observation(self.session, replay)
+
+        self.assertIsNot(session, self.session)
+
     def test_changed_video_id_starts_a_new_session(self):
         session = tracker.session_for_observation(
             self.session,
