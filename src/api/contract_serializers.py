@@ -422,7 +422,8 @@ class ListItemsRanksRequestSerializer(serializers.Serializer):
             "Only the items listed change; every other item keeps its rank. "
             "Each item_id may appear once and must belong to this list; "
             "otherwise the request is rejected with 400 and nothing changes. "
-            "Different items may share a rank (a tie)."
+            "Different items may share a rank (a tie). Saving the ranks also "
+            "puts the ranked items of the list in rank order."
         ),
     )
 
@@ -433,8 +434,9 @@ class ListItemResponseSerializer(TrackedMediaResponseSerializer):
     rank = serializers.IntegerField(
         allow_null=True,
         help_text=(
-            "The item's rank in this list, set with PUT "
-            "/api/v1/lists/{list_id}/items/ranks/; null when it has none."
+            "The item's rank in an outside ranking, set with PUT "
+            "/api/v1/lists/{list_id}/items/ranks/; null when it has none. "
+            "The order of the entries is the list's custom order."
         ),
     )
 

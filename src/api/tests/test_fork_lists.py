@@ -424,35 +424,13 @@ class RankTests(FloppyApiTestCase):
         self.assertEqual([entry["id"] for entry in results], self.ids)
         self.assertEqual({entry["rank"] for entry in results}, {None})
 
-    def test_set_ranks_partially_and_keep_the_custom_order(self):
-        """Sparse ranks save, other items stay unranked, order does not move."""
+    def test_ranks_arrange_the_ranked_items_in_the_slots_they_hold(self):
+        """Ranked items sit in rank order; unranked items do not move."""
         response = self._put_ranks(
             {
                 "ranks": [
-                    {"item_id": self.ids[0], "rank": 81},
-                    {"item_id": str(self.ids[2]), "rank": 100},
-                ]
-            },
-        )
-
-        self.assertEqual(response.status_code, HTTP.NO_CONTENT)
-        self.assertEqual(
-            self._ranks(),
-            {self.ids[0]: 81, self.ids[1]: None, self.ids[2]: 100},
-        )
-        results = self._get_items()
-        self.assertEqual([entry["id"] for entry in results], self.ids)
-        self.assertEqual([entry["rank"] for entry in results], [81, None, 100])
-
-    def test_later_call_adds_ranks_and_null_clears(self):
-        """A second call changes only what it lists; null clears a rank."""
-        self._put_ranks({"ranks": [{"item_id": self.ids[0], "rank": 81}]})
-
-        response = self._put_ranks(
-            {
-                "ranks": [
-                    {"item_id": self.ids[1], "rank": 5},
-                    {"item_id": self.ids[0], "rank": None},
+                    {"item_id": self.ids[0], "rank": 90},
+                    {"item_id": str(self.ids[2]), "rank": 81},
                 ],
             },
         )
@@ -460,11 +438,17 @@ class RankTests(FloppyApiTestCase):
         self.assertEqual(response.status_code, HTTP.NO_CONTENT)
         self.assertEqual(
             self._ranks(),
-            {self.ids[0]: None, self.ids[1]: 5, self.ids[2]: None},
+            {self.ids[0]: 90, self.ids[1]: None, self.ids[2]: 81},
         )
+        results = self._get_items()
+        self.assertEqual(
+            [entry["id"] for entry in results],
+            [self.ids[2], self.ids[1], self.ids[0]],
+        )
+        self.assertEqual([entry["rank"] for entry in results], [81, None, 90])
 
-    def test_sort_by_rank_puts_unranked_last_and_reverses(self):
-        """sort=rank is ascending with unranked last; rank_desc reverses."""
+    def test_later_call_ranks_more_items_and_null_clears(self):
+        """A second call keeps earlier ranks; null clears one and leaves the spot."""
         self._put_ranks(
             {
                 "ranks": [
@@ -474,14 +458,26 @@ class RankTests(FloppyApiTestCase):
             },
         )
 
-        ascending = [entry["id"] for entry in self._get_items("?sort=rank")]
-        descending = [entry["id"] for entry in self._get_items("?sort=rank_desc")]
+        self._put_ranks({"ranks": [{"item_id": self.ids[1], "rank": 5}]})
 
-        self.assertEqual(ascending, [self.ids[2], self.ids[0], self.ids[1]])
-        self.assertEqual(descending, [self.ids[0], self.ids[2], self.ids[1]])
+        self.assertEqual(
+            [entry["id"] for entry in self._get_items()],
+            [self.ids[1], self.ids[2], self.ids[0]],
+        )
 
-    def test_tied_ranks_keep_the_custom_order(self):
-        """Items that share a rank stay in the list's own order."""
+        self._put_ranks({"ranks": [{"item_id": self.ids[2], "rank": None}]})
+
+        self.assertEqual(
+            self._ranks(),
+            {self.ids[0]: 90, self.ids[1]: 5, self.ids[2]: None},
+        )
+        self.assertEqual(
+            [entry["id"] for entry in self._get_items()],
+            [self.ids[1], self.ids[2], self.ids[0]],
+        )
+
+    def test_tied_ranks_keep_their_relative_order(self):
+        """Items that share a rank stay in the order they already had."""
         self._put_ranks(
             {
                 "ranks": [
@@ -491,12 +487,20 @@ class RankTests(FloppyApiTestCase):
             },
         )
 
-        results = self._get_items("?sort=rank")
-
         self.assertEqual(
-            [entry["id"] for entry in results],
-            [self.ids[0], self.ids[2], self.ids[1]],
+            [entry["id"] for entry in self._get_items()],
+            self.ids,
         )
+
+    def test_clearing_every_rank_leaves_the_order_alone(self):
+        """Removing the last rank does not reorder or fail."""
+        self._put_ranks({"ranks": [{"item_id": self.ids[2], "rank": 1}]})
+        before = [entry["id"] for entry in self._get_items()]
+
+        response = self._put_ranks({"ranks": [{"item_id": self.ids[2], "rank": None}]})
+
+        self.assertEqual(response.status_code, HTTP.NO_CONTENT)
+        self.assertEqual([entry["id"] for entry in self._get_items()], before)
 
     def test_unknown_sort_is_still_rejected(self):
         """Adding the rank sort does not loosen sort validation."""
@@ -579,8 +583,8 @@ class RankSchemaTests(SimpleTestCase):
         for status in ("204", "400", "401", "403", "404"):
             self.assertIn(status, operation["responses"])
 
-    def test_list_items_response_documents_rank_and_sort(self):
-        """GET items lists `rank` on each entry and the `sort` parameter."""
+    def test_list_items_response_documents_rank(self):
+        """GET items lists `rank` on each entry."""
         operation = self.schema["paths"]["/api/v1/lists/{list_id}/items/"]["get"]
         components = self.schema["components"]["schemas"]
         envelope = components[
@@ -591,11 +595,9 @@ class RankSchemaTests(SimpleTestCase):
         entry = components[
             envelope["properties"]["results"]["items"]["$ref"].rsplit("/", 1)[-1]
         ]
-        sort = next(p for p in operation["parameters"] if p["name"] == "sort")
 
         self.assertIn("rank", entry["properties"])
         self.assertTrue(entry["properties"]["rank"]["nullable"])
-        self.assertIn("rank_desc", sort["description"])
 
 
 class RecommendationTests(FloppyApiTestCase):

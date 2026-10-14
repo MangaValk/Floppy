@@ -286,6 +286,21 @@ class ListItemsOrderView(drf_views.APIView):
         return Response(status=status)
 
 
+def _arrange_by_rank(custom_list):
+    """Put the list's ranked items in rank order, in the slots they hold.
+
+    Unranked items do not move; ranked items that share a rank keep their
+    current relative order.
+    """
+    ranked = list(
+        CustomListItem.objects.filter(custom_list=custom_list, rank__isnull=False)
+        .order_by("rank", "date_added", "id")
+        .values_list("item_id", flat=True),
+    )
+    if ranked:
+        apply_full_order(custom_list, ranked)
+
+
 # /api/v1/lists/[list_id]/items/ranks/
 class ListItemsRanksView(drf_views.APIView):
     """Set or clear the ranks of some items in a list."""
@@ -295,17 +310,20 @@ class ListItemsRanksView(drf_views.APIView):
         responses={204: None, 400: DetailErrorSerializer, **_ORDER_ERRORS},
         description=(
             "Record where items stand in an outside ranking, such as #81 of "
-            "100, so the numbers survive until the rest of the ranking is "
-            "known. A rank is a label and does not move the item: the list's "
-            "custom order is unchanged (see PUT .../items/order/). Only the "
-            "items sent change, so ranks can be added in several calls. "
-            "`GET /api/v1/lists/{list_id}/items/` returns each entry's `rank` "
-            "and accepts `sort=rank` (or `sort=rank_desc`), with unranked "
-            "items last. Items may share a rank. Requires edit access to the "
-            "list. Returns 204 with no body. Returns 400 when `ranks` is "
-            "missing, empty or malformed, an `item_id` repeats, or an "
-            "`item_id` is not in this list; nothing is changed then. Returns "
-            "404 when the list is not found."
+            "100. The list keeps one order, its custom order: after the ranks "
+            "are saved, every ranked item of the list sits in rank order in "
+            "the positions the ranked items already hold, and unranked items "
+            "do not move, so #1-80 can be added in a later call. The rank "
+            "stays on the item as a number, and a drag in the custom order "
+            "moves the item without changing it. `GET "
+            "/api/v1/lists/{list_id}/items/` returns each entry's `rank`, "
+            "null when unset. Items with the same rank keep their relative "
+            "order. Requires edit access to the list. Returns 204 with no "
+            "body. Returns 400 when `ranks` is missing, empty or malformed, "
+            "an `item_id` repeats, or an `item_id` is not in this list; "
+            "nothing is changed then. Returns 404 when the list is not found. "
+            "Like PUT .../items/order/, it rewrites the date added of every "
+            "item in the list, since that is where the custom order is stored."
         ),
     )
     def put(self, request, list_id):
@@ -342,6 +360,7 @@ class ListItemsRanksView(drf_views.APIView):
             for row in rows:
                 row.rank = ranks[row.item_id]
             CustomListItem.objects.bulk_update(rows, ["rank"])
+            _arrange_by_rank(custom_list)
         return Response(status=HTTP.NO_CONTENT)
 
 

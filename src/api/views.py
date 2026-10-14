@@ -611,22 +611,7 @@ class ListDetailView(drf_views.APIView):
 class ListItemsView(drf_views.APIView):
     """List items view."""
 
-    @extend_schema(
-        parameters=[
-            OpenApiParameter(
-                "sort",
-                str,
-                description=(
-                    "Order of the entries. Omit for the list's custom order "
-                    "(see PUT .../items/order/). `rank` or `rank_desc` orders "
-                    "by each entry's rank (see PUT .../items/ranks/), unranked "
-                    "last, ties in custom order. Other values are the media "
-                    "sort keys."
-                ),
-            ),
-        ],
-        responses={200: ListItemsEnvelopeSerializer},
-    )
+    @extend_schema(responses={200: ListItemsEnvelopeSerializer})
     def get(self, request, list_id):
         """Get items of a list."""
         user = request.user
