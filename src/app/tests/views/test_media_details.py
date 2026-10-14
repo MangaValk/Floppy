@@ -587,7 +587,7 @@ class MediaDetailsViewTests(TestCase):
             content,
         )
         self.assertIn(
-            'class="grid w-full grid-cols-[repeat(auto-fit,minmax(2.75rem,1fr))] items-center gap-2 md:flex md:w-auto md:flex-wrap"',
+            'class="flex w-full flex-wrap items-center gap-2 md:w-auto"',
             content,
         )
         self.assertIn(
