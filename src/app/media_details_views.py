@@ -1510,17 +1510,7 @@ def media_details(
             ),
         )
         if user_medias:
-
-            def _activity_key(entry):
-                dates = [d for d in (entry.end_date, entry.start_date) if d]
-                primary_date = max(dates) if dates else entry.created_at
-                return (
-                    primary_date,
-                    entry.start_date or entry.created_at,
-                    entry.created_at,
-                )
-
-            user_medias.sort(key=_activity_key, reverse=True)
+            user_medias.sort(key=helpers.entry_activity_key, reverse=True)
         current_instance = user_medias[0] if user_medias else None
 
     if current_instance is not None:

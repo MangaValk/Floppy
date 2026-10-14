@@ -2143,6 +2143,50 @@ def media_card(context, surface, **values):
     return card_surfaces.card_context(context.flatten(), surface, values)
 
 
+# Icons the detail action row may hold, in display order. Below 400px wide the
+# row keeps this many cells (the More menu is one of them) so each stays tappable.
+DETAIL_ROW_PHONE_CAP = 5
+
+
+@register.simple_tag(takes_context=True)
+def detail_action_row(context, media, media_type):
+    """Say which icons the detail action row shows, and which fold into More on phones.
+
+    Icons that cannot do anything for the item are left out: manual items have no
+    provider to sync with, Seerr needs a configured server and a TMDB movie or
+    show, and podcast shows keep their notes in their own tracker form.
+    """
+    request = context.get("request")
+    user = getattr(request, "user", None)
+    source = (
+        media.get("source")
+        if isinstance(media, dict)
+        else getattr(media, "source", None)
+    )
+    show = {
+        "link": bool(context.get("detail_link_sections")),
+        "tags": True,
+        "notes": not context.get("podcast_show"),
+        "lists": True,
+        "seerr": bool(
+            user
+            and user.seerr_url
+            and user.seerr_api_key
+            and user.seerr_user_id
+            and source == Sources.TMDB.value
+            and media_type in (MediaTypes.MOVIE.value, MediaTypes.TV.value),
+        ),
+        "history": True,
+        "sync": source != Sources.MANUAL.value,
+    }
+    shown = [key for key, on in show.items() if on]
+    # More takes the last icons, the ones used least, and is itself one cell.
+    overflow = (
+        shown[DETAIL_ROW_PHONE_CAP - 1 :] if len(shown) > DETAIL_ROW_PHONE_CAP else []
+    )
+    return {**show, "overflow": overflow}
+
+
 @register.simple_tag(takes_context=True)
 def media_track_actions(context, media_type, instance):
     """Return the detail-page split button actions, and when the page should refresh.

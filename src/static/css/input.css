@@ -1783,6 +1783,11 @@ html.light .theme-toggle-icon-moon {
     width: 2.75rem;
   }
 
+  /* Seven icons need 356px at the default gap; the column beside the poster is 334px at 600px. */
+  .detail-carousel-grid:not(:has(.detail-mobile-hero)) .detail-carousel-grid__actions > div > .mt-4 > .flex {
+    gap: 0.25rem;
+  }
+
   .detail-carousel-grid__actions [data-track-action-root],
   .detail-carousel-grid__actions [x-data*="editTrackOpen"] {
     width: auto;
