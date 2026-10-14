@@ -578,7 +578,17 @@ class ExpiryTests(TestCase):
 
         self.assertFalse(GameArtwork.objects.exists())
 
-    def test_a_new_key_only_reopens_games_with_a_gap(self):
+    def keyholder(self, name="keys"):
+        from django.contrib.auth import get_user_model
+
+        return get_user_model().objects.create_user(username=name, password="x")
+
+    def as_user(self, user):
+        from app.providers import credentials
+
+        return credentials.current_user_scope(user)
+
+    def test_a_new_instance_key_reopens_games_with_a_gap_for_everyone(self):
         gap = self.row("7")
         no_logo = GameArtwork.objects.create(
             source="igdb",
@@ -588,34 +598,111 @@ class ExpiryTests(TestCase):
         )
         done = self.row("8", complete=True)
 
-        game_artwork.expire()
+        game_artwork.keys_saved()
 
-        for row in (gap, no_logo, done):
-            row.refresh_from_db()
         self.assertTrue(game_artwork.is_stale(gap))
         self.assertTrue(game_artwork.is_stale(no_logo))
         self.assertFalse(game_artwork.is_stale(done))
 
-    def test_saving_a_game_artwork_key_reopens_games_with_a_gap(self):
-        from django.contrib.auth import get_user_model
+    def test_a_members_key_only_reopens_games_for_that_member(self):
+        owner, other = self.keyholder("owner"), self.keyholder("other")
+        row = self.row()
 
+        game_artwork.keys_saved(owner)
+
+        with self.as_user(owner):
+            self.assertTrue(game_artwork.is_stale(row))
+        with self.as_user(other):
+            self.assertFalse(game_artwork.is_stale(row))
+        self.assertFalse(game_artwork.is_stale(row))
+
+    def test_a_member_without_the_key_cannot_use_up_the_members_recheck(self):
+        owner, other = self.keyholder("owner"), self.keyholder("other")
+        self.row()
+        game_artwork.keys_saved(owner)
+
+        with (
+            self.as_user(other),
+            patch.object(steamgriddb, "find", return_value={}) as other_find,
+        ):
+            game_artwork.resolve(query())
+        other_find.assert_not_called()
+
+        logo = Art("https://cdn2.steamgriddb.com/logo/1.png", "steamgriddb", "1")
+        with (
+            self.as_user(owner),
+            patch.object(steamgriddb, "find", return_value={LOGO: logo}),
+            patch.object(thegamesdb, "find", return_value={}),
+        ):
+            result = game_artwork.resolve(query())
+
+        self.assertEqual(result[LOGO], logo)
+
+    def test_a_recheck_is_used_up_once_the_lookup_has_run(self):
+        owner = self.keyholder("owner")
+        self.row()
+        game_artwork.keys_saved(owner)
+
+        with (
+            self.as_user(owner),
+            patch.object(steamgriddb, "find", return_value={}),
+            patch.object(thegamesdb, "find", return_value={}),
+        ):
+            game_artwork.resolve(query())
+            row = GameArtwork.objects.get(media_id="7")
+            self.assertFalse(game_artwork.is_stale(row))
+
+    def test_a_new_key_ends_an_earlier_error_backoff(self):
+        owner = self.keyholder("owner")
+        with (
+            patch.object(steamgriddb, "find", side_effect=requests.ConnectionError("down")),
+            patch.object(thegamesdb, "find", return_value={}),
+        ):
+            game_artwork.resolve(query())
+        game_artwork.keys_saved(owner)
+        logo = Art("https://cdn2.steamgriddb.com/logo/1.png", "steamgriddb", "1")
+
+        with (
+            self.as_user(owner),
+            patch.object(steamgriddb, "find", return_value={LOGO: logo}),
+            patch.object(thegamesdb, "find", return_value={}),
+        ):
+            result = game_artwork.resolve(query())
+
+        self.assertEqual(result[LOGO], logo)
+
+    def test_an_error_backoff_does_not_settle_the_row(self):
+        row = self.row()
+        GameArtwork.objects.filter(pk=row.pk).update(resolved_at=timezone.now() - timedelta(hours=7))
+        cache.set(game_artwork._error_key("7"), 1, 300)
+
+        with patch.object(steamgriddb, "find") as mock_find:
+            game_artwork.resolve(query())
+
+        mock_find.assert_not_called()
+        self.assertTrue(game_artwork.is_stale(GameArtwork.objects.get(pk=row.pk)))
+
+    def test_saving_a_game_artwork_key_reopens_games_with_a_gap(self):
         from app.providers import credentials
 
-        user = get_user_model().objects.create_user(username="keys", password="x")
+        user = self.keyholder()
+        row = self.row()
         for slug in ("steamgriddb", "thegamesdb"):
-            for save in (
-                lambda slug=slug: credentials.set_user(slug, user, {"api_key": "k"}),
-                lambda slug=slug: credentials.set_instance(slug, {"api_key": "k"}),
+            for save, scope in (
+                (lambda slug=slug: credentials.set_user(slug, user, {"api_key": "k"}), user),
+                (lambda slug=slug: credentials.set_instance(slug, {"api_key": "k"}), None),
             ):
-                with self.subTest(slug=slug):
-                    row = self.row()
+                with self.subTest(slug=slug, personal=scope is not None):
+                    cache.clear()
                     GameArtwork.objects.filter(pk=row.pk).update(resolved_at=timezone.now())
+                    row.refresh_from_db()
+                    with self.as_user(user):
+                        self.assertFalse(game_artwork.is_stale(row))
 
                     save()
-                    row.refresh_from_db()
 
-                    self.assertTrue(game_artwork.is_stale(row))
-                    row.delete()
+                    with self.as_user(user):
+                        self.assertTrue(game_artwork.is_stale(row))
 
     def test_saving_another_providers_key_leaves_artwork_alone(self):
         from app.providers import credentials
@@ -623,14 +710,13 @@ class ExpiryTests(TestCase):
         row = self.row()
 
         credentials.set_instance("tmdb", {"api_key": "k"})
-        row.refresh_from_db()
 
         self.assertFalse(game_artwork.is_stale(row))
 
     def test_a_failure_while_reopening_artwork_does_not_fail_saving_the_key(self):
         from app.providers import credentials
 
-        with patch.object(game_artwork, "expire", side_effect=RuntimeError("db")):
+        with patch.object(game_artwork, "keys_saved", side_effect=RuntimeError("cache")):
             credentials.set_instance("steamgriddb", {"api_key": "k"})
 
         self.assertEqual(credentials.instance_value("steamgriddb", "api_key"), "k")
@@ -643,5 +729,16 @@ class ExpiryTests(TestCase):
         self.assertTrue(carousel.confirmed_empty("game", "igdb", "7"))
 
         game_artwork.expire("7")
+
+        self.assertFalse(carousel.confirmed_empty("game", "igdb", "7"))
+
+    def test_the_game_page_loads_its_carousel_again_after_a_key_is_saved(self):
+        from app import carousel
+
+        self.row()
+        cache.set("igdb_carousel_v4_7", {"video": None, "photos": []}, 60)
+        self.assertTrue(carousel.confirmed_empty("game", "igdb", "7"))
+
+        game_artwork.keys_saved()
 
         self.assertFalse(carousel.confirmed_empty("game", "igdb", "7"))
