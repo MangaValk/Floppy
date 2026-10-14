@@ -1027,6 +1027,8 @@ class MediaDetailsViewTests(TestCase):
         self.assertIn('class="w-full md:w-3/4"', content)
         # Phones stack in DOM order: the metadata column comes before the content column.
         self.assertNotIn("flex-col-reverse", content)
+        # Watch providers stay first on phones, directly under the synopsis.
+        self.assertIn('class="md:hidden -order-2"', content)
         self.assertLess(
             content.index('class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"'),
             content.index('class="w-full md:w-3/4"'),

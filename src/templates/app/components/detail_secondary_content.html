@@ -581,12 +581,12 @@
     {% endif %}
 
     {% if media_type == MediaTypes.PODCAST.value and show_notes|default:False and notes_entry %}
-      <div class="w-full" {% detail_section_attrs user detail_family "content" "notes" %}>
+      <div class="w-full -order-1 md:order-none" {% detail_section_attrs user detail_family "content" "notes" %}>
         {% include "app/components/detail_notes_section.html" %}
       </div>
     {% endif %}
 
-    <div class="md:hidden">
+    <div class="md:hidden -order-2">
       {% include "app/components/detail_watch_providers.html" with placement="mobile" %}
     </div>
 
