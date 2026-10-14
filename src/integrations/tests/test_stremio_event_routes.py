@@ -1,6 +1,7 @@
 import os
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
@@ -135,6 +136,12 @@ class QueuedRouteTests(TestCase):
                 self.assertEqual(args[:5], (kind, self.user.id, "series", media_id.replace("%3A", ":"), extra))
                 p.assert_not_called()
                 lib.assert_not_called()
+
+    def test_the_task_runs_on_the_interactive_queue(self):
+        route = settings.CELERY_TASK_ROUTES["Process Stremio tracker event"]
+
+        self.assertEqual(route["queue"], "interactive")
+        self.assertEqual(route["priority"], settings.CELERY_TASK_PRIORITY_INTERACTIVE)
 
     def test_a_dispatch_failure_is_accepted(self):
         with patch.object(

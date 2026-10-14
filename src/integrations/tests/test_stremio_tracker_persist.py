@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
+from django_redis import get_redis_connection
 
 from app.mixins import disable_fetch_releases
 from app.models import (
@@ -527,33 +528,38 @@ class SessionLockTests(TestCase):
     def setUp(self):
         cache.clear()
         self.key = "stremio_tracker_v1:1:movie:tt1:"
-        self.lock_key = f"{self.key}:lock"
+        self.redis_key = cache.make_key(f"{self.key}:lock")
+        self.client = get_redis_connection("default")
+
+    def _stored(self):
+        value = self.client.get(self.redis_key)
+        return value.decode() if isinstance(value, bytes) else value
 
     def test_the_lock_is_held_while_folding_and_released_after(self):
         with tracker._session_lock(self.key):
-            self.assertIsNotNone(cache.get(self.lock_key))
+            self.assertIsNotNone(self._stored())
 
-        self.assertIsNone(cache.get(self.lock_key))
+        self.assertIsNone(self._stored())
 
     def test_a_second_fold_waits_for_the_first_to_release(self):
-        cache.set(self.lock_key, True, timeout=60)
+        self.client.set(self.redis_key, "first", ex=60)
         sleeps = []
 
         def release_after_one_wait(seconds):
             sleeps.append(seconds)
-            cache.delete(self.lock_key)
+            self.client.delete(self.redis_key)
 
         with (
             patch.object(tracker.time, "sleep", side_effect=release_after_one_wait),
             tracker._session_lock(self.key),
         ):
-            self.assertIsNotNone(cache.get(self.lock_key))
+            self.assertNotEqual(self._stored(), "first")
 
         self.assertEqual(len(sleeps), 1)
-        self.assertIsNone(cache.get(self.lock_key))
+        self.assertIsNone(self._stored())
 
     def test_a_stuck_holder_delays_the_fold_but_never_drops_it(self):
-        cache.set(self.lock_key, True, timeout=60)
+        self.client.set(self.redis_key, "stuck", ex=60)
         ran = False
 
         with (
@@ -564,4 +570,17 @@ class SessionLockTests(TestCase):
 
         self.assertTrue(ran)
         # The other holder's lock is still theirs to release.
-        self.assertIsNotNone(cache.get(self.lock_key))
+        self.assertEqual(self._stored(), "stuck")
+
+    def test_a_slow_holder_never_frees_a_successors_lock(self):
+        with tracker._session_lock(self.key):
+            # The lease ran out and another event took the lock.
+            self.client.set(self.redis_key, "someone-else", ex=60)
+
+        self.assertEqual(self._stored(), "someone-else")
+
+    def test_the_lease_outlasts_the_task_time_limit(self):
+        from integrations.tasks import _webhook
+
+        limit = _webhook.process_stremio_tracker_event.time_limit
+        self.assertGreater(tracker._SESSION_LOCK_TTL_SECONDS, limit)
