@@ -12,7 +12,9 @@ from django.utils import timezone
 
 from app.models import (
     TV,
+    Album,
     Anime,
+    Artist,
     Episode,
     Game,
     Item,
@@ -3527,6 +3529,122 @@ class ListsModalViewTests(TestCase):
                 media_type=MediaTypes.MUSIC.value,
             ).exists(),
         )
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_lists_modal_album_page_id_uses_stored_album(self, mock_get_metadata):
+        """Issue #1575: an album page's id is not a recording, so ask no provider."""
+        artist = Artist.objects.create(name="Alan Braxe")
+        cases = {
+            "release": Album(
+                title="Running",
+                artist=artist,
+                image="https://example.com/running.jpg",
+                musicbrainz_release_id="123e4567-e89b-12d3-a456-426614174001",
+            ),
+            "release group": Album(
+                title="Group Only",
+                artist=artist,
+                musicbrainz_release_group_id="123e4567-e89b-12d3-a456-426614174002",
+            ),
+            "no MusicBrainz id": Album(title="Unmatched", artist=artist),
+        }
+        for label, album in cases.items():
+            with self.subTest(label):
+                album.save()
+                media_id = (
+                    album.musicbrainz_release_id
+                    or album.musicbrainz_release_group_id
+                    or f"album-{album.id}"
+                )
+
+                response = self.client.get(
+                    reverse(
+                        "lists_modal",
+                        args=[Sources.MUSICBRAINZ.value, MediaTypes.MUSIC.value, media_id],
+                    ),
+                )
+
+                self.assertEqual(response.status_code, 200)
+                item = Item.objects.get(
+                    media_id=media_id,
+                    source=Sources.MUSICBRAINZ.value,
+                    media_type=MediaTypes.MUSIC.value,
+                )
+                self.assertEqual(item.title, album.title)
+                self.assertEqual(item.image, album.image or settings.IMG_NONE)
+        mock_get_metadata.assert_not_called()
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_album_item_can_be_added_to_list_and_opens_album_page(
+        self,
+        mock_get_metadata,
+    ):
+        """An album saved to a list shows there and links back to its album page."""
+        artist = Artist.objects.create(name="Alan Braxe")
+        album = Album.objects.create(
+            title="Running",
+            artist=artist,
+            musicbrainz_release_id="123e4567-e89b-12d3-a456-426614174001",
+        )
+        media_id = album.musicbrainz_release_id
+        self.client.get(
+            reverse(
+                "lists_modal",
+                args=[Sources.MUSICBRAINZ.value, MediaTypes.MUSIC.value, media_id],
+            ),
+        )
+        item = Item.objects.get(media_id=media_id, source=Sources.MUSICBRAINZ.value)
+
+        response = self.client.post(
+            reverse("list_item_toggle"),
+            {"item_id": item.id, "custom_list_id": self.list1.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            CustomListItem.objects.filter(custom_list=self.list1, item=item).exists(),
+        )
+
+        response = self.client.get(
+            reverse("list_detail", args=[self.list1.public_reference]),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Running")
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.MUSICBRAINZ.value,
+                    "media_type": MediaTypes.MUSIC.value,
+                    "media_id": media_id,
+                    "title": "running",
+                },
+            ),
+        )
+        self.assertRedirects(
+            response,
+            reverse(
+                "music_album_details",
+                kwargs={
+                    "artist_id": artist.id,
+                    "artist_slug": "alan-braxe",
+                    "album_id": album.id,
+                    "album_slug": "running",
+                },
+            ),
+            fetch_redirect_response=False,
+        )
+
+        # The card's "Add to tracker" button opens the album's own tracking form.
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                args=[Sources.MUSICBRAINZ.value, MediaTypes.MUSIC.value, media_id],
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("album_save"))
+        mock_get_metadata.assert_not_called()
 
     def test_lists_modal_view_filters_lists_by_tag(self):
         """Tag query param should filter list options in the modal."""
