@@ -7,6 +7,8 @@ skips the write.
 """
 
 import logging
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from urllib.parse import unquote
@@ -22,6 +24,7 @@ from django.utils import timezone
 from api.fork_views_playback import upsert_playback_progress
 from app import fork_services_episode
 from app import fork_services_play_dedupe as play_dedupe
+from app.cache_safety import ON_ERROR_PROCEED, acquire_lock, release_lock
 from app.models import Item, Movie, PlaybackProgress
 from app.models.choices import MediaTypes, Sources
 from app.services.progress_changes import record_progress_deletion
@@ -45,6 +48,12 @@ WATCHED_THRESHOLD_COEF = 0.7
 
 # A session is short-lived; the poller reconciles anything that outlives it.
 _SESSION_TTL_SECONDS = 6 * 60 * 60
+
+# One fold is a few queries (a provider lookup on a first-viewed episode is the
+# slow case), so the lock expires well before a stuck holder could matter.
+_SESSION_LOCK_TTL_SECONDS = 60
+_SESSION_LOCK_WAIT_SECONDS = 10
+_SESSION_LOCK_POLL_SECONDS = 0.05
 
 
 def _imdb_q(imdb_id):
@@ -100,11 +109,21 @@ def _episode_item(user, series_imdb_id, season_number, episode_number):
     series_item = _series_item(user, series_imdb_id)
     if series_item is None:
         return None
+    # Children follow the show's grouping bucket (grouped anime keeps its
+    # episodes in the anime bucket) and otherwise sit in their own, so the same
+    # episode in two buckets never resolves to the wrong one.
+    show_bucket = series_item.library_media_type
+    episode_bucket = (
+        show_bucket
+        if show_bucket and show_bucket != MediaTypes.TV.value
+        else MediaTypes.EPISODE.value
+    )
     return (
         Item.objects.filter(
             media_id=series_item.media_id,
             source=series_item.source,
             media_type=MediaTypes.EPISODE.value,
+            library_media_type=episode_bucket,
             season_number=season_number,
             episode_number=episode_number,
         )
@@ -561,6 +580,39 @@ def _load_session(user_id, media_type, media_id, video_id, now):
         session = new_session(video_id=video_id, started_at=now)
     return key, session
 
+@contextmanager
+def _session_lock(key):
+    """Serialize folds of one session so overlapping events cannot clobber it.
+
+    A pause and a stop sent almost together would otherwise both read the same
+    cached session and the later write would replace the stop's higher position
+    and completion with a stale merge. Waiting is bounded: past the wait the fold
+    proceeds, because losing an event is worse than the narrow race the lock
+    closes. An unavailable cache counts as acquired.
+    """
+    lock_key = f"{key}:lock"
+    deadline = time.monotonic() + _SESSION_LOCK_WAIT_SECONDS
+    held = acquire_lock(
+        lock_key,
+        timeout=_SESSION_LOCK_TTL_SECONDS,
+        on_error=ON_ERROR_PROCEED,
+    )
+    while not held and time.monotonic() < deadline:
+        time.sleep(_SESSION_LOCK_POLL_SECONDS)
+        held = acquire_lock(
+            lock_key,
+            timeout=_SESSION_LOCK_TTL_SECONDS,
+            on_error=ON_ERROR_PROCEED,
+        )
+    if not held:
+        logger.warning("stremio_tracker status=session_lock_timeout")
+    try:
+        yield
+    finally:
+        if held:
+            release_lock(lock_key)
+
+
 def _fold_observation(user, item, media_type, media_id, video_id, observation, now):
     """Merge one observation into its session and persist the result.
 
@@ -570,26 +622,28 @@ def _fold_observation(user, item, media_type, media_id, video_id, observation, n
     """
     from django.core.cache import cache
 
-    key, session = _load_session(user.id, media_type, media_id, video_id, now)
-    # The returned session is the one that carries the boundary: a rewatch
-    # starts a fresh session and must not reuse the settled one.
-    session = session_for_observation(session, observation, now=now)
-    result = apply_observation(session, observation)
+    key = _session_key(user.id, media_type, media_id, video_id)
+    with _session_lock(key):
+        key, session = _load_session(user.id, media_type, media_id, video_id, now)
+        # The returned session is the one that carries the boundary: a rewatch
+        # starts a fresh session and must not reuse the settled one.
+        session = session_for_observation(session, observation, now=now)
+        result = apply_observation(session, observation)
 
-    appended = persist_merge_result(
-        user,
-        item,
-        result,
-        media_id=media_id,
-        video_id=video_id,
-        session_started_at=session.get("started_at"),
-        ended_at=now,
-        persisted_position_seconds=session["persisted_position_seconds"],
-        persisted_duration_seconds=session["persisted_duration_seconds"],
-        persisted_completed=session["persisted_completed"],
-    )
-    _remember_persisted_progress(session, result)
-    cache.set(key, session, timeout=_SESSION_TTL_SECONDS)
+        appended = persist_merge_result(
+            user,
+            item,
+            result,
+            media_id=media_id,
+            video_id=video_id,
+            session_started_at=session.get("started_at"),
+            ended_at=now,
+            persisted_position_seconds=session["persisted_position_seconds"],
+            persisted_duration_seconds=session["persisted_duration_seconds"],
+            persisted_completed=session["persisted_completed"],
+        )
+        _remember_persisted_progress(session, result)
+        cache.set(key, session, timeout=_SESSION_TTL_SECONDS)
     return appended
 
 

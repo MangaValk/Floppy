@@ -519,3 +519,49 @@ class PersistMergeResultEpisodeTests(TestCase):
             self._persist(started)
 
         self.assertEqual(self._plays(), 2)
+
+
+class SessionLockTests(TestCase):
+    """Overlapping events for one session are folded one at a time."""
+
+    def setUp(self):
+        cache.clear()
+        self.key = "stremio_tracker_v1:1:movie:tt1:"
+        self.lock_key = f"{self.key}:lock"
+
+    def test_the_lock_is_held_while_folding_and_released_after(self):
+        with tracker._session_lock(self.key):
+            self.assertIsNotNone(cache.get(self.lock_key))
+
+        self.assertIsNone(cache.get(self.lock_key))
+
+    def test_a_second_fold_waits_for_the_first_to_release(self):
+        cache.set(self.lock_key, True, timeout=60)
+        sleeps = []
+
+        def release_after_one_wait(seconds):
+            sleeps.append(seconds)
+            cache.delete(self.lock_key)
+
+        with (
+            patch.object(tracker.time, "sleep", side_effect=release_after_one_wait),
+            tracker._session_lock(self.key),
+        ):
+            self.assertIsNotNone(cache.get(self.lock_key))
+
+        self.assertEqual(len(sleeps), 1)
+        self.assertIsNone(cache.get(self.lock_key))
+
+    def test_a_stuck_holder_delays_the_fold_but_never_drops_it(self):
+        cache.set(self.lock_key, True, timeout=60)
+        ran = False
+
+        with (
+            patch.object(tracker, "_SESSION_LOCK_WAIT_SECONDS", 0),
+            tracker._session_lock(self.key),
+        ):
+            ran = True
+
+        self.assertTrue(ran)
+        # The other holder's lock is still theirs to release.
+        self.assertIsNotNone(cache.get(self.lock_key))

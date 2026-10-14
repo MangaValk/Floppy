@@ -212,6 +212,101 @@ class ResolveMediaIdentityTests(TestCase):
 
         self.assertEqual(resolved, episode_item)
 
+    def test_episode_resolves_in_the_series_library_bucket(self):
+        """The same episode in two buckets resolves to the show's own bucket.
+
+        A grouped anime keeps its episodes in the anime bucket next to a plain
+        TV episode of the same id, and the query must not pick either at random.
+        """
+        with disable_fetch_releases():
+            series_item = Item.objects.create(
+                media_id="1399",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.TV.value,
+                library_media_type=MediaTypes.ANIME.value,
+                provider_external_ids={"imdb_id": "tt450"},
+                title="Grouped Anime",
+                image="",
+            )
+            TV.objects.create(
+                item=series_item,
+                user=self.user,
+                status=Status.IN_PROGRESS.value,
+            )
+            tv_bucket_episode = Item.objects.create(
+                media_id="1399",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.EPISODE.value,
+                season_number=1,
+                episode_number=2,
+                title="TV Bucket",
+                image="",
+            )
+            anime_bucket_episode = Item.objects.create(
+                media_id="1399",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.EPISODE.value,
+                library_media_type=MediaTypes.ANIME.value,
+                season_number=1,
+                episode_number=2,
+                title="Anime Bucket",
+                image="",
+            )
+
+        resolved = stremio_tracker.resolve_media_identity(
+            self.user,
+            "series",
+            "tt450",
+            video_id="tt450:1:2",
+        )
+
+        self.assertEqual(resolved, anime_bucket_episode)
+        self.assertNotEqual(resolved, tv_bucket_episode)
+
+    def test_a_tv_series_ignores_the_same_episode_in_the_anime_bucket(self):
+        with disable_fetch_releases():
+            series_item = Item.objects.create(
+                media_id="1399",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.TV.value,
+                provider_external_ids={"imdb_id": "tt460"},
+                title="Plain Series",
+                image="",
+            )
+            TV.objects.create(
+                item=series_item,
+                user=self.user,
+                status=Status.IN_PROGRESS.value,
+            )
+            Item.objects.create(
+                media_id="1399",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.EPISODE.value,
+                library_media_type=MediaTypes.ANIME.value,
+                season_number=1,
+                episode_number=2,
+                title="Anime Bucket",
+                image="",
+            )
+            tv_bucket_episode = Item.objects.create(
+                media_id="1399",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.EPISODE.value,
+                season_number=1,
+                episode_number=2,
+                title="TV Bucket",
+                image="",
+            )
+
+        resolved = stremio_tracker.resolve_media_identity(
+            self.user,
+            "series",
+            "tt460",
+            video_id="tt460:1:2",
+        )
+
+        self.assertEqual(resolved, tv_bucket_episode)
+
     def test_imdb_source_item_resolves_by_media_id(self):
         """Some Items carry the IMDB id as media_id instead; both must match."""
         with disable_fetch_releases():

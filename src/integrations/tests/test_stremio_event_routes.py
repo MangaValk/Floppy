@@ -6,7 +6,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 
-from integrations import stremio_events, views
+from integrations import stremio_events, stremio_tracker, views
 
 User = get_user_model()
 
@@ -40,15 +40,19 @@ class PlayerRouteTests(TestCase):
             },
         )
 
-        with patch.object(views.stremio_tracker, "record_player_event") as handler:
+        with patch.object(stremio_tracker, "record_player_event") as handler:
             response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        handler.assert_called_once_with(
-            self.user,
-            "series",
-            "tt1:1:2",
-            "action=start&currentTime=1000&duration=2000",
+        handler.assert_called_once()
+        self.assertEqual(
+            handler.call_args.args,
+            (
+                self.user,
+                "series",
+                "tt1:1:2",
+                "action=start&currentTime=1000&duration=2000",
+            ),
         )
 
     def test_player_route_rejects_an_invalid_token(self):
@@ -75,16 +79,74 @@ class PlayerRouteTests(TestCase):
             },
         )
 
-        with patch.object(views.stremio_tracker, "record_library_event") as handler:
+        with patch.object(stremio_tracker, "record_library_event") as handler:
             response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        handler.assert_called_once_with(
-            self.user,
-            "series",
-            "tt1",
-            "action=watched&videoId=tt1%3A1%3A2",
+        handler.assert_called_once()
+        self.assertEqual(
+            handler.call_args.args,
+            (
+                self.user,
+                "series",
+                "tt1",
+                "action=watched&videoId=tt1%3A1%3A2",
+            ),
         )
+
+
+class QueuedRouteTests(TestCase):
+    """The routes hand the event to Celery; the web worker never writes it."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="routes-queue", password="x")
+
+    def _url(self, route, media_id, extra):
+        return reverse(
+            route,
+            kwargs={
+                "token": self.user.token,
+                "media_type": "series",
+                "media_id": media_id,
+                "extra": extra,
+            },
+        )
+
+    def test_routes_queue_the_event_instead_of_running_it(self):
+        cases = (
+            ("stremio_addon_player", "player", "tt1%3A1%3A2", "action=start"),
+            ("stremio_addon_library", "library", "tt1", "action=watched"),
+        )
+        for route, kind, media_id, extra in cases:
+            with self.subTest(route=route):
+                with (
+                    patch.object(
+                        views.tasks.process_stremio_tracker_event,
+                        "delay",
+                    ) as delay,
+                    patch.object(stremio_tracker, "record_player_event") as p,
+                    patch.object(stremio_tracker, "record_library_event") as lib,
+                ):
+                    response = self.client.get(self._url(route, media_id, extra))
+
+                self.assertEqual(response.status_code, 200)
+                delay.assert_called_once()
+                args = delay.call_args.args
+                self.assertEqual(args[:5], (kind, self.user.id, "series", media_id.replace("%3A", ":"), extra))
+                p.assert_not_called()
+                lib.assert_not_called()
+
+    def test_a_dispatch_failure_is_accepted(self):
+        with patch.object(
+            views.tasks.process_stremio_tracker_event,
+            "delay",
+            side_effect=RuntimeError("broker down"),
+        ):
+            response = self.client.get(
+                self._url("stremio_addon_player", "tt1%3A1%3A2", "action=start"),
+            )
+
+        self.assertEqual(response.status_code, 200)
 
 
 class InvalidMediaIdTests(TestCase):
@@ -108,7 +170,7 @@ class InvalidMediaIdTests(TestCase):
             },
         )
 
-        with patch.object(views.stremio_tracker, "record_player_event") as handler:
+        with patch.object(stremio_tracker, "record_player_event") as handler:
             response = self.client.get(url)
 
         self.assertEqual(response.status_code, 400)
@@ -126,7 +188,7 @@ class InvalidMediaIdTests(TestCase):
             },
         )
 
-        with patch.object(views.stremio_tracker, "record_library_event") as handler:
+        with patch.object(stremio_tracker, "record_library_event") as handler:
             response = self.client.get(url)
 
         self.assertEqual(response.status_code, 400)
@@ -158,7 +220,7 @@ class InvalidMediaIdTests(TestCase):
                     },
                 )
 
-                with patch.object(views.stremio_tracker, handler_name) as handler:
+                with patch.object(stremio_tracker, handler_name) as handler:
                     response = self.client.get(url)
 
                 self.assertEqual(response.status_code, 200)
