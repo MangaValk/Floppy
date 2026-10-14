@@ -35,6 +35,7 @@ from app.models import (
     Sources,
     Status,
 )
+from app.models.episode_runtimes import usable_runtime_minutes
 from app.services.completion import select_preferred_activity_entry
 from app.services.episode_coordinates import InvalidEpisodeCoordinateError
 
@@ -161,7 +162,8 @@ def _tracked_show(user, media_id):
 
 
 def _seconds(runtime_minutes):
-    return runtime_minutes * 60 if runtime_minutes else None
+    minutes = usable_runtime_minutes(runtime_minutes)
+    return minutes * 60 if minutes else None
 
 
 def _subject(user, media_type, media_id):
