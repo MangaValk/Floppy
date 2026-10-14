@@ -2448,7 +2448,8 @@ class MediaDetailsViewTests(TestCase):
         button = content[content.index('title="Add or edit notes"') :]
         button = button[: button.index("</button>")]
         self.assertIn('"focus": "notes"', button)
-        self.assertIn(f'"instance_id": "{movie.id}"', button)
+        # The entry is resolved when the button is clicked, not baked in here.
+        self.assertNotIn("instance_id", button)
 
     @patch("app.providers.services.get_media_metadata")
     def test_media_details_notes_button_for_untracked_item_has_no_instance(
@@ -11809,12 +11810,13 @@ class MediaDetailsViewTests(TestCase):
         self.assertEqual(targets, expected)
         self.assertEqual(anchors, expected)
 
-        # The Notes shortcut in the action row opens the same modal for the
-        # first watch in the history with the notes field focused.
+        # The Notes shortcut in the action row opens the same modal with the
+        # notes field focused; the modal picks the latest watch when it opens.
         button = html[html.index('title="Add or edit notes"') :]
         button = button[: button.index("</button>")]
         self.assertIn('"focus": "notes"', button)
-        self.assertIn(f'"instance_id": "{watches[0].pk}"', button)
+        self.assertNotIn("instance_id", button)
+        self.assertNotIn("is_create", button)
         self.assertIn('"episode_number": "1"', button)
 
 

@@ -266,7 +266,7 @@
                         title="{% translate "Add or edit notes" %}"
                         aria-label="{% translate "Add or edit notes" %}"
                         hx-get="{% url 'track_modal' source=source media_type='episode' media_id=media_id season_number=season_number %}"
-                        hx-vals='{"return_url": "{{ detail_return_url|urlencode }}", "episode_number": "{{ episode_number }}", "focus": "notes", {% if episode.history %}"instance_id": "{{ episode.history.0.id }}"{% else %}"is_create": "1"{% endif %}}'
+                        hx-vals='{"return_url": "{{ detail_return_url|urlencode }}", "episode_number": "{{ episode_number }}", "focus": "notes"}'
                         hx-target="#episode-notes-new-modal-{{ source }}-{{ media_id }}-{{ season_number }}-{{ episode_number }}"
                         hx-trigger="click"
                         @click="trackOpen = true">

@@ -172,7 +172,7 @@
                         title="{% translate "Add or edit notes" %}"
                         aria-label="{% translate "Add or edit notes" %}"
                         hx-get="{% media_view_url 'track_modal' media %}"
-                        hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "focus": "notes", "track_action_update": "1"{% if current_instance %}, "instance_id": "{{ current_instance.id }}"{% endif %}{% if hardcover_edition_id %}, "edition_id": "{{ hardcover_edition_id }}"{% endif %}}'
+                        hx-vals='{"return_url": "{{ request.get_full_path|urlencode }}", "focus": "notes", "track_action_update": "1"{% if hardcover_edition_id %}, "edition_id": "{{ hardcover_edition_id }}"{% endif %}}'
                         hx-target="#{% component_id 'notes-track' media %}"
                         hx-trigger="click"
                         @click="trackOpen = true">{% include "app/icons/page.svg" with classes="w-4 h-4" %}</button>

@@ -170,6 +170,30 @@ class TrackModalViewTests(TestCase):
         self.assertContains(plain, "notesOpen: false")
         self.assertNotContains(plain, "textarea[name=notes]")
 
+    def test_focus_notes_without_instance_resolves_the_latest_entry_now(self):
+        """A new entry made after the page loaded is what the Notes button edits."""
+        url = reverse(
+            "track_modal",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.MOVIE.value,
+                "media_id": "238",
+            },
+        )
+        self.movie.end_date = datetime(2024, 1, 1, tzinfo=UTC)
+        self.movie.save()
+        newer = Movie.objects.create(
+            item=self.item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            progress=1,
+            end_date=datetime(2025, 6, 1, tzinfo=UTC),
+        )
+
+        response = self.client.get(url, {"focus": "notes"}, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.context["current_instance"].id, newer.id)
+
     @patch("app.services.metadata_resolution.ItemProviderLink.objects.update_or_create")
     def test_existing_tv_modal_does_not_write_provider_links(self, upsert):
         """Opening a home card editor must not wait on optional persistence."""

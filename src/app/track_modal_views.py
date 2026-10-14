@@ -364,7 +364,12 @@ def _render_standard_track_modal(
                 season_number=season_number,
                 episode_number=episode_number,
             )
-            media = user_medias.first()
+            if request.GET.get("focus") == "notes":
+                # The Notes shortcut edits the entry the detail page treats as
+                # current, resolved now so it stays right after a new entry.
+                media = max(user_medias, key=helpers.entry_activity_key, default=None)
+            else:
+                media = user_medias.first()
         if media:
             instance_id = media.id
 
