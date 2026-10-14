@@ -327,15 +327,19 @@ def _provider_item(media_id, media_type, title, user, enrich):
                 Sources.COMICVINE.value,
                 user=user,
             )
-        item = Item.objects.create(
+        # Two import workers can reach this point for the same identity; the
+        # loser of the race reads the winner's row instead of failing.
+        item, _ = Item.objects.get_or_create(
             **identity,
-            library_media_type=media_type.value,
             season_number=None,
             episode_number=None,
-            title=title,
-            original_title=title,
-            localized_title=title,
-            image=settings.IMG_NONE,
+            defaults={
+                "library_media_type": media_type.value,
+                "title": title,
+                "original_title": title,
+                "localized_title": title,
+                "image": settings.IMG_NONE,
+            },
         )
         if metadata:
             _apply_provider_metadata(item, metadata)

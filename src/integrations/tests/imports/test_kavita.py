@@ -886,6 +886,34 @@ class KavitaViewTests(TestCase):
         self.assertContains(response, reverse("komga_connect"))
 
 
+class ProviderItemRaceTests(TestCase):
+    """Cover two workers creating the same Comic Vine item."""
+
+    def test_losing_the_create_race_returns_the_existing_item(self):
+        user = get_user_model().objects.create_user(username="race-user")
+        existing = Item.objects.create(
+            media_id="222",
+            source=Sources.COMICVINE.value,
+            media_type=MediaTypes.COMIC_ISSUE.value,
+            library_media_type=MediaTypes.COMIC_ISSUE.value,
+            title="Saga #1",
+        )
+
+        # The lookup ran before the other worker's row was committed.
+        with patch("integrations.imports.kavita.find_item_across_buckets") as find:
+            find.return_value = None
+            item = kavita._provider_item(
+                "222",
+                MediaTypes.COMIC_ISSUE,
+                "Saga #1",
+                user,
+                enrich=False,
+            )
+
+        self.assertEqual(item.pk, existing.pk)
+        self.assertEqual(Item.objects.filter(media_id="222").count(), 1)
+
+
 class ComicVineProviderErrorTests(SimpleTestCase):
     """Cover which Comic Vine failures the sync treats as temporary."""
 
