@@ -483,6 +483,12 @@
   .z-\[90\] {
     z-index: 90;
   }
+  .-order-1 {
+    order: calc(1 * -1);
+  }
+  .-order-2 {
+    order: calc(2 * -1);
+  }
   .order-1 {
     order: 1;
   }
@@ -1362,9 +1368,6 @@
   }
   .justify-start {
     justify-content: flex-start;
-  }
-  .gap-0 {
-    gap: calc(var(--spacing) * 0);
   }
   .gap-0\.5 {
     gap: calc(var(--spacing) * 0.5);
@@ -5348,6 +5351,11 @@
   .md\:order-2 {
     @media (width >= 48rem) {
       order: 2;
+    }
+  }
+  .md\:order-none {
+    @media (width >= 48rem) {
+      order: 0;
     }
   }
   .md\:col-span-2 {
