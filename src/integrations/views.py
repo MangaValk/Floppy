@@ -2669,6 +2669,24 @@ def import_kavita(request):
     )
 
 
+@require_POST
+def refresh_kavita(request):
+    """Queue a full Kavita rescan with provider re-resolution."""
+    account = getattr(request.user, "kavita_account", None)
+    if not account:
+        messages.error(request, "Connect Kavita before refreshing.")
+        return redirect("import_data")
+    queued = _queue_task_or_message(
+        request,
+        tasks.import_kavita,
+        user_id=request.user.id,
+        mode="overwrite",
+    )
+    if queued is not False:
+        messages.info(request, "Kavita metadata refresh queued.")
+    return redirect("import_data")
+
+
 AUDIOBOOKSHELF_COVER_TIMEOUT = 15
 # After one failed cover fetch, the account's remaining covers skip ABS for this
 # long. Otherwise every poster on a page holds a web worker for the full

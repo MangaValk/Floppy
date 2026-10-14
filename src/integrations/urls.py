@@ -161,6 +161,11 @@ urlpatterns = [
         name="import_kavita",
     ),
     path(
+        "import/kavita/refresh",
+        views.refresh_kavita,
+        name="refresh_kavita",
+    ),
+    path(
         "import/komga/connect",
         views.komga_connect,
         name="komga_connect",
