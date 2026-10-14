@@ -419,6 +419,19 @@ class CheckInTests(TestCase):
         planning.refresh_from_db()
         self.assertEqual(planning.status, Status.IN_PROGRESS.value)
 
+    def test_an_unknown_runtime_marker_is_not_a_duration(self):
+        for marker in (999998, 999999):
+            with self.subTest(marker=marker):
+                cache.clear()
+                self.item.runtime_minutes = marker
+                self.item.save()
+                self.start()
+
+                record = cache.get(checkin._key(self.user.id))
+                self.assertIsNone(record["duration"])
+                self.assertIsNone(record["end_ts"])
+                self.assertFalse(self.card()["duration_seconds"])
+
     def test_other_sources_cannot_be_checked_in(self):
         self.assertFalse(checkin.supports(MediaTypes.MOVIE.value, Sources.MANUAL.value))
         self.assertFalse(checkin.supports(MediaTypes.GAME.value, Sources.TMDB.value))
@@ -538,6 +551,19 @@ class CheckInShowTests(TestCase):
         info = checkin.phase(self.user, self.show)
         self.assertEqual(info["phase"], checkin.PHASE_ACTIVE)
         self.assertEqual(info["code"], "S02E02")
+
+    def test_an_unknown_episode_runtime_is_not_a_duration(self):
+        self.episodes[1].runtime_minutes = 999998
+        self.episodes[1].save()
+
+        self.start()
+
+        record = cache.get(checkin._key(self.user.id))
+        self.assertIsNone(record["duration"])
+        self.assertIsNone(record["end_ts"])
+        card = self.card()
+        self.assertFalse(card["duration_seconds"])
+        self.assertEqual(card["episode_number"], 1)
 
     def test_assumed_end_completes_the_episode(self):
         self.start()
