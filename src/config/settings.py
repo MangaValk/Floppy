@@ -1558,6 +1558,7 @@ else:
         "integrations.tasks._plex_collection",
         "integrations.tasks._plex_sections",
         "integrations.tasks._receipts",
+        "integrations.tasks._ratings",
         "integrations.tasks._state_sync",
         "integrations.tasks._webhook",
     )

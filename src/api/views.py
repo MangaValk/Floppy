@@ -52,6 +52,7 @@ from app.statistics import (
 )
 from events import tasks
 from events.models import Event
+from integrations.state.ratings import rating_edit
 from lists.forms import validate_public_slug
 from lists.models import CustomList, CustomListItem
 from users.models import MediaStatusChoices
@@ -887,6 +888,7 @@ class MediaTypeListView(drf_views.APIView):
             500: DetailErrorSerializer,
         },
     )
+    @rating_edit
     def post(self, request, media_type):
         """Create a new consumption for a media item.
 
@@ -1401,6 +1403,7 @@ class MediaDetailView(drf_views.APIView):
             500: DetailErrorSerializer,
         },
     )
+    @rating_edit
     def patch(self, request, media_type, source, media_id):
         """Update the convenience/default tracked row for a media item.
 
@@ -1800,6 +1803,7 @@ class MediaConsumptionEntryDetailView(drf_views.APIView):
             500: DetailErrorSerializer,
         },
     )
+    @rating_edit
     def patch(self, request, media_type, source, media_id, consumption_id):
         """Update one exact consumption history entry for a media item."""
         if not check_valid_type(media_type):
@@ -3836,6 +3840,7 @@ class MediaEpisodeDetailView(drf_views.APIView):
         parameters=[MEDIA_TYPE_PARAM, LIBRARY_MEDIA_TYPE_PARAM],
         responses={404: DetailErrorSerializer},
     )
+    @rating_edit
     def patch(
         self,
         request,
@@ -4334,6 +4339,7 @@ class MediaEpisodeConsumptionEntryDetailView(drf_views.APIView):
         parameters=[MEDIA_TYPE_PARAM, LIBRARY_MEDIA_TYPE_PARAM],
         responses={404: DetailErrorSerializer},
     )
+    @rating_edit
     def patch(
         self,
         request,

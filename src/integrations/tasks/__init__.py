@@ -4,6 +4,7 @@ from celery import shared_task
 from django.contrib.auth import get_user_model
 
 _EXPORT_MODULES = {
+    "export_tmdb_ratings": "integrations.tasks._ratings",
     **dict.fromkeys(
         ("COMPACT_CHANGE_LOG_TASK_NAME", "compact_watch_state_changes"),
         "integrations.tasks._change_log",
@@ -218,6 +219,7 @@ __all__ = [
     "compact_integration_event_receipts",
     "compact_watch_state_changes",
     "deliver_watched_state",
+    "export_tmdb_ratings",
     "fetch_collection_metadata_for_item",
     "format_import_message",
     "format_media_type_display",

@@ -158,6 +158,7 @@ def _sync_emit_changes_flag(user):
     """
     should_emit = any(
         binding.is_operational()
+        and any(capability.startswith("watched.") for capability in binding.approved_capabilities)
         for binding in SyncBinding.objects.filter(user=user)
     )
     sequence, _created = WatchStateSequence.objects.get_or_create(user=user)
