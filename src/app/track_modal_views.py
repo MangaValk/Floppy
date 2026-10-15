@@ -1148,6 +1148,16 @@ def track_modal(
         except (TypeError, ValueError):
             episode_number = None
 
+    # A list card for an album carries the album page's id, which is not a
+    # recording; the album has its own tracking form.
+    if media_type == MediaTypes.MUSIC.value and source == Sources.MUSICBRAINZ.value:
+        from app.music_album_views import album_track_modal
+        from app.services.music import album_for_media_id
+
+        album = album_for_media_id(media_id)
+        if album:
+            return album_track_modal(request, album.id)
+
     # Handle podcast shows (identified by podcast_uuid)
     if (
         not standard_modal

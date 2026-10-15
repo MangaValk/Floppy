@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_not_required
 from django.core.cache import cache
 from django.http import HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -345,6 +345,20 @@ def media_details(
             _mark_detail_persistence_deferred()
             return fallback
 
+    # A list can hold an album, saved under the album page's id. That id is not
+    # a recording, so the album page is the only place that can describe it.
+    if (
+        not is_anonymous
+        and media_type == MediaTypes.MUSIC.value
+        and source == Sources.MUSICBRAINZ.value
+    ):
+        from app.services.music import album_for_media_id
+        from app.templatetags.app_tags import music_album_url
+
+        album = album_for_media_id(media_id)
+        if album:
+            return redirect(music_album_url(album))
+
     # For podcast shows (identified by podcast_uuid), show show detail page
     if media_type == MediaTypes.PODCAST.value and source in {
         Sources.POCKETCASTS.value,
@@ -364,7 +378,6 @@ def media_details(
                 int(media_id)  # Will raise ValueError if not numeric
                 # This looks like an iTunes ID, try to enrich
                 from django.contrib import messages
-                from django.shortcuts import redirect
 
                 from app.services.podcast_import import (
                     PodcastImportError,
