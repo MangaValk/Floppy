@@ -653,9 +653,10 @@ html:is(.glass, .custom) [class*="bg-[var(--color-surface)]"] {
  * (via their `bg-[var(--color-surface)]` class) and nest fixed modal
  * overlays, so under glass/custom themes every card would permanently
  * capture its own modal instead of letting it use the viewport. Keep the
- * tinted background but drop the blur specifically on cards.
+ * tinted background but drop the blur specifically on cards. Use `:is` so
+ * this override matches the surface rule's specificity; `:where` loses to it.
  */
-html:is(.glass, .custom) :where(.media-card, .search-result-card, .search-result-card-square) {
+html:is(.glass, .custom) :is(.media-card, .search-result-card, .search-result-card-square) {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }

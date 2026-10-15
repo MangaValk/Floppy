@@ -487,19 +487,19 @@ msgstr ""
 
 #: app/metadata_sync_views.py:99
 msgid "That metadata provider is not available for this title."
-msgstr ""
+msgstr "Ese proveedor de metadatos no está disponible para este título."
 
 #: app/metadata_sync_views.py:120
 msgid "Metadata provider updated."
-msgstr ""
+msgstr "Proveedor de metadatos actualizado."
 
 #: app/metadata_sync_views.py:156
 msgid "That metadata language is not available."
-msgstr ""
+msgstr "Ese idioma de metadatos no está disponible."
 
 #: app/metadata_sync_views.py:163
 msgid "Metadata language updated."
-msgstr ""
+msgstr "Idioma de los metadatos actualizado."
 
 #: app/metadata_sync_views.py:329
 #, python-format
@@ -544,19 +544,19 @@ msgstr ""
 
 #: app/metadata_sync_views.py:556
 msgid "You can only update metadata for items in your library."
-msgstr ""
+msgstr "Solo puedes actualizar los metadatos de los elementos de tu biblioteca."
 
 #: app/metadata_sync_views.py:562
 msgid "Metadata overrides are not available for this item."
-msgstr ""
+msgstr "No se pueden personalizar los metadatos de este elemento."
 
 #: app/metadata_sync_views.py:574
 msgid "Custom metadata updated."
-msgstr ""
+msgstr "Metadatos personalizados actualizados."
 
 #: app/metadata_sync_views.py:577
 msgid "Custom metadata already matches this item."
-msgstr ""
+msgstr "Los metadatos personalizados ya coinciden con este elemento."
 
 #: app/metadata_sync_views.py:658
 msgid "Only flat MAL anime can be migrated to grouped series."
@@ -580,7 +580,7 @@ msgstr ""
 
 #: app/metadata_sync_views.py:1551
 msgid "Metadata synced successfully."
-msgstr ""
+msgstr "Metadatos sincronizados correctamente."
 
 #: app/metadata_sync_views.py:1572
 msgid "The data was recently synced, please wait a few seconds."
@@ -699,7 +699,7 @@ msgstr "Pausado"
 #: templates/app/components/fill_track_episode.html:38
 #: templates/app/components/fill_track_episode.html:59 users/models.py:146
 msgid "Dropped"
-msgstr ""
+msgstr "Abandonado"
 
 #: app/music_album_views.py:130
 msgid "Select a release to use."
@@ -951,7 +951,7 @@ msgstr ""
 #: templates/app/components/detail_title_block.html:107
 #, python-format
 msgid "Progress: %(value_1)s"
-msgstr ""
+msgstr "Progreso: %(value_1)s"
 
 #: app/templatetags/app_tags.py:117
 msgctxt "game activity"
@@ -1012,11 +1012,11 @@ msgstr ""
 #: templates/app/components/statistics/tv_activity_overview.html:10
 #: users/templatetags/user_tags.py:22
 msgid "TV Shows"
-msgstr ""
+msgstr "Series de TV"
 
 #: app/templatetags/app_tags.py:521 users/templatetags/user_tags.py:23
 msgid "TV Seasons"
-msgstr ""
+msgstr "Temporadas de TV"
 
 #: app/templatetags/app_tags.py:522
 #: templates/app/components/detail_secondary_content.html:401
@@ -1026,47 +1026,47 @@ msgstr ""
 #: templates/app/podcast_show_detail.html:110
 #: users/templatetags/user_tags.py:24
 msgid "Episodes"
-msgstr ""
+msgstr "Episodios"
 
 #: app/templatetags/app_tags.py:523
 #: templates/app/components/featured_repeat_player_content.html:33
 #: templates/app/components/statistics/movie_activity_overview.html:10
 #: templates/users/import_data.html:2918 users/templatetags/user_tags.py:25
 msgid "Movies"
-msgstr ""
+msgstr "Películas"
 
 #: app/templatetags/app_tags.py:526
 #: templates/app/components/featured_repeat_player_content.html:38
 #: templates/users/import_data.html:374 templates/users/import_data.html:2919
 #: users/templatetags/user_tags.py:29
 msgid "Games"
-msgstr ""
+msgstr "Juegos"
 
 #: app/templatetags/app_tags.py:527 templates/app/statistics.html:1411
 #: templates/users/import_data.html:2917 users/templatetags/user_tags.py:26
 msgid "Books"
-msgstr ""
+msgstr "Libros"
 
 #: app/templatetags/app_tags.py:528
 #: templates/app/components/filter_menu.html:318
 #: templates/app/statistics.html:1417 templates/users/import_data.html:2915
 #: users/templatetags/user_tags.py:30
 msgid "Comics"
-msgstr ""
+msgstr "Cómics"
 
 #: app/templatetags/app_tags.py:529 users/templatetags/user_tags.py:31
 msgid "Comic Issues"
-msgstr ""
+msgstr "Números de cómics"
 
 #: app/templatetags/app_tags.py:530 templates/app/statistics.html:1617
 #: users/templatetags/user_tags.py:32
 msgid "Board Games"
-msgstr ""
+msgstr "Juegos de mesa"
 
 #: app/templatetags/app_tags.py:532 templates/users/import_data.html:381
 #: users/templatetags/user_tags.py:34
 msgid "Podcasts"
-msgstr ""
+msgstr "Pódcasts"
 
 #: app/templatetags/app_tags.py:590
 msgctxt "progress unit"
@@ -1535,10 +1535,9 @@ msgid "Sign in"
 msgstr ""
 
 #: templates/app/collection_list.html:7
-#, fuzzy
 #| msgid "Collection"
 msgid "Collection - Floppy"
-msgstr "Colección"
+msgstr "Colección - Floppy"
 
 #: templates/app/collection_list.html:11 templates/app/collection_list.html:204
 #: templates/lists/components/smart_rules_summary.html:11
@@ -1687,7 +1686,7 @@ msgstr ""
 #: templates/lists/components/smart_rules_builder.html:211
 #: templates/lists/list_detail.html:608
 msgid "Grid View"
-msgstr ""
+msgstr "Vista de cuadrícula"
 
 #: templates/app/collection_list.html:454
 #: templates/app/components/media_settings_menu.html:34
@@ -1717,7 +1716,7 @@ msgstr[1] ""
 #: templates/app/components/detail_score_chip.html:14
 #: templates/app/components/detail_score_chip.html:22
 msgid "Your score"
-msgstr ""
+msgstr "Tu puntuación"
 
 #: templates/app/comic_issue_details.html:90
 #: templates/app/comic_issue_details.html:91
@@ -1730,7 +1729,7 @@ msgstr ""
 #: templates/app/components/detail_score_chip.html:44
 #: templates/app/components/detail_score_chip.html:45
 msgid "Edit rating"
-msgstr ""
+msgstr "Editar puntuación"
 
 #: templates/app/comic_issue_details.html:90
 #: templates/app/comic_issue_details.html:91
@@ -1743,11 +1742,11 @@ msgstr ""
 #: templates/app/components/detail_score_chip.html:44
 #: templates/app/components/detail_score_chip.html:45
 msgid "Add rating"
-msgstr ""
+msgstr "Añadir puntuación"
 
 #: templates/app/comic_issue_details.html:125
 msgid "Mark Read"
-msgstr ""
+msgstr "Marcar como leído"
 
 #: templates/app/comic_issue_details.html:145
 #: templates/app/components/detail_action_buttons.html:224
@@ -1763,7 +1762,7 @@ msgstr ""
 #: templates/app/episode_details.html:265
 #: templates/app/music_album_detail.html:330
 msgid "Add to custom lists"
-msgstr ""
+msgstr "Añadir a listas personalizadas"
 
 #: templates/app/comic_issue_details.html:166
 #: templates/app/components/detail_action_buttons.html:243
@@ -1777,7 +1776,7 @@ msgstr ""
 #: templates/app/episode_details.html:288
 #: templates/app/music_album_detail.html:351
 msgid "View your activity history"
-msgstr ""
+msgstr "Ver tu historial de actividad"
 
 #: templates/app/comic_issue_details.html:210
 #: templates/app/components/detail_music_artist.html:221
@@ -1795,7 +1794,7 @@ msgstr ""
 #: templates/lists/components/add_item_preview_modal.html:81
 #: templates/lists/components/recommend_preview_modal.html:89
 msgid "Show less"
-msgstr ""
+msgstr "Mostrar menos"
 
 #: templates/app/comic_issue_details.html:210
 #: templates/app/components/detail_music_artist.html:221
@@ -1806,7 +1805,7 @@ msgstr ""
 #: templates/lists/components/add_item_preview_modal.html:81
 #: templates/lists/components/recommend_preview_modal.html:89
 msgid "Read more"
-msgstr ""
+msgstr "Leer más"
 
 #: templates/app/comic_issue_details.html:225
 msgid "ISSUE NUMBER"
@@ -1853,7 +1852,7 @@ msgstr ""
 #: templates/app/episode_details.html:493 templates/app/person_detail.html:79
 #: templates/app/studio_detail.html:79
 msgid "Show more"
-msgstr ""
+msgstr "Mostrar más"
 
 #: templates/app/components/_scrollable_row.html:65
 #, python-format
@@ -1867,11 +1866,11 @@ msgstr ""
 
 #: templates/app/components/_scrollable_row.html:111
 msgid "Scroll left"
-msgstr ""
+msgstr "Desplazar a la izquierda"
 
 #: templates/app/components/_scrollable_row.html:118
 msgid "Scroll right"
-msgstr ""
+msgstr "Desplazar a la derecha"
 
 #: templates/app/components/_scrollable_row.html:127
 #: templates/app/components/detail_secondary_content.html:427
@@ -1912,7 +1911,7 @@ msgstr[1] ""
 #: templates/app/components/media_card.html:238
 #: templates/app/components/media_card.html:248 templates/app/search.html:126
 msgid "Edit tracking"
-msgstr ""
+msgstr "Editar seguimiento"
 
 #: templates/app/components/album_list_grid_items.html:65
 #: templates/app/search.html:136
@@ -1966,7 +1965,7 @@ msgstr ""
 #: templates/app/components/fill_track.html:255
 #: templates/app/components/podcast_show_track_modal.html:69
 msgid "Update"
-msgstr ""
+msgstr "Actualizar"
 
 #: templates/app/components/album_track_modal.html:71
 #: templates/app/components/artist_track_modal.html:71
@@ -2045,22 +2044,21 @@ msgstr ""
 
 #: templates/app/components/bulk_selection_toolbar.html:15
 msgid "Update Status"
-msgstr ""
+msgstr "Actualizar estado"
 
 #: templates/app/components/bulk_selection_toolbar.html:34
 #: templates/lists/components/add_item_preview_modal.html:174
 msgid "Add to List"
-msgstr ""
+msgstr "Añadir a una lista"
 
 #: templates/app/components/bulk_selection_toolbar.html:46
 msgid "No editable lists."
 msgstr ""
 
 #: templates/app/components/bulk_selection_toolbar.html:54
-#, fuzzy
 #| msgid "Collection"
 msgid "Add to Collection"
-msgstr "Colección"
+msgstr "Añadir a la colección"
 
 #: templates/app/components/bulk_selection_toolbar.html:61
 msgid "Apply Tag"
@@ -2071,7 +2069,7 @@ msgstr ""
 #: templates/lists/components/list_item_button.html:12
 #: templates/users/integrations.html:46 templates/users/preferences.html:1145
 msgid "Remove"
-msgstr ""
+msgstr "Eliminar"
 
 #: templates/app/components/bulk_selection_toolbar.html:79
 msgid "No tags yet."
@@ -2342,7 +2340,7 @@ msgstr ""
 #: templates/app/components/date_time_picker.html:85
 msgctxt "date picker shortcut"
 msgid "Release Date"
-msgstr ""
+msgstr "Fecha de estreno"
 
 #: templates/app/components/date_time_picker.html:53
 #: templates/app/components/date_time_picker.html:120
@@ -2364,7 +2362,7 @@ msgstr "Ajustes"
 
 #: templates/app/components/date_time_picker.html:67
 msgid "Start Now"
-msgstr ""
+msgstr "Empezar ahora"
 
 #: templates/app/components/date_time_picker.html:74
 msgctxt "date picker shortcut"
@@ -2392,7 +2390,7 @@ msgstr ""
 
 #: templates/app/components/date_time_picker.html:104
 msgid "Clear date"
-msgstr ""
+msgstr "Borrar fecha"
 
 #: templates/app/components/date_time_picker.html:131
 msgid "Close date picker"
@@ -2410,7 +2408,7 @@ msgstr ""
 #: templates/app/components/taste_signals.html:142
 #: templates/users/preferences.html:499 users/models.py:367 users/models.py:374
 msgid "Time"
-msgstr ""
+msgstr "Tiempo"
 
 #: templates/app/components/date_time_picker.html:179
 msgid "Now"
@@ -2419,7 +2417,7 @@ msgstr ""
 #: templates/app/components/date_time_picker.html:183
 #: templates/users/preferences.html:870 users/models.py:403
 msgid "None"
-msgstr ""
+msgstr "Ninguno"
 
 #: templates/app/components/date_time_picker.html:198
 #, python-format
@@ -2441,7 +2439,7 @@ msgstr ""
 
 #: templates/app/components/detail_action_buttons.html:65
 msgid "More tracking actions"
-msgstr ""
+msgstr "Más acciones de seguimiento"
 
 #: templates/app/components/detail_action_buttons.html:83
 msgid "Add new entry"
@@ -2451,16 +2449,16 @@ msgstr ""
 #: templates/app/components/detail_music_album.html:113
 #: templates/app/components/detail_music_artist.html:135
 msgid "View source and external links"
-msgstr ""
+msgstr "Ver origen y enlaces externos"
 
 #: templates/app/components/detail_action_buttons.html:189
 #: templates/app/components/detail_music_album.html:174
 msgid "Manage tags"
-msgstr ""
+msgstr "Gestionar etiquetas"
 
 #: templates/app/components/detail_action_buttons.html:259
 msgid "Sync metadata with provider"
-msgstr ""
+msgstr "Sincronizar metadatos con el proveedor"
 
 #: templates/app/components/detail_activity_subtitle.html:10
 #: templates/app/components/detail_activity_subtitle.html:62
@@ -2468,7 +2466,7 @@ msgstr ""
 #: templates/app/components/detail_title_block.html:62
 #: templates/app/components/detail_title_block.html:100
 msgid "View session history"
-msgstr ""
+msgstr "Ver historial de sesiones"
 
 #: templates/app/components/detail_carousel_fragment.html:12
 #: templates/app/components/detail_carousel_fragment.html:148
@@ -2517,7 +2515,7 @@ msgstr ""
 
 #: templates/app/components/detail_episode_hero_track_button.html:21
 msgid "Mark Watched"
-msgstr ""
+msgstr "Marcar como visto"
 
 #: templates/app/components/detail_episode_history_line.html:15
 #, python-format
@@ -2851,10 +2849,9 @@ msgstr ""
 
 #: templates/app/components/detail_secondary_content.html:20
 #: templates/app/music_album_detail.html:166
-#, fuzzy
 #| msgid "History"
 msgid "Your History"
-msgstr "Historial"
+msgstr "Tu historial"
 
 #: templates/app/components/detail_secondary_content.html:29
 msgid "Show Sessions"
@@ -2872,7 +2869,7 @@ msgstr ""
 #: templates/app/components/history_card.html:31
 #, python-format
 msgid "Status: %(value_1)s"
-msgstr ""
+msgstr "Estado: %(value_1)s"
 
 #: templates/app/components/detail_secondary_content.html:90
 #, python-format
@@ -3005,7 +3002,7 @@ msgstr ""
 
 #: templates/app/components/detail_synopsis.html:9
 msgid " Read more"
-msgstr ""
+msgstr " Leer más"
 
 #: templates/app/components/detail_tag_preview.html:8
 msgid "External links"
@@ -3017,7 +3014,7 @@ msgstr ""
 #: templates/app/components/media_card.html:412
 #: templates/app/components/media_card_list.html:80
 msgid "Show alternative title"
-msgstr ""
+msgstr "Mostrar título alternativo"
 
 #: templates/app/components/detail_title_block.html:52
 #: templates/app/components/detail_title_block.html:89
@@ -3044,7 +3041,7 @@ msgstr ""
 #: templates/app/components/media_card.html:258
 #: templates/app/components/media_card_list.html:125
 msgid "Add to tracker"
-msgstr ""
+msgstr "Añadir al seguimiento"
 
 #: templates/app/components/detail_watch_providers.html:7
 msgid "STREAMING"
@@ -3276,10 +3273,9 @@ msgstr ""
 #: templates/app/statistics.html:1156
 #: templates/lists/components/list_form.html:183
 #: templates/lists/list_activity.html:20
-#, fuzzy
 #| msgid "History"
 msgid "Activity History"
-msgstr "Historial"
+msgstr "Historial de actividad"
 
 #: templates/app/components/fill_history.html:19
 #, python-format
@@ -3314,11 +3310,11 @@ msgstr ""
 
 #: templates/app/components/fill_track.html:31
 msgid "General"
-msgstr ""
+msgstr "General"
 
 #: templates/app/components/fill_track.html:39 templates/users/base.html:78
 msgid "Metadata"
-msgstr ""
+msgstr "Metadatos"
 
 #: templates/app/components/fill_track.html:57
 msgid "Episode Plays"
@@ -3452,12 +3448,12 @@ msgstr ""
 #: templates/app/components/fill_track_episode_bulk.html:146
 #: templates/app/components/fill_track_episode_bulk.html:147
 msgid "Start date"
-msgstr ""
+msgstr "Fecha de inicio"
 
 #: templates/app/components/fill_track_episode_bulk.html:155
 #: templates/app/components/fill_track_episode_bulk.html:156
 msgid "End date"
-msgstr ""
+msgstr "Fecha de fin"
 
 #: templates/app/components/fill_track_episode_bulk.html:214
 msgid "Save plays"
@@ -3648,7 +3644,7 @@ msgstr ""
 #: templates/app/components/filter_menu.html:670
 #: templates/app/media_list.html:14 templates/app/person_detail.html:126
 msgid "Not Caught Up"
-msgstr ""
+msgstr "Sin poner al día"
 
 #: templates/app/components/filter_menu.html:683
 #: templates/app/media_list.html:14 templates/app/person_detail.html:126
@@ -3869,11 +3865,11 @@ msgstr ""
 
 #: templates/app/components/markdown_notes.html:8
 msgid "Markdown supported"
-msgstr ""
+msgstr "Compatible con Markdown"
 
 #: templates/app/components/markdown_notes.html:16
 msgid "Write"
-msgstr ""
+msgstr "Escribir"
 
 #: templates/app/components/markdown_notes.html:21
 #: templates/app/create_entry.html:36 templates/app/episode_ordering.html:22
@@ -3881,7 +3877,7 @@ msgstr ""
 #: templates/users/about.html:402 templates/users/about.html:430
 #: templates/users/about.html:458
 msgid "Preview"
-msgstr ""
+msgstr "Vista previa"
 
 #: templates/app/components/markdown_notes.html:27
 msgid "Heading"
@@ -3951,11 +3947,11 @@ msgstr ""
 
 #: templates/app/components/media_card.html:96
 msgid "Next ep"
-msgstr ""
+msgstr "Sig. episodio"
 
 #: templates/app/components/media_card.html:153
 msgid "Add to Planning"
-msgstr ""
+msgstr "Añadir a pendientes"
 
 #: templates/app/components/media_card.html:162
 #, fuzzy
@@ -3995,7 +3991,7 @@ msgstr ""
 #: templates/app/components/media_card_list.html:105
 #, python-format
 msgid "Matched: %(value_1)s"
-msgstr ""
+msgstr "Coincide con: %(value_1)s"
 
 #: templates/app/components/media_card.html:462
 #, python-format
@@ -4072,7 +4068,7 @@ msgstr[1] ""
 #: templates/app/components/media_card_rate_button.html:48
 #: templates/app/components/media_card_rate_button.html:49
 msgid "Rate"
-msgstr ""
+msgstr "Puntuar"
 
 #: templates/app/components/media_grid_items.html:62
 #, python-format
@@ -4102,18 +4098,18 @@ msgstr ""
 
 #: templates/app/components/media_metadata_panel.html:34
 msgid "Metadata Provider"
-msgstr ""
+msgstr "Proveedor de metadatos"
 
 #: templates/app/components/media_metadata_panel.html:36
 #, python-format
 msgid ""
 "Display metadata can differ from tracking. Watch history stays on "
 "%(value_1)s until you explicitly migrate a title."
-msgstr ""
+msgstr "Los metadatos mostrados pueden diferir del seguimiento. El historial de visualización permanece en %(value_1)s hasta que migres el título explícitamente."
 
 #: templates/app/components/media_metadata_panel.html:43
 msgid "Display metadata is currently coming from"
-msgstr ""
+msgstr "Los metadatos mostrados proceden actualmente de"
 
 #: templates/app/components/media_metadata_panel.html:46
 #, python-format
@@ -4130,7 +4126,7 @@ msgstr ""
 
 #: templates/app/components/media_metadata_panel.html:103
 msgid "Save Provider"
-msgstr ""
+msgstr "Guardar proveedor"
 
 #: templates/app/components/media_metadata_panel.html:112
 #, python-format
@@ -4146,26 +4142,26 @@ msgstr ""
 #: templates/app/components/search_suggestions.html:37
 #: templates/app/components/search_suggestions.html:44
 msgid "Enter"
-msgstr ""
+msgstr "Intro"
 
 #: templates/app/components/media_metadata_panel.html:119
 #: templates/app/components/media_metadata_panel.html:203
 #, python-format
 msgid "Search %(value_1)s..."
-msgstr ""
+msgstr "Buscar %(value_1)s..."
 
 #: templates/app/components/media_metadata_panel.html:133
 #: templates/users/preferences.html:585
 msgid "Metadata Language"
-msgstr ""
+msgstr "Idioma de los metadatos"
 
 #: templates/app/components/media_metadata_panel.html:135
 msgid "Override your global metadata language for this title only."
-msgstr ""
+msgstr "Cambia el idioma global de los metadatos solo para este título."
 
 #: templates/app/components/media_metadata_panel.html:186
 msgid "Save Language"
-msgstr ""
+msgstr "Guardar idioma"
 
 #: templates/app/components/media_metadata_panel.html:196
 #, python-format
@@ -4225,7 +4221,7 @@ msgstr ""
 
 #: templates/app/components/media_metadata_panel.html:338
 msgid "Custom Metadata"
-msgstr ""
+msgstr "Metadatos personalizados"
 
 #: templates/app/components/media_metadata_panel.html:340
 msgid ""
@@ -4235,11 +4231,11 @@ msgstr ""
 
 #: templates/app/components/media_metadata_panel.html:392
 msgid "Save Metadata"
-msgstr ""
+msgstr "Guardar metadatos"
 
 #: templates/app/components/media_metadata_panel.html:424
 msgid "Save Image"
-msgstr ""
+msgstr "Guardar imagen"
 
 #: templates/app/components/media_metadata_panel.html:432
 msgid "Save this image from the General tab when you add or update the entry."
@@ -4312,10 +4308,9 @@ msgstr ""
 #: templates/app/components/media_settings_menu.html:10
 #: templates/app/components/media_settings_menu.html:11
 #: templates/app/components/media_settings_menu.html:18
-#, fuzzy
 #| msgid "Settings"
 msgid "View settings"
-msgstr "Ajustes"
+msgstr "Ajustes de vista"
 
 #: templates/app/components/media_settings_menu.html:51
 msgid "Show matching entries separately"
@@ -4413,12 +4408,12 @@ msgstr ""
 #: templates/app/components/progress_changer.html:9
 #: templates/app/components/progress_changer.html:10
 msgid "Decrease progress"
-msgstr ""
+msgstr "Reducir progreso"
 
 #: templates/app/components/progress_changer.html:58
 #: templates/app/components/progress_changer.html:59
 msgid "Increase progress"
-msgstr ""
+msgstr "Aumentar progreso"
 
 #: templates/app/components/reading_consumption_section.html:8
 #: templates/app/components/statistics/anime_activity_overview.html:11
@@ -4459,7 +4454,7 @@ msgstr ""
 #: templates/app/components/statistics/game_activity_overview.html:135
 #: templates/app/statistics.html:1032 templates/app/statistics.html:1123
 msgid "Show information"
-msgstr ""
+msgstr "Mostrar información"
 
 #: templates/app/components/reading_consumption_section.html:57
 #, python-format
@@ -4551,7 +4546,7 @@ msgstr ""
 #: templates/app/studio_detail.html:92 templates/app/studio_detail.html:119
 #: templates/users/preferences.html:504 users/models.py:368
 msgid "Titles"
-msgstr ""
+msgstr "Títulos"
 
 #: templates/app/components/role_leaders.html:13
 #: templates/app/components/role_leaders.html:273
@@ -4565,7 +4560,7 @@ msgstr ""
 #: templates/users/preferences.html:494 users/home_screen.py:432
 #: users/models.py:99 users/models.py:366 users/models.py:375
 msgid "Plays"
-msgstr ""
+msgstr "Reproducciones"
 
 #: templates/app/components/role_leaders.html:241
 msgid "Role Leaders"
@@ -4597,16 +4592,16 @@ msgstr ""
 #: templates/app/components/search_suggestions.html:36
 #, python-format
 msgid "Search online for &ldquo;%(value_1)s&rdquo;"
-msgstr ""
+msgstr "Buscar en línea &ldquo;%(value_1)s&rdquo;"
 
 #: templates/app/components/search_suggestions.html:43
 #, python-format
 msgid "Nothing saved matches &ldquo;%(value_1)s&rdquo;. Keep typing and press"
-msgstr ""
+msgstr "No hay elementos guardados que coincidan con &ldquo;%(value_1)s&rdquo;. Sigue escribiendo y pulsa"
 
 #: templates/app/components/search_suggestions.html:44
 msgid "to search online."
-msgstr ""
+msgstr "para buscar en línea."
 
 #: templates/app/components/seasons_grid.html:8
 msgid "Seasons"
@@ -5046,10 +5041,9 @@ msgid "Create Entry"
 msgstr ""
 
 #: templates/app/discover.html:8
-#, fuzzy
 #| msgid "Discover"
 msgid "Discover - Floppy"
-msgstr "Descubrir"
+msgstr "Descubrir - Floppy"
 
 #: templates/app/discover.html:18
 msgid ""
@@ -5110,7 +5104,7 @@ msgstr ""
 #: templates/app/episode_details.html:157
 #: templates/app/episode_details.html:158
 msgid "Next episode"
-msgstr ""
+msgstr "Siguiente episodio"
 
 #: templates/app/episode_details.html:204
 msgid "TMDB score"
@@ -5215,10 +5209,9 @@ msgid "Cancel"
 msgstr "Cancelar"
 
 #: templates/app/history.html:8
-#, fuzzy
 #| msgid "History"
 msgid "History - Floppy"
-msgstr "Historial"
+msgstr "Historial - Floppy"
 
 #: templates/app/history.html:78
 msgid "Refreshing history in background..."
@@ -5323,7 +5316,7 @@ msgstr ""
 
 #: templates/app/home.html:6
 msgid "Home - Floppy"
-msgstr ""
+msgstr "Inicio - Floppy"
 
 #: templates/app/home.html:95
 msgid "Nothing is configured for Home yet"
@@ -5392,7 +5385,7 @@ msgstr ""
 
 #: templates/app/music_album_detail.html:183
 msgid "Progress:"
-msgstr ""
+msgstr "Progreso:"
 
 #: templates/app/music_album_detail.html:192 templates/users/about.html:334
 msgid "Actions"
@@ -5514,29 +5507,29 @@ msgstr ""
 
 #: templates/app/search.html:13
 msgid "Search Results"
-msgstr ""
+msgstr "Resultados de búsqueda"
 
 #: templates/app/search.html:15
 #: templates/lists/components/smart_rules_summary.html:58
 #: templates/lists/components/smart_rules_summary.html:139
 msgid "Source:"
-msgstr ""
+msgstr "Origen:"
 
 #: templates/app/search.html:38
 msgid "List View"
-msgstr ""
+msgstr "Vista de lista"
 
 #: templates/app/search.html:47 templates/app/search.html:324
 msgid "In Your Library"
-msgstr ""
+msgstr "En tu biblioteca"
 
 #: templates/app/search.html:54 templates/app/search.html:73
 #: templates/app/search.html:326
 #, python-format
 msgid "%(value_1)s result"
 msgid_plural "%(value_1)s results"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "%(value_1)s resultado"
+msgstr[1] "%(value_1)s resultados"
 
 #: templates/app/search.html:56 templates/app/search.html:75
 #: templates/app/search.html:328
@@ -5546,7 +5539,7 @@ msgstr ""
 
 #: templates/app/search.html:191 templates/app/search.html:349
 msgid "Online Results"
-msgstr ""
+msgstr "Resultados en línea"
 
 #: templates/app/search.html:314 templates/app/search.html:417
 #: templates/lists/components/list_table.html:17
@@ -5568,10 +5561,9 @@ msgid "Page %(value_1)s of %(value_2)s (%(value_3)s results)"
 msgstr ""
 
 #: templates/app/statistics.html:9
-#, fuzzy
 #| msgid "Statistics"
 msgid "Statistics - Floppy"
-msgstr "Estadísticas"
+msgstr "Estadísticas - Floppy"
 
 #: templates/app/statistics.html:574
 msgid "Building your statistics for the first time..."
@@ -5827,7 +5819,7 @@ msgstr ""
 
 #: templates/app/statistics.html:1904 templates/users/preferences.html:767
 msgid "Rating Scale"
-msgstr ""
+msgstr "Escala de puntuación"
 
 #: templates/app/statistics.html:1924 users/models.py:292
 msgid "1-10 stars"
@@ -6839,7 +6831,7 @@ msgstr ""
 #: templates/users/import_data.html:3169 templates/users/import_data.html:3264
 #: templates/users/integrations.html:525
 msgid "Sync Now"
-msgstr ""
+msgstr "Sincronizar ahora"
 
 #: templates/lists/custom_lists.html:482 templates/users/import_data.html:811
 #: templates/users/import_data.html:1058 templates/users/import_data.html:1143
@@ -7030,7 +7022,7 @@ msgstr ""
 
 #: templates/lists/list_recommendations.html:20
 msgid "Recommendations"
-msgstr ""
+msgstr "Recomendaciones"
 
 #: templates/lists/list_recommendations.html:21
 #, python-format
@@ -7744,7 +7736,7 @@ msgstr ""
 
 #: templates/users/advanced.html:20 templates/users/base.html:110
 msgid "Advanced"
-msgstr ""
+msgstr "Avanzado"
 
 #: templates/users/advanced.html:26
 msgid "Logs & Bug Reports"
@@ -8109,15 +8101,15 @@ msgstr ""
 #: templates/users/appearance.html:5 templates/users/appearance.html:155
 #: templates/users/base.html:38
 msgid "Appearance"
-msgstr ""
+msgstr "Apariencia"
 
 #: templates/users/appearance.html:26 templates/users/preferences.html:34
 msgid "Theme"
-msgstr ""
+msgstr "Tema"
 
 #: templates/users/appearance.html:27
 msgid "Choose a starting point, then make it yours."
-msgstr ""
+msgstr "Elige un punto de partida y personalízalo."
 
 #: templates/users/appearance.html:47 users/models.py:225
 #, fuzzy
@@ -8127,11 +8119,11 @@ msgstr "Personalizado"
 
 #: templates/users/appearance.html:88
 msgid "Detail pages"
-msgstr ""
+msgstr "Páginas de detalles"
 
 #: templates/users/appearance.html:89
 msgid "Keep useful sections visible and place them where you expect them."
-msgstr ""
+msgstr "Mantén visibles las secciones útiles y colócalas donde prefieras."
 
 #: templates/users/appearance.html:94
 msgid "Page type"
@@ -8139,66 +8131,65 @@ msgstr ""
 
 #: templates/users/appearance.html:105
 msgid "Detail page family"
-msgstr ""
+msgstr "Tipo de página de detalles"
 
 #: templates/users/appearance.html:137
 msgid "Move up"
-msgstr ""
+msgstr "Subir"
 
 #: templates/users/appearance.html:142
 msgid "Move down"
-msgstr ""
+msgstr "Bajar"
 
 #: templates/users/appearance.html:156
 msgid "Changes apply after saving."
-msgstr ""
+msgstr "Los cambios se aplican al guardar."
 
 #: templates/users/appearance.html:160
 msgid "Save appearance"
-msgstr ""
+msgstr "Guardar apariencia"
 
 #: templates/users/base.html:10
 msgid "Configure your account and preferences"
-msgstr ""
+msgstr "Configura tu cuenta y tus preferencias"
 
 #: templates/users/base.html:22
 msgid "Account"
-msgstr ""
+msgstr "Cuenta"
 
 #: templates/users/base.html:30
 msgid "Preferences"
-msgstr ""
+msgstr "Preferencias"
 
 #: templates/users/base.html:46 templates/users/notifications.html:17
 msgid "Notifications"
-msgstr ""
+msgstr "Notificaciones"
 
 #: templates/users/base.html:54 templates/users/sidebar.html:15
 msgid "Sidebar"
-msgstr ""
+msgstr "Barra lateral"
 
 #: templates/users/base.html:62
-#, fuzzy
 #| msgid "Open Home Screen Settings"
 msgid "Home Screen"
-msgstr "Abrir configuración de Inicio"
+msgstr "Pantalla de inicio"
 
 #: templates/users/base.html:70 templates/users/integrations.html:72
 #: templates/users/rss.html:96
 msgid "Integrations"
-msgstr ""
+msgstr "Integraciones"
 
 #: templates/users/base.html:94
 msgid "Import Data"
-msgstr ""
+msgstr "Importar datos"
 
 #: templates/users/base.html:102 templates/users/export_data.html:19
 msgid "Export Data"
-msgstr ""
+msgstr "Exportar datos"
 
 #: templates/users/base.html:118
 msgid "About"
-msgstr ""
+msgstr "Acerca de"
 
 #: templates/users/components/excluded_items.html:5
 msgid "Currently Excluded:"
@@ -8210,16 +8201,16 @@ msgstr ""
 
 #: templates/users/components/form_save_bar.html:14
 msgid "All changes saved"
-msgstr ""
+msgstr "Todos los cambios guardados"
 
 #: templates/users/components/form_save_bar.html:17
 msgid "Your preferences are up to date."
-msgstr ""
+msgstr "Tus preferencias están actualizadas."
 
 #: templates/users/components/form_save_bar.html:25
 #: templates/users/sidebar.html:63
 msgid "Save Preferences"
-msgstr ""
+msgstr "Guardar preferencias"
 
 #: templates/users/components/import_activity.html:10
 #: templates/users/import_data.html:3591
@@ -8459,7 +8450,7 @@ msgstr ""
 #: templates/users/components/provider_credential_modal.html:89
 #: users/views.py:1012
 msgid "Not set"
-msgstr ""
+msgstr "Sin definir"
 
 #: templates/users/components/provider_credential_modal.html:110
 msgid "Remove stored credentials"
@@ -9554,7 +9545,7 @@ msgstr ""
 #: templates/users/import_data.html:1976 templates/users/import_data.html:2079
 #: templates/users/import_data.html:2234 templates/users/import_data.html:2361
 msgid "Sync now"
-msgstr ""
+msgstr "Sincronizar ahora"
 
 #: templates/users/import_data.html:1507
 msgid "Pull audiobook progress from Audiobookshelf."
@@ -10523,7 +10514,7 @@ msgstr ""
 
 #: templates/users/integrations.html:310
 msgid "Default"
-msgstr ""
+msgstr "Predeterminado"
 
 #: templates/users/integrations.html:311
 msgid "Listen to events only for: your Jellyfin user"
@@ -11675,7 +11666,7 @@ msgstr ""
 #: templates/users/onboarding/media_types.html:27
 #: templates/users/onboarding/services.html:41
 msgid "Continue"
-msgstr ""
+msgstr "Continuar"
 
 #: templates/users/onboarding/integration_setup.html:8
 msgid "Turn on scrobbling"
@@ -11883,332 +11874,330 @@ msgstr ""
 
 #: templates/users/preferences.html:8
 msgid "Preferences - Floppy"
-msgstr ""
+msgstr "Preferencias - Floppy"
 
 #: templates/users/preferences.html:25
 msgid "Display & Layout"
-msgstr ""
+msgstr "Visualización y distribución"
 
 #: templates/users/preferences.html:26
 msgid "Control content display."
-msgstr ""
+msgstr "Controla cómo se muestra el contenido."
 
 #: templates/users/preferences.html:35
 msgid "App color theme."
-msgstr ""
+msgstr "Tema de color de la aplicación."
 
 #: templates/users/preferences.html:68 users/models.py:199 users/models.py:213
 #: users/models.py:275
 msgid "System default"
-msgstr ""
+msgstr "Predeterminado del sistema"
 
 #: templates/users/preferences.html:73 users/models.py:215
 msgid "Dark"
-msgstr ""
+msgstr "Oscuro"
 
 #: templates/users/preferences.html:78 users/models.py:214
 msgid "Light"
-msgstr ""
+msgstr "Claro"
 
 #: templates/users/preferences.html:88
-#, fuzzy
 #| msgid "Logout"
 msgid "Logo"
-msgstr "Cerrar sesión"
+msgstr "Logotipo"
 
 #: templates/users/preferences.html:89
 msgid "Floppy logo style."
-msgstr ""
+msgstr "Estilo del logotipo de Floppy."
 
 #: templates/users/preferences.html:123
 msgid "Colorful"
-msgstr ""
+msgstr "Multicolor"
 
 #: templates/users/preferences.html:128 users/models.py:242
 msgid "Monochrome"
-msgstr ""
+msgstr "Monocromo"
 
 #: templates/users/preferences.html:138
 msgid "Date Format"
-msgstr ""
+msgstr "Formato de fecha"
 
 #: templates/users/preferences.html:139
 msgid "How dates appear."
-msgstr ""
+msgstr "Cómo se muestran las fechas."
 
 #: templates/users/preferences.html:172
 msgid "System default — Aug 12, 2025 / 12 Aug 2025"
-msgstr ""
+msgstr "Predeterminado del sistema — 12 ago 2025 / 12 de agosto de 2025"
 
 #: templates/users/preferences.html:177
 msgid "ISO 8601 — 2025-08-12"
-msgstr ""
+msgstr "ISO 8601 — 2025-08-12"
 
 #: templates/users/preferences.html:182
 msgid "Month D, YYYY — Aug 12, 2025"
-msgstr ""
+msgstr "Mes D, AAAA — agosto 12, 2025"
 
 #: templates/users/preferences.html:187
 msgid "D Mon YYYY — 12 Aug 2025"
-msgstr ""
+msgstr "D mes AAAA — 12 ago 2025"
 
 #: templates/users/preferences.html:192
 msgid "M/D/YYYY — 08/12/2025"
-msgstr ""
+msgstr "M/D/AAAA — 08/12/2025"
 
 #: templates/users/preferences.html:197
 msgid "D/M/YYYY — 12/08/2025"
-msgstr ""
+msgstr "D/M/AAAA — 12/08/2025"
 
 #: templates/users/preferences.html:202
 msgid "DD.MM.YYYY — 12.08.2025"
-msgstr ""
+msgstr "DD.MM.AAAA — 12.08.2025"
 
 #: templates/users/preferences.html:207
 msgid "YYYY/MM/DD — 2025/08/12"
-msgstr ""
+msgstr "AAAA/MM/DD — 2025/08/12"
 
 #: templates/users/preferences.html:217
 msgid "Time Format"
-msgstr ""
+msgstr "Formato de hora"
 
 #: templates/users/preferences.html:218
 msgid "How times appear."
-msgstr ""
+msgstr "Cómo se muestran las horas."
 
 #: templates/users/preferences.html:251
 msgid "System default — 6:45 PM / 18:45"
-msgstr ""
+msgstr "Predeterminado del sistema — 6:45 PM / 18:45"
 
 #: templates/users/preferences.html:256
 msgid "12-hour (h:mm AM/PM) — 6:45 PM"
-msgstr ""
+msgstr "12 horas (h:mm AM/PM) — 6:45 PM"
 
 #: templates/users/preferences.html:261
 msgid "12-hour, leading zero (hh:mm AM/PM) — 06:45 PM"
-msgstr ""
+msgstr "12 horas, con cero inicial (hh:mm AM/PM) — 06:45 PM"
 
 #: templates/users/preferences.html:266
 msgid "24-hour (HH:mm) — 18:45"
-msgstr ""
+msgstr "24 horas (HH:mm) — 18:45"
 
 #: templates/users/preferences.html:271
 msgid "24-hour with seconds (HH:mm:ss) — 18:45:00"
-msgstr ""
+msgstr "24 horas con segundos (HH:mm:ss) — 18:45:00"
 
 #: templates/users/preferences.html:281
 msgid "Mobile Grid"
-msgstr ""
+msgstr "Cuadrícula en móvil"
 
 #: templates/users/preferences.html:282
 msgid "Mobile column count."
-msgstr ""
+msgstr "Número de columnas en móvil."
 
 #: templates/users/preferences.html:315 users/models.py:396
 msgid "Comfortable (2 columns)"
-msgstr ""
+msgstr "Cómoda (2 columnas)"
 
 #: templates/users/preferences.html:320 users/models.py:397
 msgid "Compact (3 columns)"
-msgstr ""
+msgstr "Compacta (3 columnas)"
 
 #: templates/users/preferences.html:330
 msgid "Card Subtitles"
-msgstr ""
+msgstr "Subtítulos de las tarjetas"
 
 #: templates/users/preferences.html:331
 msgid "When subtitles appear."
-msgstr ""
+msgstr "Cuándo se muestran los subtítulos."
 
 #: templates/users/preferences.html:365 users/models.py:412
 msgid "On hover"
-msgstr ""
+msgstr "Al pasar el cursor"
 
 #: templates/users/preferences.html:370 users/models.py:413
 msgid "Always visible"
-msgstr ""
+msgstr "Siempre visibles"
 
 #: templates/users/preferences.html:383
 msgid "Progress Bar"
-msgstr ""
+msgstr "Barra de progreso"
 
 #: templates/users/preferences.html:384
 msgid "Show progress on cards."
-msgstr ""
+msgstr "Muestra el progreso en las tarjetas."
 
 #: templates/users/preferences.html:402
 msgid "Title Display"
-msgstr ""
+msgstr "Visualización de títulos"
 
 #: templates/users/preferences.html:403
 msgid "Card title style."
-msgstr ""
+msgstr "Estilo de los títulos de las tarjetas."
 
 #: templates/users/preferences.html:437 users/models.py:419
 msgid "Show Localized Titles"
-msgstr ""
+msgstr "Mostrar títulos traducidos"
 
 #: templates/users/preferences.html:442 users/models.py:420
 msgid "Show Original Titles"
-msgstr ""
+msgstr "Mostrar títulos originales"
 
 #: templates/users/preferences.html:447 users/models.py:421
 msgid "Auto (if available)"
-msgstr ""
+msgstr "Automático (si está disponible)"
 
 #: templates/users/preferences.html:459
 msgid "Talent Sort"
-msgstr ""
+msgstr "Orden de artistas"
 
 #: templates/users/preferences.html:460
-#, fuzzy
 #| msgid "Statistics"
 msgid "Statistics sort order."
-msgstr "Estadísticas"
+msgstr "Orden de las estadísticas."
 
 #: templates/users/preferences.html:518
 msgid "Language & Metadata"
-msgstr ""
+msgstr "Idioma y metadatos"
 
 #: templates/users/preferences.html:519
 msgid "Manage languages and providers."
-msgstr ""
+msgstr "Gestiona los idiomas y los proveedores."
 
 #: templates/users/preferences.html:529
 msgid "Provider Region"
-msgstr ""
+msgstr "Región de los proveedores"
 
 #: templates/users/preferences.html:531
 msgid "Provider region."
-msgstr ""
+msgstr "Región de los proveedores."
 
 #: templates/users/preferences.html:587
 msgid "Metadata language."
-msgstr ""
+msgstr "Idioma de los metadatos."
 
 #: templates/users/preferences.html:645
 msgid "UI Language"
-msgstr ""
+msgstr "Idioma de la interfaz"
 
 #: templates/users/preferences.html:647
 msgid "Interface display language."
-msgstr ""
+msgstr "Idioma de la interfaz de la aplicación."
 
 #: templates/users/preferences.html:708
 msgid "Tracking & Interaction"
-msgstr ""
+msgstr "Seguimiento e interacción"
 
 #: templates/users/preferences.html:709
 msgid "Control how Floppy tracks and interacts with your activity."
-msgstr ""
+msgstr "Controla cómo Floppy registra tu actividad e interactúa con ella."
 
 #: templates/users/preferences.html:717
 msgid "Hide Completed"
-msgstr ""
+msgstr "Ocultar completados"
 
 #: templates/users/preferences.html:718
 msgid "Hide completed items."
-msgstr ""
+msgstr "Oculta los elementos completados."
 
 #: templates/users/preferences.html:768
 msgid "Choose whether ratings use a 1-5 or 1-10 scale."
-msgstr ""
+msgstr "Elige si las puntuaciones usan una escala de 1 a 5 o de 1 a 10."
 
 #: templates/users/preferences.html:818
 msgid "Hide Zero Ratings"
-msgstr ""
+msgstr "Ocultar puntuaciones de cero"
 
 #: templates/users/preferences.html:819
 msgid "Hide zero-value ratings."
-msgstr ""
+msgstr "Oculta las puntuaciones con valor cero."
 
 #: templates/users/preferences.html:837
 msgid "Home Buttons"
-msgstr ""
+msgstr "Botones de inicio"
 
 #: templates/users/preferences.html:838
 msgid "Home card actions."
-msgstr ""
+msgstr "Acciones de las tarjetas de inicio."
 
 #: templates/users/preferences.html:875 users/models.py:404
 msgid "Quick Season Update buttons only"
-msgstr ""
+msgstr "Solo botones de actualización rápida de temporada"
 
 #: templates/users/preferences.html:880 users/models.py:405
 msgid "Next Episode button only"
-msgstr ""
+msgstr "Solo botón de siguiente episodio"
 
 #: templates/users/preferences.html:885 users/models.py:406
 msgid "Both"
-msgstr ""
+msgstr "Ambos"
 
 #: templates/users/preferences.html:897
 msgid "Game Logging"
-msgstr ""
+msgstr "Registro de juegos"
 
 #: templates/users/preferences.html:898
 msgid "Game history style."
-msgstr ""
+msgstr "Estilo del historial de juegos."
 
 #: templates/users/preferences.html:931
 msgid "Sessions — new entry per play; exact history"
-msgstr ""
+msgstr "Sesiones — una entrada por sesión; historial preciso"
 
 #: templates/users/preferences.html:936
 msgid "Repeats — update one entry; spreads time across range"
-msgstr ""
+msgstr "Repeticiones — actualiza una entrada; distribuye el tiempo en el intervalo"
 
 #: templates/users/preferences.html:946
 msgid "Progress Format"
-msgstr ""
+msgstr "Formato de progreso"
 
 #: templates/users/preferences.html:947
 msgid "Percent or pages."
-msgstr ""
+msgstr "Porcentaje o páginas."
 
 #: templates/users/preferences.html:980
 msgid "Pages/Issues/Chapters"
-msgstr ""
+msgstr "Páginas/Números/Capítulos"
 
 #: templates/users/preferences.html:985
 msgid "Percentage"
-msgstr ""
+msgstr "Porcentaje"
 
 #: templates/users/preferences.html:997
 msgid "Session Duration"
-msgstr ""
+msgstr "Duración de la sesión"
 
 #: templates/users/preferences.html:998
 msgid "Sign-in timeout."
-msgstr ""
+msgstr "Tiempo hasta el cierre de sesión."
 
 #: templates/users/preferences.html:1051
 msgid "Automation"
-msgstr ""
+msgstr "Automatización"
 
 #: templates/users/preferences.html:1052
 msgid "Manage automated rules."
-msgstr ""
+msgstr "Gestiona las reglas automáticas."
 
 #: templates/users/preferences.html:1057
 msgid "Library Management"
-msgstr ""
+msgstr "Gestión de la biblioteca"
 
 #: templates/users/preferences.html:1058
 msgid "Pause in-progress items."
-msgstr ""
+msgstr "Pausa los elementos en curso."
 
 #: templates/users/preferences.html:1087
 msgid "No auto-pause rules yet. Add one to get started."
-msgstr ""
+msgstr "Aún no hay reglas de pausa automática. Añade una para empezar."
 
 #: templates/users/preferences.html:1118 users/views.py:995
 msgid "All Libraries"
-msgstr ""
+msgstr "Todas las bibliotecas"
 
 #: templates/users/preferences.html:1139
 msgid "weeks"
-msgstr ""
+msgstr "semanas"
 
 #: templates/users/rss.html:8
 msgid "RSS - Floppy"
@@ -12689,7 +12678,7 @@ msgstr ""
 
 #: users/models.py:481
 msgid "1 week"
-msgstr ""
+msgstr "1 semana"
 
 #: users/models.py:482
 msgid "2 weeks"
@@ -12777,3 +12766,62 @@ msgstr[1] ""
 #, python-format
 msgid "Server Default (%(language)s)"
 msgstr ""
+
+#: templates/users/base.html
+msgid "Menu"
+msgstr "Menú"
+
+#: templates/users/base.html
+msgid "Display"
+msgstr "Visualización"
+
+#: templates/users/base.html
+msgid "Media Cards"
+msgstr "Tarjetas de medios"
+
+msgid "Search your library or online"
+msgstr "Busca en tu biblioteca o en línea"
+
+msgid "Toggle navigation menu"
+msgstr "Abrir o cerrar el menú de navegación"
+
+msgid "Settings updated successfully."
+msgstr "Ajustes actualizados correctamente."
+
+msgid "Preferences updated successfully."
+msgstr "Preferencias actualizadas correctamente."
+
+#: templates/users/base.html
+msgid "Connections"
+msgstr "Conexiones"
+
+#: templates/users/base.html
+msgid "Connected Applications"
+msgstr "Aplicaciones conectadas"
+
+#: templates/users/base.html
+msgid "Data"
+msgstr "Datos"
+
+#: templates/users/base.html
+msgid "System"
+msgstr "Sistema"
+
+#: templates/users/preferences.html
+msgid "Card subtitles, the progress bar, and zero ratings are on the Media Cards page."
+msgstr "Los subtítulos de las tarjetas, la barra de progreso y las puntuaciones de cero están en la página Tarjetas de medios."
+
+#: templates/users/preferences.html
+msgid "Show recommendations on detail pages."
+msgstr "Mostrar recomendaciones en las páginas de detalles."
+
+#: templates/users/preferences.html
+msgid "Choose a rating scale, or turn ratings off."
+msgstr "Elige una escala de puntuación o desactiva las puntuaciones."
+
+
+msgid "Disabled - hide recommendations"
+msgstr "Desactivadas - ocultar recomendaciones"
+
+msgid "Enabled - show recommendations"
+msgstr "Activadas - mostrar recomendaciones"

@@ -143,6 +143,7 @@ def enrich_synced_item(
             season_number=season_number,
         )
         if preferred_media_id:
+            language = metadata_resolution.metadata_language_default(user, item)
             preferred_tracking_type = metadata_resolution.get_tracking_media_type(
                 route_media_type,
                 source=preferred_provider,
@@ -153,6 +154,7 @@ def enrich_synced_item(
                     preferred_tracking_type,
                     preferred_media_id,
                     season_number=season_number,
+                    language=language,
                 ),
             )
             try:
@@ -163,6 +165,7 @@ def enrich_synced_item(
                     ),
                     preferred_media_id,
                     preferred_provider,
+                    language=language,
                 )
                 metadata_resolution.upsert_provider_links(
                     item,

@@ -1622,23 +1622,21 @@ def preferences(request):
                 )
                 fields_to_update.append("book_comic_manga_progress_percentage")
 
-        provider_region = request.POST.get("watch_provider_region", "")
-        if provider_region in [region[0] for region in watch_provider_regions]:
+        provider_region = request.POST.get("watch_provider_region")
+        if provider_region is not None:
+            if provider_region not in {region[0] for region in watch_provider_regions}:
+                provider_region = "UNSET"
             if request.user.watch_provider_region != provider_region:
                 request.user.watch_provider_region = provider_region
                 fields_to_update.append("watch_provider_region")
-        elif request.user.watch_provider_region != "UNSET":
-            request.user.watch_provider_region = "UNSET"
-            fields_to_update.append("watch_provider_region")
 
-        metadata_language = request.POST.get("metadata_language", "")
-        if metadata_language in {choice[0] for choice in metadata_language_choices}:
+        metadata_language = request.POST.get("metadata_language")
+        if metadata_language is not None:
+            if metadata_language not in {choice[0] for choice in metadata_language_choices}:
+                metadata_language = ""
             if request.user.metadata_language != metadata_language:
                 request.user.metadata_language = metadata_language
                 fields_to_update.append("metadata_language")
-        elif request.user.metadata_language != "":
-            request.user.metadata_language = ""
-            fields_to_update.append("metadata_language")
 
         session_duration = request.POST.get("session_duration")
         if session_duration is not None:
@@ -1656,6 +1654,10 @@ def preferences(request):
         if fields_to_update:
             request.user.save(update_fields=fields_to_update)
             request.user.refresh_from_db()
+            if "metadata_language" in fields_to_update:
+                from app.tasks_metadata_language import reset_metadata_language_repair
+
+                reset_metadata_language_repair(request.user.pk)
             if rating_scale_changed:
                 history_cache.invalidate_history_cache(
                     request.user.id,
@@ -1674,9 +1676,9 @@ def preferences(request):
                     debounce_seconds=0,
                 )
         success_message = (
-            "Settings updated successfully."
+            gettext("Settings updated successfully.")
             if "media_types_checkboxes" in request.POST
-            else "Preferences updated successfully."
+            else gettext("Preferences updated successfully.")
         )
         messages.success(request, success_message)
         return redirect("preferences")

@@ -60,6 +60,7 @@ from app.media_list_views import _collect_reading_activity_day_keys
 from app.metadata_sync_views import _build_flat_anime_episode_preview
 from app.models import (
     Anime,
+    BackfillReconcileState,
     BasicMedia,
     ComicIssue,
     CreditRoleType,
@@ -884,6 +885,21 @@ def media_details(
         and not render_secondary_only
         and detail_item is not None
         and detail_item.metadata_fetched_at is not None
+        # Stored text has no locale provenance. An explicit TMDB language must
+        # use its language-keyed provider cache while the upgrade repair runs.
+        and not (
+            source == Sources.TMDB.value
+            and (
+                getattr(request.user, "metadata_language", "")
+                or metadata_resolution.metadata_language_default(
+                    request.user, detail_item
+                ) != settings.TMDB_LANG
+                or BackfillReconcileState.objects.filter(
+                    key=f"metadata_language:{request.user.pk}:{settings.TMDB_LANG}",
+                    completed_at__isnull=True,
+                ).exists()
+            )
+        )
     )
 
     provider_metadata_unavailable = False
@@ -1034,6 +1050,9 @@ def media_details(
             if desired_value and getattr(detail_item, field_name) != desired_value:
                 setattr(detail_item, field_name, desired_value)
                 update_fields.append(field_name)
+        if media_metadata.get("synopsis") and detail_item.synopsis != media_metadata["synopsis"]:
+            detail_item.synopsis = media_metadata["synopsis"]
+            update_fields.append("synopsis")
         if update_fields:
             _best_effort_detail_db_work(
                 lambda: detail_item.save(update_fields=update_fields),

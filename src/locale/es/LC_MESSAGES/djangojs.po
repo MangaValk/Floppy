@@ -1646,3 +1646,13 @@ msgstr "Total"
 #: static/js/statistics-charts.js:1897
 msgid "of titles"
 msgstr "de títulos"
+
+#: templates/base.html:475
+#, javascript-format
+msgid "Search your whole library..."
+msgstr "Busca en toda tu biblioteca..."
+
+#: templates/base.html:475
+#, javascript-format
+msgid "Search %(media)s..."
+msgstr "Buscar %(media)s..."
