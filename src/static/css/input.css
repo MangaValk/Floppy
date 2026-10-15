@@ -2253,6 +2253,7 @@ html.light .theme-toggle-icon-moon {
 
   .detail-carousel-grid:has(.detail-carousel-preview--overview) .detail-carousel-grid__header > .min-w-0 {
     display: block;
+    flex: none;
     width: 100%;
   }
 
