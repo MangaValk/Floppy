@@ -1033,8 +1033,8 @@
           </div>
           <div>
             <h3 class="text-xs sm:text-sm font-medium text-[var(--color-text-muted)]">{% translate "Most Active Day" %}</h3>
-            <p x-show="currentTypeSummary.most_active_day" class="text-xl sm:text-2xl font-bold" x-text="currentTypeSummary.most_active_day" style="display:none"></p>
-            <p x-show="currentTypeSummary.most_active_day" class="text-xs sm:text-sm text-[var(--color-text-muted)]" x-text="currentTypeSummary.most_active_day_percentage + '% of activity'" style="display:none"></p>
+            <p x-show="currentTypeSummary.most_active_day" class="text-xl sm:text-2xl font-bold" x-text="currentTypeSummary.most_active_day_label" style="display:none"></p>
+            <p x-show="currentTypeSummary.most_active_day" class="text-xs sm:text-sm text-[var(--color-text-muted)]" x-text="interpolate(gettext('%(percent)s of activity'), {percent: currentTypeSummary.most_active_day_percentage + '%'}, true)" style="display:none"></p>
             <p x-show="!currentTypeSummary.most_active_day" class="text-xl sm:text-2xl font-bold text-[var(--color-text-muted)]" style="display:none">--</p>
           </div>
         </div>
@@ -1095,11 +1095,11 @@
           <div class="min-w-0">
             <h3 class="text-xs sm:text-sm font-medium text-[var(--color-text-muted)]">{% translate "Activity" %}</h3>
             <p class="text-xl sm:text-2xl font-bold {% if total_activity_comparison.badge_state == 'up' %}text-green-400{% elif total_activity_comparison.badge_state == 'down' %}text-red-400{% else %}text-[var(--color-text-muted)]{% endif %}">
-              {% if total_activity_comparison.badge %}{{ total_activity_comparison.badge }}{% else %}--{% endif %}
+              {% if total_activity_comparison.badge %}{{ total_activity_comparison.badge|translate_activity_text }}{% else %}--{% endif %}
             </p>
             {% if total_activity_comparison.badge %}
               <div class="flex items-center gap-1 text-xs sm:text-sm text-[var(--color-text-muted)]">
-                <span>{% blocktranslate trimmed with value_1=activity_comparison_period_label %}vs {{ value_1 }}{% endblocktranslate %}</span>
+                <span>{% blocktranslate trimmed with value_1=activity_comparison_period_label|translate_detail_value %}vs {{ value_1 }}{% endblocktranslate %}</span>
                 {% if total_activity_comparison.tooltip %}
                   <div class="relative" x-data="{ tooltipOpen: false }">
                     <button @mouseenter="tooltipOpen = true" @mouseleave="tooltipOpen = false" @click="tooltipOpen = !tooltipOpen" @click.outside="tooltipOpen = false" class="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors cursor-pointer inline-flex items-center" type="button" aria-label="{% translate "Show comparison totals" %}" style="transform: translateY(1px);">
@@ -1210,7 +1210,7 @@
                  style="grid-template-columns: repeat({{ activity_data.calendar_weeks|length }}, minmax(1rem, 20px))">
               {% for month, week_count in activity_data.months %}
                 <div class="text-xs text-[var(--color-text-muted)] min-w-0 whitespace-nowrap {% if not forloop.first %}border-l{% endif %}"
-                     style="grid-column: span {{ week_count }}{% if not forloop.first %}; border-color: var(--color-border); padding-left: 0.25rem{% endif %}">{{ month }}</div>
+                     style="grid-column: span {{ week_count }}{% if not forloop.first %}; border-color: var(--color-border); padding-left: 0.25rem{% endif %}">{{ month|month_abbreviation }}</div>
               {% endfor %}
             </div>
 

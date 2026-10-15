@@ -1,3 +1,4 @@
+import calendar
 import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -185,6 +186,12 @@ def translate_activity_text(value, media_type=None):
         return ""
 
     text = str(value)
+    comparison_match = re.fullmatch(r"(Up|Down) (.+)", text)
+    if comparison_match:
+        direction, amount = comparison_match.groups()
+        message = _("Up %(value_1)s") if direction == "Up" else _("Down %(value_1)s")
+        return message % {"value_1": amount}
+
     progress_match = re.fullmatch(r"Progress:\s*(.+)", text)
     if progress_match:
         return _("Progress: %(value_1)s") % {"value_1": progress_match.group(1)}
@@ -2211,3 +2218,13 @@ def media_track_actions(context, media_type, instance):
         if reload_in is not None
         else None,
     }
+
+
+@register.filter
+def month_abbreviation(value):
+    """Localize cached English heatmap month labels at render time."""
+    try:
+        number = list(calendar.month_abbr).index(str(value))
+    except ValueError:
+        return value
+    return formats.date_format(date(2000, number, 1), "M") if number else ""
