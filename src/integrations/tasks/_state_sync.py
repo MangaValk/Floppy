@@ -53,7 +53,11 @@ def sweep_watched_state_deliveries(limit=100):
     from integrations.state.adapters.base import AdapterError
     from integrations.state.adapters.tmdb import TMDbRatingAdapter
 
-    for account in TMDbAccount.objects.exclude(connection_broken=False).select_related("user").iterator(chunk_size=100):
+    for account in (
+        TMDbAccount.objects.exclude(connection_broken=False)
+        .select_related("user")
+        .iterator(chunk_size=100)
+    ):
         if connection_health.due_for_probe(account):
             adapter = TMDbRatingAdapter(account)
             with suppress(AdapterError):

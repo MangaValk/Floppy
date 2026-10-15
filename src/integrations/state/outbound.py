@@ -73,9 +73,7 @@ def get_adapter(binding):
 def _capability_for(watched):
     """Return the capability a write of this shape requires."""
     return (
-        CAPABILITY_WATCHED_PUSH_PLAYED
-        if watched
-        else CAPABILITY_WATCHED_PUSH_UNPLAYED
+        CAPABILITY_WATCHED_PUSH_PLAYED if watched else CAPABILITY_WATCHED_PUSH_UNPLAYED
     )
 
 
@@ -152,15 +150,24 @@ def enqueue_rating_change(user, item, score, *, client_kind=None):
         if adapter is None or CAPABILITY_RATING_PUSH not in adapter.CAPABILITIES:
             continue
         previous = OutboundStateDelivery.objects.filter(
-            binding=binding, item=item, operation="rating",
+            binding=binding,
+            item=item,
+            operation="rating",
         )
-        revision = (previous.aggregate(latest=Max("target_revision"))["latest"] or 0) + 1
+        revision = (
+            previous.aggregate(latest=Max("target_revision"))["latest"] or 0
+        ) + 1
         previous.filter(status=OutboundDeliveryStatus.PENDING.value).update(
             status=OutboundDeliveryStatus.SUPERSEDED.value,
         )
         delivery = OutboundStateDelivery.objects.create(
-            binding=binding, user=user, item=item, operation="rating",
-            target_revision=revision, rating=score, client_event_id=str(uuid4()),
+            binding=binding,
+            user=user,
+            item=item,
+            operation="rating",
+            target_revision=revision,
+            rating=score,
+            client_event_id=str(uuid4()),
         )
         deliveries.append(delivery)
         schedule_delivery(delivery)
@@ -175,14 +182,19 @@ def claim(delivery_id):
     """
     try:
         with transaction.atomic():
-            claimed = OutboundStateDelivery.objects.filter(
-                pk=delivery_id,
-                status=OutboundDeliveryStatus.PENDING.value,
-            ).filter(
-                Q(next_attempt_at__isnull=True) | Q(next_attempt_at__lte=timezone.now()),
-            ).update(
-                status=OutboundDeliveryStatus.IN_FLIGHT.value,
-                attempts=F("attempts") + 1,
+            claimed = (
+                OutboundStateDelivery.objects.filter(
+                    pk=delivery_id,
+                    status=OutboundDeliveryStatus.PENDING.value,
+                )
+                .filter(
+                    Q(next_attempt_at__isnull=True)
+                    | Q(next_attempt_at__lte=timezone.now()),
+                )
+                .update(
+                    status=OutboundDeliveryStatus.IN_FLIGHT.value,
+                    attempts=F("attempts") + 1,
+                )
             )
     except IntegrityError:
         # Another revision of this operation is still in flight. The sweeper
@@ -216,7 +228,9 @@ def _finish(delivery, status, *, readback_digest="", error=""):
 def _reschedule(delivery, error):
     """Put a failed delivery back in the queue, or give up on it."""
     if OutboundStateDelivery.objects.filter(
-        binding=delivery.binding, item=delivery.item, operation=delivery.operation,
+        binding=delivery.binding,
+        item=delivery.item,
+        operation=delivery.operation,
         target_revision__gt=delivery.target_revision,
     ).exists():
         return _finish(delivery, OutboundDeliveryStatus.SUPERSEDED.value)
@@ -267,7 +281,8 @@ def run_delivery(delivery_id):
         return _finish(delivery, OutboundDeliveryStatus.SKIPPED.value)
 
     capability = (
-        CAPABILITY_RATING_PUSH if delivery.operation == "rating"
+        CAPABILITY_RATING_PUSH
+        if delivery.operation == "rating"
         else _capability_for(delivery.intent)
     )
     if not binding.allows(SyncDirection.OUTBOUND.value, capability):
@@ -282,10 +297,15 @@ def run_delivery(delivery_id):
         )
 
     try:
-        if delivery.operation == "rating" and OutboundStateDelivery.objects.filter(
-            binding=binding, item=delivery.item, operation="rating",
-            target_revision__gt=delivery.target_revision,
-        ).exists():
+        if (
+            delivery.operation == "rating"
+            and OutboundStateDelivery.objects.filter(
+                binding=binding,
+                item=delivery.item,
+                operation="rating",
+                target_revision__gt=delivery.target_revision,
+            ).exists()
+        ):
             return _finish(delivery, OutboundDeliveryStatus.SUPERSEDED.value)
         external_id = adapter.resolve_external_id(delivery.item)
         if not external_id:

@@ -7,7 +7,11 @@ urlpatterns = [
     path("tmdb/callback", tmdb_views.tmdb_callback, name="tmdb_callback"),
     path("tmdb/settings", tmdb_views.tmdb_settings, name="tmdb_settings"),
     path("tmdb/disconnect", tmdb_views.tmdb_disconnect, name="tmdb_disconnect"),
-    path("tmdb/export-ratings", tmdb_views.tmdb_export_ratings, name="tmdb_export_ratings"),
+    path(
+        "tmdb/export-ratings",
+        tmdb_views.tmdb_export_ratings,
+        name="tmdb_export_ratings",
+    ),
     path(
         "matches/<int:item_id>/",
         views.match_fix,
