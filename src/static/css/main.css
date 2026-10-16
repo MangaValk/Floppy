@@ -2938,6 +2938,12 @@
   .pt-\[max\(1rem\,env\(safe-area-inset-top\,0px\)\)\] {
     padding-top: max(1rem, env(safe-area-inset-top,0px));
   }
+  .pt-\[var\(--header-safe-top\)\] {
+    padding-top: var(--header-safe-top);
+  }
+  .pt-\[var\(--safe-top\)\] {
+    padding-top: var(--safe-top);
+  }
   .pr-1 {
     padding-right: calc(var(--spacing) * 1);
   }
@@ -2977,14 +2983,17 @@
   .pb-3 {
     padding-bottom: calc(var(--spacing) * 3);
   }
-  .pb-6 {
-    padding-bottom: calc(var(--spacing) * 6);
-  }
   .pb-16 {
     padding-bottom: calc(var(--spacing) * 16);
   }
+  .pb-\[max\(1\.5rem\,var\(--safe-bottom\)\)\] {
+    padding-bottom: max(1.5rem, var(--safe-bottom));
+  }
   .pb-\[max\(1rem\,env\(safe-area-inset-bottom\,0px\)\)\] {
     padding-bottom: max(1rem, env(safe-area-inset-bottom,0px));
+  }
+  .pb-\[var\(--safe-bottom\)\] {
+    padding-bottom: var(--safe-bottom);
   }
   .pl-0 {
     padding-left: calc(var(--spacing) * 0);
@@ -5299,9 +5308,9 @@
       padding-bottom: calc(var(--spacing) * 0);
     }
   }
-  .sm\:pb-12 {
+  .sm\:pb-\[max\(3rem\,var\(--safe-bottom\)\)\] {
     @media (width >= 40rem) {
-      padding-bottom: calc(var(--spacing) * 12);
+      padding-bottom: max(3rem, var(--safe-bottom));
     }
   }
   .sm\:pl-\[max\(2rem\,var\(--safe-left\)\)\] {
@@ -6107,6 +6116,9 @@
   }
 }
 :root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --header-safe-top: var(--safe-top);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --color-surface: #2a2f35;
@@ -7249,7 +7261,7 @@ html.light .theme-toggle-icon-moon {
 }
 @media (max-width: 767.98px) {
   .detail-carousel-grid, .detail-flat-top {
-    --hero-line: calc(47dvh - 4rem);
+    --hero-line: calc(47dvh - 4rem - var(--header-safe-top));
     --hero-pad-y: 1.5rem;
     --hero-gutter-l: max(1rem, var(--safe-left));
     --hero-gutter-r: max(1rem, var(--safe-right));
@@ -7401,7 +7413,7 @@ html.light .theme-toggle-icon-moon {
     top: calc(-1 * var(--hero-pad-y));
     right: calc(-1 * var(--hero-gutter-r));
     left: calc(-1 * var(--hero-gutter-l));
-    height: calc(100dvh - 4rem);
+    height: calc(100dvh - 4rem - var(--header-safe-top));
     overflow: hidden;
     pointer-events: none;
   }
@@ -7443,8 +7455,19 @@ html.light .theme-toggle-icon-moon {
   }
 }
 @media (min-width: 600px) and (max-width: 767.98px) {
+  :root {
+    --header-safe-top: 0px;
+  }
   .detail-carousel-grid:has(.detail-mobile-hero__logo) {
-    --hero-line: calc(50dvh - 6rem);
+    --hero-line: calc(50dvh - 6rem - var(--header-safe-top));
+  }
+  .detail-mobile-hero__logo {
+    top: calc(var(--hero-line) - 2.5rem);
+  }
+  .detail-carousel-grid:has(.detail-mobile-hero) [id^="detail-activity-subtitle-slot"] button, .detail-carousel-grid:has(.detail-mobile-hero) .detail-mobile-meta {
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: normal;
   }
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title {
     padding-top: 6.75rem;
@@ -7533,6 +7556,22 @@ html.light .theme-toggle-icon-moon {
   }
   .detail-flat-top__info > .mb-6 {
     grid-column: 1 / -1;
+  }
+}
+@media (min-width: 600px) and (max-width: 767.98px) and (orientation: landscape) {
+  .app-topbar__inner {
+    padding-right: 1rem;
+  }
+  .detail-carousel-grid:has(.detail-mobile-hero__logo) {
+    --hero-line: calc(70vw - 6rem - var(--header-safe-top));
+  }
+  .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-mobile-hero {
+    height: calc(140vw - 4rem - var(--header-safe-top));
+  }
+}
+@media (min-width: 600px) and (max-width: 767.98px) and (orientation: portrait) {
+  .app-topbar__inner {
+    padding-right: max(1rem, var(--safe-right), min(8rem, calc(var(--safe-top) * 4)));
   }
 }
 @media (max-width: 599.98px) {
@@ -7742,6 +7781,73 @@ html.light .theme-toggle-icon-moon {
       opacity: 1;
       transform: translateY(0);
     }
+  }
+}
+@media (min-width: 600px) and (max-width: 767.98px) {
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) ~ #detail-secondary-content .detail-promoted-content {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .detail-promoted-facts:not([hidden]) {
+    display: contents;
+  }
+  .detail-promoted-fact {
+    min-width: 0;
+    max-width: 24rem;
+  }
+  .detail-promoted-fact__label, .detail-promoted-fact__value {
+    display: block;
+    overflow-wrap: anywhere;
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+  }
+  .detail-promoted-fact__label {
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+  .detail-promoted-fact__full-label, .detail-promoted-fact__runtime-separator {
+    display: none;
+  }
+  .detail-promoted-fact__compact-label {
+    display: inline;
+  }
+  .detail-promoted-fact__compact-break {
+    display: initial;
+  }
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) ~ #detail-secondary-content .detail-sidebar-fact--promoted, .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) ~ #detail-secondary-content .detail-sidebar-details:not(:has(.detail-sidebar-fact:not(.detail-sidebar-fact--promoted))) {
+    display: none;
+  }
+  .detail-secondary-sidebar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 1rem;
+  }
+  .detail-secondary-sidebar > * {
+    grid-column: 1 / -1;
+  }
+  .detail-secondary-sidebar > :is(.detail-sidebar-genres, .detail-sidebar-studios, [data-detail-section="collection"]):not([hidden]) {
+    grid-column: auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .detail-secondary-sidebar > :is(.detail-sidebar-genres, .detail-sidebar-studios, [data-detail-section="collection"]) > .rounded-lg {
+    flex: 1;
+    text-align: left;
+  }
+  .detail-sidebar-genres > h2, .detail-sidebar-studios > h2 {
+    display: flex;
+    align-items: center;
+    min-height: 2rem;
+  }
+  .detail-sidebar-genres > .rounded-lg > div {
+    justify-content: flex-start;
   }
 }
 @media (min-width: 768px) {
