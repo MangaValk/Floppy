@@ -42,6 +42,7 @@
 
     <script src="{% javascript_catalog_url %}"></script>
     <script src="{% static 'js/libraries/htmx-2.0.4.min.js' %}"></script>
+    <script src="{% static 'js/artwork-loading.js' %}{% get_static_file_mtime 'js/artwork-loading.js' %}"></script>
     <script>
       (function() {
         function getCookie(name) {
@@ -73,13 +74,14 @@
             if (!xhr) {
               return;
             }
-            const body = xhr.responseText || "";
-            if (body.indexOf('name="floppy-page" content="entrance"') === -1) {
-              return;
+            const body = event.detail.serverResponse || xhr.responseText || "";
+            // Match the actual meta element, not this guard's own script.
+            const page = new DOMParser().parseFromString(body, "text/html");
+            if (page.querySelector('meta[name="floppy-page"][content="entrance"]')) {
+              event.detail.shouldSwap = false;
+              event.detail.isError = false;
+              window.location.assign(xhr.responseURL || "{% url 'account_login' %}");
             }
-            event.detail.shouldSwap = false;
-            event.detail.isError = false;
-            window.location.assign(xhr.responseURL || "{% url 'account_login' %}");
           });
 
           document.body.addEventListener("htmx:configRequest", function(event) {

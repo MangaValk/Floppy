@@ -10,7 +10,7 @@
          role="option"
          class="flex items-center gap-3 px-3 py-2 text-sm hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)] transition-colors duration-150">
         {% if suggestion.image and suggestion.image != IMG_NONE %}
-          <img src="{{ suggestion.image|image_url }}"
+          <img data-media-artwork decoding="sync" src="{{ suggestion.image|image_url }}"
                alt=""
                loading="lazy"
                class="object-cover w-8 h-10 rounded bg-[var(--color-surface-alt)] shrink-0">

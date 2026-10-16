@@ -585,6 +585,12 @@ main > .container,
 .media-grid > :nth-child(3n),
 .detail-media-grid > :nth-child(3n) { animation-delay: 70ms; }
 
+/* Cached posters must not replay the page/card entrance on every navigation. */
+main > .container:has(img[data-artwork-ready="true"]),
+:is(.media-grid, .detail-media-grid, .home-row-scrollbar-hidden) > :has(img[data-artwork-ready="true"]) {
+  animation: none;
+}
+
 .media-card-hover-outline::after {
   content: "";
   position: absolute;

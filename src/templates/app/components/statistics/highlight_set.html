@@ -17,10 +17,9 @@
   {% endif %}
     <div class="relative">
       {% if highlights.first_play %}
-        <img alt="{{ highlights.first_play.title }}"
-             class="media-card-poster lazyload w-full aspect-[3/2] bg-[var(--color-surface-alt)] {% if highlights.first_play.image %}object-cover{% endif %}"
-             {% if highlights.first_play.image %}data-src="{{ highlights.first_play.image|image_url }}"{% endif %}
-             src="{{ IMG_NONE }}">
+        <img loading="lazy" decoding="sync" alt="{{ highlights.first_play.title }}"
+             class="media-card-poster w-full aspect-[3/2] bg-[var(--color-surface-alt)] {% if highlights.first_play.image %}object-cover{% endif %}"
+             src="{{ highlights.first_play.image|default:IMG_NONE|image_url }}">
       {% else %}
         <div class="media-card-poster w-full aspect-[3/2] bg-[var(--color-surface-alt)]"></div>
       {% endif %}
@@ -57,10 +56,9 @@
   {% endif %}
     <div class="relative">
       {% if highlights.last_play %}
-        <img alt="{{ highlights.last_play.title }}"
-             class="media-card-poster lazyload w-full aspect-[3/2] bg-[var(--color-surface-alt)] {% if highlights.last_play.image %}object-cover{% endif %}"
-             {% if highlights.last_play.image %}data-src="{{ highlights.last_play.image|image_url }}"{% endif %}
-             src="{{ IMG_NONE }}">
+        <img loading="lazy" decoding="sync" alt="{{ highlights.last_play.title }}"
+             class="media-card-poster w-full aspect-[3/2] bg-[var(--color-surface-alt)] {% if highlights.last_play.image %}object-cover{% endif %}"
+             src="{{ highlights.last_play.image|default:IMG_NONE|image_url }}">
       {% else %}
         <div class="media-card-poster w-full aspect-[3/2] bg-[var(--color-surface-alt)]"></div>
       {% endif %}
@@ -98,10 +96,9 @@
   {% endif %}
     <div class="relative">
       {% if tc.entry %}
-        <img alt="{{ tc.entry.title }}"
-             class="media-card-poster lazyload w-full aspect-[3/2] bg-[var(--color-surface-alt)] {% if tc.entry.image %}object-cover{% endif %}"
-             {% if tc.entry.image %}data-src="{{ tc.entry.image|image_url }}"{% endif %}
-             src="{{ IMG_NONE }}">
+        <img loading="lazy" decoding="sync" alt="{{ tc.entry.title }}"
+             class="media-card-poster w-full aspect-[3/2] bg-[var(--color-surface-alt)] {% if tc.entry.image %}object-cover{% endif %}"
+             src="{{ tc.entry.image|default:IMG_NONE|image_url }}">
       {% else %}
         <div class="media-card-poster w-full aspect-[3/2] bg-[var(--color-surface-alt)]"></div>
       {% endif %}

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import OperationalError
 from django.test import Client, RequestFactory, TestCase
 from django.urls import reverse
@@ -169,6 +170,7 @@ class ListsViewTests(TestCase):
 
     def test_cover_loads_only_first_membership(self):
         """The cover endpoint must not prefetch the entire list."""
+        cache.clear()
         CustomListItem.objects.create(
             custom_list=self.list1,
             item=self.item2,
@@ -189,6 +191,52 @@ class ListsViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(load.call_count, 1)
         self.assertContains(response, self.item1.image)
+
+    def test_warm_covers_render_without_per_card_requests(self):
+        """A repeat hub visit has the resolved URL without another provider call."""
+        cache.clear()
+        self.client.force_login(self.user)
+        cover = "https://image.tmdb.org/t/p/w1280/cover.jpg"
+        with patch.object(
+            CustomList, "_get_tmdb_backdrop", return_value=cover
+        ) as fetch:
+            self.client.get(reverse("list_cover_image", args=[self.list1.id]))
+            response = self.client.get(reverse("lists"))
+            self.client.get(reverse("list_cover_image", args=[self.list1.id]))
+        fetch.assert_called_once()
+        self.assertContains(response, f'src="{cover}"')
+        self.assertNotContains(
+            response, f'hx-get="{reverse("list_cover_image", args=[self.list1.id])}"'
+        )
+
+    def test_cover_cache_changes_with_first_item_or_artwork(self):
+        """Removing the first member or replacing its image cannot reuse its cover."""
+        cache.clear()
+        self.client.force_login(self.user)
+        with patch.object(CustomList, "_get_tmdb_backdrop", return_value=None):
+            self.client.get(reverse("list_cover_image", args=[self.list1.id]))
+        self.item1.image = "https://example.com/replacement.jpg"
+        self.item1.save(update_fields=["image"])
+        response = self.client.get(reverse("lists"))
+        self.assertContains(
+            response, f'hx-get="{reverse("list_cover_image", args=[self.list1.id])}"'
+        )
+        self.list1.items.clear()
+        self.list1.items.add(self.item2)
+        response = self.client.get(reverse("lists"))
+        self.assertContains(
+            response, f'hx-get="{reverse("list_cover_image", args=[self.list1.id])}"'
+        )
+
+    def test_cached_cover_still_checks_visibility(self):
+        """A resolved private cover does not make the fragment public."""
+        cache.clear()
+        self.client.force_login(self.user)
+        with patch.object(CustomList, "_get_tmdb_backdrop", return_value=None):
+            self.client.get(reverse("list_cover_image", args=[self.list1.id]))
+        self.client.logout()
+        response = self.client.get(reverse("list_cover_image", args=[self.list1.id]))
+        self.assertEqual(response.status_code, 403)
 
     @patch.object(get_user_model(), "update_preference")
     def test_lists_view_search_filter(self, mock_update_preference):
@@ -638,9 +686,7 @@ class ListDetailViewTests(TestCase):
         )
 
     @patch("app.tasks_external_ids.enqueue_external_ids_backfill_items")
-    def test_public_list_queues_backfill_when_tvdb_id_missing(
-        self, mock_enqueue
-    ):
+    def test_public_list_queues_backfill_when_tvdb_id_missing(self, mock_enqueue):
         """Missing TVDB id for a parent show should trigger a best-effort backfill."""
         self.custom_list.visibility = "public"
         self.custom_list.save(update_fields=["visibility"])
@@ -854,8 +900,7 @@ class ListDetailViewTests(TestCase):
         TV.objects.create(item=self.tv_item, status=None, user=self.user)
 
         response = self.client.get(
-            reverse("list_detail", args=[self.custom_list.id])
-            + "?status=no_status",
+            reverse("list_detail", args=[self.custom_list.id]) + "?status=no_status",
         )
 
         self.assertEqual(response.status_code, 200)
@@ -1455,7 +1500,9 @@ class ListDetailViewTests(TestCase):
         ]
         Item.objects.bulk_create(items)
         items = list(
-            Item.objects.filter(media_id__startswith="smart-batch-movie-").order_by("id")
+            Item.objects.filter(media_id__startswith="smart-batch-movie-").order_by(
+                "id"
+            )
         )
         Movie.objects.bulk_create(
             [
@@ -1477,8 +1524,7 @@ class ListDetailViewTests(TestCase):
         )
 
         response = self.client.get(
-            reverse("list_detail", args=[smart_list.public_reference])
-            + "?page=2",
+            reverse("list_detail", args=[smart_list.public_reference]) + "?page=2",
         )
 
         self.assertEqual(response.status_code, 200)
@@ -1682,7 +1728,9 @@ class ListDetailViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "lists/components/list_table.html")
-        self.assertContains(response, 'class="w-full bg-[var(--color-surface)] media-table"')
+        self.assertContains(
+            response, 'class="w-full bg-[var(--color-surface)] media-table"'
+        )
 
     @patch.object(get_user_model(), "update_preference")
     @patch.object(CustomList, "user_can_view")
@@ -1847,12 +1895,16 @@ class ListDetailViewTests(TestCase):
         response = self.client.get(reverse("list_detail", args=[self.custom_list.id]))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["current_layout"], "table")
+        self.assertRegex(response.content.decode(), r'id="items-view"\s+class=""')
 
         response = self.client.get(
             reverse("list_detail", args=[self.custom_list.id]) + "?layout=grid",
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["current_layout"], "grid")
+        self.assertRegex(
+            response.content.decode(), r'id="items-view"\s+class="media-grid"'
+        )
         self.user.refresh_from_db()
         self.assertEqual(self.user.list_detail_layout, "grid")
 
@@ -2022,12 +2074,16 @@ class ListDetailViewTests(TestCase):
         response = self.client.get(reverse("list_detail", args=[smart_list.id]))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["current_layout"], "table")
+        self.assertRegex(response.content.decode(), r'id="items-view"\s+class=""')
 
         response = self.client.get(
             reverse("list_detail", args=[smart_list.id]) + "?layout=grid",
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["current_layout"], "grid")
+        self.assertRegex(
+            response.content.decode(), r'id="items-view"\s+class="media-grid"'
+        )
         self.user.refresh_from_db()
         self.assertEqual(self.user.list_detail_layout, "grid")
 
@@ -2624,7 +2680,9 @@ class ListDetailViewTests(TestCase):
             media_type=MediaTypes.TV.value,
             image=settings.IMG_NONE,
         )
-        tv = TV.objects.create(item=tv_item, user=self.user, status=Status.IN_PROGRESS.value)
+        tv = TV.objects.create(
+            item=tv_item, user=self.user, status=Status.IN_PROGRESS.value
+        )
         season = Season.objects.create(
             item=season_item,
             user=self.user,
@@ -2737,7 +2795,9 @@ class ListDetailViewTests(TestCase):
             media_type=MediaTypes.TV.value,
             image=settings.IMG_NONE,
         )
-        tv = TV.objects.create(item=tv_item, user=self.user, status=Status.IN_PROGRESS.value)
+        tv = TV.objects.create(
+            item=tv_item, user=self.user, status=Status.IN_PROGRESS.value
+        )
         season = Season.objects.create(
             item=season_item,
             user=self.user,
@@ -3560,7 +3620,11 @@ class ListsModalViewTests(TestCase):
                 response = self.client.get(
                     reverse(
                         "lists_modal",
-                        args=[Sources.MUSICBRAINZ.value, MediaTypes.MUSIC.value, media_id],
+                        args=[
+                            Sources.MUSICBRAINZ.value,
+                            MediaTypes.MUSIC.value,
+                            media_id,
+                        ],
                     ),
                 )
 
@@ -4007,7 +4071,9 @@ class ListItemToggleTests(TestCase):
 
     @patch("lists.views_list_actions.time.sleep")
     @patch("lists.views_list_actions._toggle_list_membership")
-    def test_list_item_toggle_retries_an_immediate_lock_error(self, mock_toggle, _sleep):
+    def test_list_item_toggle_retries_an_immediate_lock_error(
+        self, mock_toggle, _sleep
+    ):
         """A stale-snapshot lock error is instant, so a quick retry succeeds."""
         self.client.login(**self.credentials)
         mock_toggle.side_effect = [OperationalError("database is locked"), True]
@@ -4190,9 +4256,7 @@ class ListRssFeedTests(TestCase):
 
         response = self.client.get(reverse("list_rss", args=[self.custom_list.id]))
         root = ET.fromstring(response.content)
-        titles = [
-            item.findtext("title") for item in root.findall("./channel/item")
-        ]
+        titles = [item.findtext("title") for item in root.findall("./channel/item")]
 
         self.assertEqual(titles, ["RSS Second Movie", "RSS Movie"])
 
@@ -4735,7 +4799,9 @@ class QuickAddListItemTests(TestCase):
             "title": "Breaking Bad",
             "image": "https://example.com/bb.jpg",
         }
-        other_user = get_user_model().objects.create_user("other", "o@example.com", "pw")
+        other_user = get_user_model().objects.create_user(
+            "other", "o@example.com", "pw"
+        )
         other_row = Item.objects.create(
             library_media_type=MediaTypes.TV.value, **identity
         )
