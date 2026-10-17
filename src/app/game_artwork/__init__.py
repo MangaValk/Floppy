@@ -178,6 +178,17 @@ def _art(row, kind):
     )
 
 
+def peek(media_id):
+    """Read fresh stored artwork without triggering a provider lookup."""
+    row = GameArtwork.objects.filter(
+        source=Sources.IGDB.value,
+        media_id=str(media_id),
+    ).first()
+    if row is None or is_stale(row):
+        return None
+    return {"logo": _art(row, "logo"), "backdrop": _art(row, "backdrop")}
+
+
 def resolve(query, *, fallback_backdrop=None):
     """Return ``{"logo": Art | None, "backdrop": Art | None}`` for a game.
 

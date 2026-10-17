@@ -76,3 +76,5 @@ Add a module with `PROVIDER` and `find(query, wanted)` returning
 `{"logo": Art, "backdrop": Art}` for what it has, add it to
 `provider_order`, approve its image host in `app.image_cache`, and add a
 registry entry in `app.providers.credentials` if it takes a key.
+
+Media details render a fresh cached gallery and stored artwork in the initial response, including the logo and hero layout. Missing or expired artwork stays on the deferred carousel path; the initial response never calls artwork providers. Seasons use the cached parent show artwork as well.

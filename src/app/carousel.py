@@ -3,9 +3,9 @@
 Distinct from ``backdrops.py``: that module returns a single horizontal image
 (or ``None``) for card art, eagerly consulted on hot paths. This module
 returns a multi-item {"video", "photos"} payload for the details page's
-carousel, fetched lazily (only when the page's carousel fragment is
-requested) and only for the media types/sources that actually expose a
-trailer or photo gallery.
+carousel, fetched lazily on a cold visit and rendered immediately from
+cache on repeat visits. Only media types/sources with a trailer or photo
+gallery are supported.
 """
 
 import logging
@@ -75,10 +75,15 @@ def confirmed_empty(media_type, source, media_id, *, season_number=None) -> bool
     )
 
 
-def resolve_carousel_media(media_type, source, media_id, *, season_number=None) -> dict | None:
-    """Return {"video": {...}|None, "photos": [{"url", "thumb_url"}, ...]} or None."""
+def resolve_carousel_media(
+    media_type, source, media_id, *, season_number=None, cached_only=False
+) -> dict | None:
+    """Resolve gallery artwork; cached_only never calls a provider."""
     if source == Sources.TMDB.value and media_type in _TMDB_CAROUSEL_TYPES:
-        data = tmdb.carousel_media(media_type, media_id, season_number=season_number)
+        lookup = tmdb.peek_carousel_media if cached_only else tmdb.carousel_media
+        data = lookup(media_type, media_id, season_number=season_number)
+        if data is None:
+            return None
         photos = [
             {
                 "url": rewrite_image_url(tmdb.get_carousel_image_url(photo["file_path"], size="w1280")),
@@ -94,7 +99,9 @@ def resolve_carousel_media(media_type, source, media_id, *, season_number=None) 
         backdrop_url = None
 
         if media_type == MediaTypes.SEASON.value:
-            show_data = tmdb.carousel_media(MediaTypes.TV.value, media_id)
+            show_data = lookup(MediaTypes.TV.value, media_id)
+            if show_data is None:
+                return None
             logo_paths = show_data.get("logos", [])
             backdrop_path = backdrop_path or show_data.get("backdrop_path") or next(
                 (photo["file_path"] for photo in show_data["photos"] if photo.get("file_path")),
@@ -108,13 +115,15 @@ def resolve_carousel_media(media_type, source, media_id, *, season_number=None) 
                         "source": source,
                         "media_type": MediaTypes.TV.value,
                         "media_id": media_id,
-                    }
+                    },
+                    allow_network=not cached_only,
                 )
         elif not backdrop_path:
             from app.backdrops import resolve_backdrop
 
             backdrop_url = resolve_backdrop(
-                {"source": source, "media_type": media_type, "media_id": media_id}
+                {"source": source, "media_type": media_type, "media_id": media_id},
+                allow_network=not cached_only,
             )
 
         overview = None
@@ -158,8 +167,13 @@ def resolve_carousel_media(media_type, source, media_id, *, season_number=None) 
 
         # A visitor is waiting on this fragment: fail fast on a slow or
         # rate-limited provider instead of holding the web worker.
-        with services.interactive_request_scope():
-            data = CustomList()._get_igdb_carousel_media(media_id)
+        if cached_only:
+            data = cache.get(f"igdb_carousel_v4_{media_id}")
+            if data is None:
+                return None
+        else:
+            with services.interactive_request_scope():
+                data = CustomList()._get_igdb_carousel_media(media_id)
         photos = [
             {
                 # t_screenshot_big_2x and similar named IGDB transforms crop to a
@@ -172,8 +186,13 @@ def resolve_carousel_media(media_type, source, media_id, *, season_number=None) 
             }
             for image_id in data["photos"]
         ]
-        with services.interactive_request_scope():
-            artwork = _game_artwork(media_id, data.get("hero_image_id"))
+        if cached_only:
+            artwork = _game_artwork(media_id, data.get("hero_image_id"), cached_only=True)
+            if artwork is None:
+                return None
+        else:
+            with services.interactive_request_scope():
+                artwork = _game_artwork(media_id, data.get("hero_image_id"))
         backdrop, logo = artwork["backdrop"], artwork["logo"]
         overview = None
         if backdrop and logo:
@@ -211,9 +230,9 @@ def _igdb_image_url(image_id):
     return f"https://images.igdb.com/igdb/image/upload/t_1080p/{image_id}.jpg"
 
 
-def _game_artwork(media_id, igdb_hero_image_id):
+def _game_artwork(media_id, igdb_hero_image_id, *, cached_only=False):
     """Return the game's logo and backdrop, IGDB artwork being the backdrop fallback."""
-    from app.game_artwork import query_for, resolve
+    from app.game_artwork import peek, query_for, resolve
     from app.game_artwork.base import Art
     from app.providers import igdb
 
@@ -222,6 +241,13 @@ def _game_artwork(media_id, igdb_hero_image_id):
         if igdb_hero_image_id
         else None
     )
+    if cached_only:
+        artwork = peek(media_id)
+        if artwork is not None and (
+            artwork["backdrop"] is None or artwork["backdrop"].provider == "igdb"
+        ):
+            artwork["backdrop"] = fallback or artwork["backdrop"]
+        return artwork
     try:
         return resolve(query_for(media_id, igdb.game(media_id)), fallback_backdrop=fallback)
     except Exception:

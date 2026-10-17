@@ -391,6 +391,44 @@ class GameCarouselRetryTests(TestCase):
         self.assertEqual(seen, [True, True])
         self.assertFalse(services._interactive_request.get())
 
+    @patch("app.game_artwork.resolve")
+    @patch("app.providers.igdb.game")
+    @patch("lists.models.CustomList._get_igdb_carousel_media")
+    def test_cached_game_uses_stored_artwork_without_provider_calls(self, gallery, metadata, resolve):
+        self.row(
+            logo_url="https://x/logo.png",
+            backdrop_url="https://x/hero.jpg",
+            backdrop_provider="steamgriddb",
+        )
+        result = carousel.resolve_carousel_media("game", "igdb", "123", cached_only=True)
+        self.assertEqual(result["overview"]["logo_url"], "https://x/logo.png")
+        gallery.assert_not_called()
+        metadata.assert_not_called()
+        resolve.assert_not_called()
+
+    @patch("app.game_artwork.resolve")
+    @patch("lists.models.CustomList._get_igdb_carousel_media")
+    def test_cached_game_defers_missing_or_expired_artwork(self, gallery, resolve):
+        from app.game_artwork import expire
+
+        self.assertIsNone(carousel.resolve_carousel_media("game", "igdb", "123", cached_only=True))
+        self.row(logo_url="https://x/logo.png", backdrop_url="https://x/hero.jpg")
+        expire("123")
+        self.assertIsNone(carousel.resolve_carousel_media("game", "igdb", "123", cached_only=True))
+        gallery.assert_not_called()
+        resolve.assert_not_called()
+
+    @patch("app.providers.tmdb.carousel_media")
+    def test_cached_tmdb_and_seasons_do_not_fetch(self, fetch):
+        for kind, season in [("movie", None), ("tv", None), ("season", 1)]:
+            data = {"video": None, "photos": [], "logos": ["/logo.png"], "backdrop_path": "/hero.jpg"}
+            with patch("app.providers.tmdb.peek_carousel_media", return_value=data):
+                result = carousel.resolve_carousel_media(kind, "tmdb", "123", season_number=season, cached_only=True)
+                self.assertIsNotNone(result["overview"])
+            with patch("app.providers.tmdb.peek_carousel_media", return_value=None):
+                self.assertIsNone(carousel.resolve_carousel_media(kind, "tmdb", "123", season_number=season, cached_only=True))
+        fetch.assert_not_called()
+
 
 class IgdbCarouselOverviewTests(TestCase):
     def tearDown(self):
