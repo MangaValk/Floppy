@@ -59,6 +59,18 @@ def _service_networks(service):
 
 
 class PublishedComposeNetworkTests(SimpleTestCase):
+    def test_example_stacks_do_not_ship_a_shared_signing_key(self):
+        for label, stack in _published_stacks():
+            environment = stack["services"]["floppy"].get("environment", {})
+            if isinstance(environment, list):
+                environment = dict(entry.partition("=")[::2] for entry in environment)
+            with self.subTest(stack=label):
+                value = environment.get("SECRET", "")
+                self.assertTrue(
+                    not value or value.startswith("${"),
+                    f"{label} ships a fixed Django signing key",
+                )
+
     def test_the_readme_stacks_are_found(self):
         """Guard the guard: a regex change must not silently check nothing."""
         labels = [label for label, _stack in _published_stacks()]

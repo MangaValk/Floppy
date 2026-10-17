@@ -10,7 +10,8 @@ services:
       - redis
     environment:
       - TZ=Europe/Berlin
-      - SECRET=longstring
+      # Set SECRET in .env; retain the existing key when upgrading.
+      - SECRET=${SECRET:?Set SECRET to a long random signing key}
       - REDIS_URL=redis://redis:6379
       - DB_HOST=db
       # These stay "yamtrack" on purpose: renaming the database, role, or

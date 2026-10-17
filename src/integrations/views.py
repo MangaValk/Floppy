@@ -34,6 +34,7 @@ from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import (
@@ -267,6 +268,12 @@ def _integration_redirect(request, *, connected_slug=None, next_url=None):
             user.onboarding_connected_sources = [*user.onboarding_connected_sources, connected_slug]
             user.save(update_fields=["onboarding_connected_sources"])
     destination = next_url or request.POST.get("next") or request.GET.get("next")
+    if destination and not url_has_allowed_host_and_scheme(
+        destination,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        destination = None
     return redirect(destination or "import_data")
 
 
@@ -3040,7 +3047,8 @@ def plex_cover(request, token):
         return fallback()
 
     try:
-        upstream = requests.get(
+        upstream = send_to_self_hosted(
+            requests.get,
             f"{uri}{thumb_path}",
             params={"X-Plex-Token": plex_token},
             timeout=PLEX_COVER_TIMEOUT,
@@ -4976,8 +4984,7 @@ def jellyfin_webhook(request, token):
         user = users.models.User.objects.get(token=token, is_active=True)
     except ObjectDoesNotExist:
         logger.warning(
-            "Could not process Jellyfin webhook: Invalid token: %s",
-            token,
+            "Could not process Jellyfin webhook: Invalid token",
         )
         return HttpResponse(status=401)
 
@@ -5006,8 +5013,7 @@ def plex_webhook(request, token):
         user = users.models.User.objects.get(token=token, is_active=True)
     except ObjectDoesNotExist:
         logger.warning(
-            "Could not process Plex webhook: Invalid token: %s",
-            token,
+            "Could not process Plex webhook: Invalid token",
         )
         return HttpResponse(status=401)
 
@@ -5063,8 +5069,7 @@ def emby_webhook(request, token):
         user = users.models.User.objects.get(token=token, is_active=True)
     except ObjectDoesNotExist:
         logger.warning(
-            "Could not process Emby webhook: Invalid token: %s",
-            token,
+            "Could not process Emby webhook: Invalid token",
         )
         return HttpResponse(status=401)
 
@@ -5097,8 +5102,7 @@ def jellyseerr_webhook(request, token):
         user = users.models.User.objects.get(token=token, is_active=True)
     except ObjectDoesNotExist:
         logger.warning(
-            "Could not process Seerr webhook: Invalid token: %s",
-            token,
+            "Could not process Seerr webhook: Invalid token",
         )
         return HttpResponse(status=401)
 
@@ -5191,8 +5195,7 @@ def kodi_webhook(request, token):
         user = users.models.User.objects.get(token=token, is_active=True)
     except ObjectDoesNotExist:
         logger.warning(
-            "Could not process Kodi webhook: Invalid token: %s",
-            token,
+            "Could not process Kodi webhook: Invalid token",
         )
         return HttpResponse(status=401)
 

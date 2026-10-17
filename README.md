@@ -49,7 +49,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - SECRET=change_me_to_a_long_random_string
+      - SECRET=${SECRET:?Set SECRET to a long random signing key}
       - REDIS_URL=redis://redis:6379
       - REGISTRATION=True
       - DEMO_ACCOUNT_ENABLED=False
@@ -339,7 +339,7 @@ services:
       - db
       - redis
     environment:
-      - SECRET=your-secret-key-here-change-this
+      - SECRET=${SECRET:?Set SECRET to a long random signing key}
       - REDIS_URL=redis://redis:6379
       - DEMO_ACCOUNT_ENABLED=False
       - TZ=America/New_York

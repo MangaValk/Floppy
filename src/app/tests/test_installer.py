@@ -614,13 +614,20 @@ class GeneratedNginxTests(SimpleTestCase):
         self.assertIn(f'alias "{root}/repo/src/staticfiles/";', conf)
         self.assertIn("server 127.0.0.1:8001;", conf)
 
-    def test_access_log_keeps_query_strings_out(self):
+    def test_access_log_keeps_urls_and_referrers_out(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            conf = self.render(Path(temp_dir))
-        self.assertIn("$request_method $uri $server_protocol", conf)
-        self.assertNotIn("$request ", conf)
-        self.assertNotIn("$query_string", conf)
-        self.assertNotIn("$http_referer", conf)
+            generated = self.render(Path(temp_dir))
+        for conf in (generated, (ROOT / "nginx.conf").read_text()):
+            with self.subTest(configuration=conf[:60]):
+                self.assertIn("$request_method $server_protocol", conf)
+                for variable in (
+                    "$uri",
+                    "$request_uri",
+                    "$request ",
+                    "$query_string",
+                    "$http_referer",
+                ):
+                    self.assertNotIn(variable, conf)
 
 
 class GeneratedServiceUnitTests(SimpleTestCase):

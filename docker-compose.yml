@@ -9,7 +9,9 @@ services:
       - redis
     environment:
       - TZ=Europe/Berlin
-      - SECRET=longstring
+      # Empty on new installs: Floppy generates a private key in the data volume.
+      # Existing installs should set SECRET in .env to retain their current key.
+      - SECRET=${SECRET:-}
       - REDIS_URL=redis://redis:6379
       - ADMIN_ENABLED=False
       # Off by default: otherwise a publicly known demo/demodemo
