@@ -722,7 +722,7 @@ def apply_media_type_preferences(
 
 @require_http_methods(["GET", "POST"])
 def sidebar(request):
-    """Render the sidebar settings page (media types visibility and UI preferences)."""
+    """Render the sidebar settings page (media type visibility and order)."""
     media_types = SIDEBAR_MEDIA_TYPES
 
     if request.method == "POST":
@@ -732,12 +732,6 @@ def sidebar(request):
             return redirect("sidebar")
 
         fields_to_update = []
-
-        # Handle clickable_media_cards preference
-        clickable_media_cards = request.POST.get("clickable_media_cards") == "on"
-        if request.user.clickable_media_cards != clickable_media_cards:
-            request.user.clickable_media_cards = clickable_media_cards
-            fields_to_update.append("clickable_media_cards")
 
         show_discover = request.POST.get("show_discover") == "on"
         if request.user.show_discover != show_discover:
@@ -1087,7 +1081,11 @@ def cards(request, media_type=None):
         request.user.card_metadata = parse_card_metadata(
             request.POST.get("card_metadata")
         )
-        request.user.save(update_fields=["card_metadata"])
+        fields = ["card_metadata"]
+        if "clickable_media_cards" in request.POST:
+            request.user.clickable_media_cards = request.POST.get("clickable_media_cards") == "on"
+            fields.append("clickable_media_cards")
+        request.user.save(update_fields=fields)
         messages.success(request, "Media cards updated")
         return _cards_redirect(media_type)
     if media_type is None:
@@ -1136,6 +1134,8 @@ def cards_preview(request):
         draft_payload = {}
     if "types" not in draft_payload and media_type in draft_payload:
         draft_payload = {"version": 1, "types": {media_type: draft_payload}}
+    if request.method == "POST" and isinstance(body.get("clickable_media_cards"), bool):
+        request.user.clickable_media_cards = body["clickable_media_cards"]
     request.user.card_metadata = parse_card_metadata(draft_payload)
     sample = _card_preview_sample(request.user, media_type)
     if sample is None:
