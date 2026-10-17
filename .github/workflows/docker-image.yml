@@ -17,6 +17,7 @@ on:
   pull_request:
     branches:
       - "latest"
+      - "release"
 
 # A push to latest must not be overtaken by an older build that started later
 # because runners were queued. Keep one publish per ref in flight and let the
@@ -32,6 +33,15 @@ env:
   LEGACY_IMAGE_NAME: dannyvfilms/yamtrack
 
 jobs:
+  quality:
+    name: Release quality gates
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/app-tests.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+
   test:
     name: Smoke built image
     runs-on: ubuntu-latest
@@ -197,9 +207,14 @@ jobs:
           docker volume rm "$SMOKE_VOLUME" 2>/dev/null || true
 
   build:
-    needs: test
+    needs: [test, quality]
     runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]'
+    if: >-
+      ${{ !cancelled() &&
+      (github.event_name == 'pull_request' || github.actor != 'dependabot[bot]') &&
+      needs.test.result == 'success' &&
+      (needs.quality.result == 'success' ||
+       (github.event_name == 'pull_request' && needs.quality.result == 'skipped')) }}
     permissions:
       contents: read
       packages: write
@@ -279,8 +294,8 @@ jobs:
   # issue so it is tracked and visible.
   report-release-failure:
     name: Report failed release build
-    needs: [test, build]
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') && (needs.test.result == 'failure' || needs.build.result == 'failure') }}
+    needs: [test, quality, build]
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') && (needs.test.result == 'failure' || needs.quality.result == 'failure' || needs.build.result == 'failure') }}
     runs-on: ubuntu-latest
     permissions:
       issues: write

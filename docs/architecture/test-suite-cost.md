@@ -261,13 +261,9 @@ so every thread's stack is dumped if a run outlives its budget.
 `FLOPPY_TEST_TIMEOUT`, so a hang now dumps its stacks *before* the timeout
 kills it, with no one needing to remember a flag.
 
-**CI cannot be wired up the same way from a pull request.** The
-`check-workflow-changes` job fails any PR that touches `.github/workflows/**`,
-by design. So arming the watchdog for CI -- which is where the hang is most
-expensive, since the job just burns its 45 minutes and reports a timeout with
-no evidence -- has to be done as a deliberate, separate workflow change by
-someone who can land one. The one-line version is an `env:` entry on the
-"Run Tests" step:
+CI now accepts workflow changes through the normal PR checks and sets
+`FLOPPY_TEST_WATCHDOG=2400` for its 45-minute test job, so a hang leaves thread
+stacks before the job times out. The equivalent step configuration is:
 
 ```yaml
       - name: Run Tests
@@ -475,12 +471,13 @@ required: on Python 3.12 the sysmon core records only the first test to
 hit a line. A changed test module always runs. A pure insertion selects
 tests that executed the anchor line. A new file, or a file coverage does
 not measure (`migrations`, `__init__.py`, `admin.py`), falls through to
-the import walk below.
+the import walk below. Changed lines without a recorded test also fall back;
+an untested branch must not turn a code change into a no-test success.
 
 `scripts/test.sh --affected-record` runs the CI suite (slow included,
-network excluded) and writes that file. Pull requests download the copy
-uploaded by the last successful run on `latest`. A push to `latest` or
-`release` still runs the full app list and replaces the map.
+network excluded) and writes that file for local iteration. Application PRs
+run the full offline app list rather than relying on historical line selection.
+Publication calls the same reusable suite and uploads a fresh map.
 
 Without a map, a changed test module runs. A changed source module runs
 the test modules that import it, including a name re-exported from a
@@ -502,7 +499,7 @@ are named and do not escalate: the Django suite does not collect them.
 
 A selected label excludes `@tag("network")` and does not exclude
 `@tag("slow")`, so a slow test you changed still runs. The fast-suite
-fallback excludes both, unless CI passes `--include-slow`.
+fallback excludes both, unless the caller passes `--include-slow`.
 `scripts/test.sh` with no arguments is still the fast suite.
 
 Running apps one at a time (`app`, then `users`, …) both avoids the
