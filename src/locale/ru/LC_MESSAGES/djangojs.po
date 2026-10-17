@@ -1,4 +1,3 @@
-Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 # Russian JavaScript translations for Floppy.
 msgid ""
 msgstr ""
@@ -160,7 +159,7 @@ msgstr "Проверенная схема API (OpenAPI 3.0.3)"
 
 #: inline_translation_extraction/templates/users/about.html.js:7
 msgid "Domain Context (JSON-LD 1.1)"
-msgstr "Contexto del dominio (JSON-LD 1.1)"
+msgstr "Контекст домена (JSON-LD 1.1)"
 
 #: inline_translation_extraction/templates/users/about.html.js:8
 msgid "Full Diagnostic API Schema (Live OpenAPI)"
@@ -210,17 +209,17 @@ msgstr "Цвет %s"
 #: inline_translation_extraction/templates/users/appearance.html.js:3
 #: inline_translation_extraction/templates/users/preferences.html.js:2
 msgid "System default"
-msgstr "Темная"
+msgstr "Как в системе"
 
 #: inline_translation_extraction/templates/users/appearance.html.js:4
 #: inline_translation_extraction/templates/users/preferences.html.js:4
 msgid "Light"
-msgstr "Логотип"
+msgstr "Светлая"
 
 #: inline_translation_extraction/templates/users/appearance.html.js:5
 #: inline_translation_extraction/templates/users/preferences.html.js:3
 msgid "Dark"
-msgstr "Светлая"
+msgstr "Тёмная"
 
 #: inline_translation_extraction/templates/users/appearance.html.js:6
 msgid "Catppuccin Mocha"
@@ -643,9 +642,9 @@ msgstr "Без тегов "
 #, javascript-format
 msgid "%s tag"
 msgid_plural "%s Tags"
-msgstr[0] "%s etiqueta"
-msgstr[1] "%s etiquetas"
-msgstr[2] "%s etiquetas"
+msgstr[0] "%s тег"
+msgstr[1] "%s тега"
+msgstr[2] "%s тегов"
 
 #: inline_translation_extraction/templates/users/home_screen.html.js:30
 #: inline_translation_extraction/templates/users/integrations.html.js:11
@@ -1274,35 +1273,35 @@ msgid ""
 msgid_plural ""
 "This will replace plays for %(count)s ordered items using %(distribution)s."
 msgstr[0] ""
-"Esto reemplazará las reproducciones de %(count)s elemento ordenado usando "
-"%(distribution)s."
+"Просмотры %(count)s элементов будут заменены в заданном порядке "
+"(%(distribution)s)."
 msgstr[1] ""
-"Esto reemplazará las reproducciones de %(count)s elementos ordenados usando "
-"%(distribution)s."
+"Просмотры %(count)s элементов будут заменены в заданном порядке "
+"(%(distribution)s)."
 msgstr[2] ""
-"Esto reemplazará las reproducciones de %(count)s elementos ordenados usando "
-"%(distribution)s."
+"Просмотры %(count)s элементов будут заменены в заданном порядке "
+"(%(distribution)s)."
 
 #: static/js/episodeBulkTrackForm.js:169
 msgid "This will add plays for %(count)s ordered item using %(distribution)s."
 msgid_plural ""
 "This will add plays for %(count)s ordered items using %(distribution)s."
 msgstr[0] ""
-"Esto añadirá reproducciones de %(count)s elemento ordenado usando "
-"%(distribution)s."
+"Будут добавлены просмотры %(count)s элементов в заданном порядке "
+"(%(distribution)s)."
 msgstr[1] ""
-"Esto añadirá reproducciones de %(count)s elementos ordenados usando "
-"%(distribution)s."
+"Будут добавлены просмотры %(count)s элементов в заданном порядке "
+"(%(distribution)s)."
 msgstr[2] ""
-"Esto añadirá reproducciones de %(count)s elementos ordenados usando "
-"%(distribution)s."
+"Будут добавлены просмотры %(count)s элементов в заданном порядке "
+"(%(distribution)s)."
 
 #: static/js/episodeBulkTrackForm.js:182
 msgid "%(count)s selected item has no target date."
 msgid_plural "%(count)s selected items have no target date."
-msgstr[0] "%(count)s elemento seleccionado no tiene fecha de destino."
-msgstr[1] "%(count)s elementos seleccionados no tienen fecha de destino."
-msgstr[2] "%(count)s elementos seleccionados no tienen fecha de destino."
+msgstr[0] "Без целевой даты: %(count)s выбранных элементов."
+msgstr[1] "Без целевой даты: %(count)s выбранных элементов."
+msgstr[2] "Без целевой даты: %(count)s выбранных элементов."
 
 #: static/js/episodeBulkTrackForm.js:185
 msgid "Saving will fall back to even distribution."
@@ -1316,14 +1315,14 @@ msgid_plural ""
 "This will delete %(count)s existing plays in the selected range before "
 "adding the new ordered pass."
 msgstr[0] ""
-"Esto eliminará %(count)s reproducción existente del intervalo seleccionado "
-"antes de añadir la nueva pasada ordenada."
+"Перед добавлением нового упорядоченного просмотра будут удалены существующие"
+" просмотры (%(count)s) в выбранном диапазоне."
 msgstr[1] ""
-"Esto eliminará %(count)s reproducciones existentes del intervalo "
-"seleccionado antes de añadir la nueva pasada ordenada."
+"Перед добавлением нового упорядоченного просмотра будут удалены существующие"
+" просмотры (%(count)s) в выбранном диапазоне."
 msgstr[2] ""
-"Esto eliminará %(count)s reproducciones existentes del intervalo "
-"seleccionado antes de añadir la nueva pasada ordenada."
+"Перед добавлением нового упорядоченного просмотра будут удалены существующие"
+" просмотры (%(count)s) в выбранном диапазоне."
 
 #: static/js/episodeBulkTrackForm.js:195
 msgid "No existing plays are currently logged in the selected range."
@@ -1337,14 +1336,14 @@ msgid_plural ""
 "This range already has %(count)s logged plays. New plays will be appended in"
 " order."
 msgstr[0] ""
-"Este intervalo ya tiene %(count)s reproducción registrada. Las nuevas se "
-"añadirán en orden."
+"В этом диапазоне уже записано просмотров: %(count)s. Новые просмотры будут "
+"добавлены по порядку."
 msgstr[1] ""
-"Este intervalo ya tiene %(count)s reproducciones registradas. Las nuevas se "
-"añadirán en orden."
+"В этом диапазоне уже записано просмотров: %(count)s. Новые просмотры будут "
+"добавлены по порядку."
 msgstr[2] ""
-"Este intervalo ya tiene %(count)s reproducciones registradas. Las nuevas se "
-"añadirán en orden."
+"В этом диапазоне уже записано просмотров: %(count)s. Новые просмотры будут "
+"добавлены по порядку."
 
 #: static/js/libraryFilterState.js:73
 msgid "Rated"
@@ -1581,9 +1580,11 @@ msgstr "Количество элементов"
 #: static/js/statistics-charts.js:341
 msgid "Average Score: %(score)s / %(max)s (%(count)s item)"
 msgid_plural "Average Score: %(score)s / %(max)s (%(count)s items)"
-msgstr[0] "Puntuación media: %(score)s / %(max)s (%(count)s elemento)"
-msgstr[1] "Puntuación media: %(score)s / %(max)s (%(count)s elementos)"
-msgstr[2] "Puntuación media: %(score)s / %(max)s (%(count)s elementos)"
+msgstr[0] "Средняя оценка: %(score)s из %(max)s (%(count)s оценённый элемент)"
+msgstr[1] ""
+"Средняя оценка: %(score)s из %(max)s (%(count)s оценённых элемента)"
+msgstr[2] ""
+"Средняя оценка: %(score)s из %(max)s (%(count)s оценённых элементов)"
 
 #: static/js/statistics-charts.js:708
 msgid "Avg/day: %(band)s"
@@ -1596,9 +1597,9 @@ msgstr "Нет данных об активности за этот период
 #: static/js/statistics-charts.js:906
 msgid "%(day)s %(hour)s:00 — %(count)s session"
 msgid_plural "%(day)s %(hour)s:00 — %(count)s sessions"
-msgstr[0] "%(day)s %(hour)s:00 — %(count)s sesión"
-msgstr[1] "%(day)s %(hour)s:00 — %(count)s sesiones"
-msgstr[2] "%(day)s %(hour)s:00 — %(count)s sesiones"
+msgstr[0] "%(day)s %(hour)s:00 — сеансов: %(count)s"
+msgstr[1] "%(day)s %(hour)s:00 — сеансов: %(count)s"
+msgstr[2] "%(day)s %(hour)s:00 — сеансов: %(count)s"
 
 #: static/js/statistics-charts.js:925
 msgid "Low"
@@ -1684,16 +1685,19 @@ msgstr "Нет данных о статусах за этот период."
 #: static/js/statistics-charts.js:1648
 msgid "How your %(count)s rated item (%(type)s) is distributed."
 msgid_plural "How your %(count)s rated items (%(type)s) are distributed."
-msgstr[0] "Cómo se distribuye tu elemento valorado %(count)s (%(type)s)."
-msgstr[1] "Cómo se distribuyen tus elementos valorados %(count)s (%(type)s)."
-msgstr[2] "Cómo se distribuyen tus elementos valorados %(count)s (%(type)s)."
+msgstr[0] ""
+"Распределение оценок для %(count)s оценённых элементов типа %(type)s."
+msgstr[1] ""
+"Распределение оценок для %(count)s оценённых элементов типа %(type)s."
+msgstr[2] ""
+"Распределение оценок для %(count)s оценённых элементов типа %(type)s."
 
 #: static/js/statistics-charts.js:1649
 msgid "How your %(count)s rated item is distributed."
 msgid_plural "How your %(count)s rated items are distributed."
-msgstr[0] "Cómo se distribuye tu elemento valorado %(count)s."
-msgstr[1] "Cómo se distribuyen tus elementos valorados %(count)s."
-msgstr[2] "Cómo se distribuyen tus elementos valorados %(count)s."
+msgstr[0] "Распределение оценок для %(count)s оценённых элементов."
+msgstr[1] "Распределение оценок для %(count)s оценённых элементов."
+msgstr[2] "Распределение оценок для %(count)s оценённых элементов."
 
 #: static/js/statistics-charts.js:1660
 msgid "No ratings yet for this filter."
