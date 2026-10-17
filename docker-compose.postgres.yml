@@ -31,6 +31,9 @@ services:
       # Web concurrency is sized from the host automatically. Set
       # WEB_CONCURRENCY/GUNICORN_THREADS only when you intentionally want to
       # override the detected resource tier.
+    volumes:
+      - ./db:/floppy/db
+      - ./backups:/floppy/backups
     ports:
       - "8000:8000"
     networks:

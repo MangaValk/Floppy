@@ -59,6 +59,14 @@ def _service_networks(service):
 
 
 class PublishedComposeNetworkTests(SimpleTestCase):
+    def test_every_stack_persists_app_data_and_backups(self):
+        for label, stack in _published_stacks():
+            mounts = stack["services"]["floppy"].get("volumes", [])
+            targets = {mount.split(":")[1] for mount in mounts}
+            with self.subTest(stack=label):
+                self.assertIn("/floppy/db", targets)
+                self.assertIn("/floppy/backups", targets)
+
     def test_example_stacks_do_not_ship_a_shared_signing_key(self):
         for label, stack in _published_stacks():
             environment = stack["services"]["floppy"].get("environment", {})

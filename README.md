@@ -57,6 +57,7 @@ services:
       - TMDB_API=your_tmdb_api_key
     volumes:
       - floppy_db:/floppy/db
+      - floppy_backups:/floppy/backups
     ports:
       - "8000:8000"
     networks:
@@ -79,6 +80,7 @@ services:
 
 volumes:
   floppy_db:
+  floppy_backups:
   redis_data:
 
 networks:
@@ -177,7 +179,7 @@ Floppy started as a fork of [Yamtrack](https://github.com/FuzzyGrim/Yamtrack) an
 
 - **Your data moves over as-is.** Export a CSV from Yamtrack and import it under **Settings → Import**; the formats are identical. Floppy's own data export writes `floppy_<date>.csv` and uses the same format, so nothing is one-way.
 - **Your existing container keeps working.** If you already run this project's image, the rename doesn't break your compose file: the old `/yamtrack/db` mount path still resolves inside the image, and pre-rename `YAMTRACK_*` environment variables are still read.
-- **One thing to update:** the image moved to `ghcr.io/dannyvfilms/floppy`. Point your compose file at the new path when convenient — the old path stops receiving new builds.
+- **One thing to update:** the image moved to `ghcr.io/dannyvfilms/floppy`. The release workflow currently also publishes the legacy name during the rename grace period; use the new path for ongoing deployments.
 
 Floppy retains Yamtrack's core tracking, import, and self-hosting workflows, with the additional capabilities described above.
 
@@ -253,6 +255,9 @@ services:
 ```
 
 The default `docker-compose.yml` in this repo already includes this mount.
+The PostgreSQL example also persists `/floppy/db` for logs and any generated
+signing key, and `/floppy/backups` for exports; the database itself lives in
+the separate `postgres_data` volume.
 
 `BACKUP_DIR` holds two different things, and only one of them can replace a
 damaged `db.sqlite3`:
@@ -264,8 +269,11 @@ damaged `db.sqlite3`:
   cannot replace the database file itself.
 - `BACKUP_DIR/database/` &mdash; a verified raw snapshot of `db.sqlite3`,
   written on a schedule (`DB_SNAPSHOT_ENABLED`, default on). This is what to
-  restore from after physical corruption: stop Floppy, copy the newest file
-  here over `db.sqlite3`, and start Floppy again.
+  restore from after physical corruption. Stop Floppy, preserve the damaged
+  database and any `-wal`/`-shm` files elsewhere, then restore a verified
+  snapshot without stale companion files. Keep the original signing key and
+  configuration. Restore the matching application version first, verify the
+  library and integrations, then upgrade separately.
 
 This example stores the SQLite file and the generated key in one mounted
 directory:
@@ -321,7 +329,10 @@ procedure to change a path:
 
 If the database file is missing, Floppy creates an empty database. The
 deployment can then appear to have lost its library. If the old generated key
-is missing, existing sessions and signed data can become invalid.
+is missing, existing sessions and signed data can become invalid, and saved
+integration credentials encrypted with that key cannot be decrypted. Preserve
+the original key with the database backup; generating a replacement is not a
+recovery procedure.
 
 ### PostgreSQL
 
@@ -348,6 +359,9 @@ services:
       - DB_USER=floppy
       - DB_PASSWORD=change-this-password
       - DB_PORT=5432
+    volumes:
+      - ./db:/floppy/db
+      - ./backups:/floppy/backups
     ports:
       - "8000:8000"
     networks:
@@ -422,6 +436,7 @@ docker run -d \
   -e TVDB_API_KEY=your_tvdb_api_key \
   -e TZ=America/Chicago \
   -v floppy-db:/floppy/db \
+  -v floppy-backups:/floppy/backups \
   -p 8000:8000 \
   ghcr.io/dannyvfilms/floppy:latest
 ```
@@ -1007,7 +1022,7 @@ The image lives at `ghcr.io/dannyvfilms/floppy`:
 
 - `:latest` - the latest commit on the `latest` branch
 - `:release` - the latest commit on the `release` branch, or the stable alias for a GitHub release tag
-- `:vX.Y.Z` - versioned release builds from GitHub release tags
+- `:X.Y.Z` - versioned release builds from GitHub `vX.Y.Z` tags (the image tag omits `v`)
 
 ## Local development
 

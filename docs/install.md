@@ -54,7 +54,13 @@ being half-installed.
 ```
 
 Runtime data lives beside the checkout, never inside it, so updating the code
-cannot touch the database. Backing up the installation root backs up Floppy.
+cannot touch the database. Back up this root with Floppy stopped, or use a
+consistent database snapshot; copying a live SQLite file alone is unsafe.
+Keep an encrypted copy on another disk or machine, including the original
+signing key and external secret files. PostgreSQL needs a consistent
+`pg_dump` backup rather than a copy of its live data volume. Native macOS installs
+currently need manual SQLite backups: the built-in snapshot writer requires
+Linux `/proc/self/fd` and does not work on macOS.
 
 ## Running it again
 
@@ -74,27 +80,56 @@ for the method you chose. In short:
 docker compose -f ~/floppy/docker-compose.yml up -d       # start
 docker compose -f ~/floppy/docker-compose.yml down        # stop
 docker compose -f ~/floppy/docker-compose.yml logs -f     # logs
-docker compose -f ~/floppy/docker-compose.yml pull \
-  && docker compose -f ~/floppy/docker-compose.yml up -d  # upgrade
 ```
 
-**Source, Linux**
+For upgrades, record the current image digest, stop Floppy, and make a complete
+backup first. Pin the desired image in the generated Compose file, then run
+`pull` and `up -d` with that file. Startup applies migrations automatically.
+Do not use `down -v`. Rollback requires restoring the pre-upgrade database,
+matching key/configuration, and old image together; an older image alone
+cannot safely undo database migrations.
+
+**Source, Linux — start and stop**
 
 ```bash
 sudo systemctl start floppy
 sudo systemctl stop floppy
-git -C ~/floppy/repo pull && ~/floppy/bin/uv sync --locked --no-default-groups \
-  && sudo systemctl restart floppy
 ```
 
-**Source, macOS**
+**Source, macOS — start and stop**
 
 ```bash
 sudo launchctl bootstrap system /Library/LaunchDaemons/com.floppy.app.plist
 sudo launchctl bootout system /Library/LaunchDaemons/com.floppy.app.plist
-git -C ~/floppy/repo pull && ~/floppy/bin/uv sync --locked --no-default-groups \
-  && sudo launchctl kickstart -k system/com.floppy.app
 ```
+
+**Source upgrades (both systems)**
+
+Stop the service using the command above and back up the installation root
+before changing code. Record the old commit. Then, as the installation owner,
+run this for the default root (adjust paths if yours differs):
+
+```bash
+(
+  set -e
+  cd ~/floppy/repo
+  git pull --ff-only
+  ~/floppy/bin/uv sync --locked --no-default-groups
+  set -a
+  . ~/floppy/floppy.env
+  set +a
+  .venv/bin/python src/manage.py migrate --noinput
+  .venv/bin/python src/manage.py collectstatic --noinput
+  .venv/bin/python src/manage.py check
+)
+```
+
+The installer may use an existing compatible `uv` instead of installing
+`~/floppy/bin/uv`; use that executable if the latter is absent. Run the start
+command only after every step succeeds. A normal source service start does
+not apply migrations or collect static files. A failed migration can leave
+earlier migrations applied; restoring the pre-upgrade database and old code
+is the reliable fallback, with loss of writes since that backup.
 
 Metadata API keys are entered in Floppy itself, under **Settings → Metadata**.
 Floppy works without them.
