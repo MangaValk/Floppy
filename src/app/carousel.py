@@ -14,7 +14,7 @@ from django.core.cache import cache
 
 from app.image_cache import rewrite_image_url
 from app.models import GameArtwork, MediaTypes, Sources
-from app.providers import services, tmdb
+from app.providers import credentials, services, tmdb
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,11 @@ def confirmed_empty(media_type, source, media_id, *, season_number=None) -> bool
         # was never settled (a provider error stores nothing), so the carousel
         # must still load and retry rather than render as empty.
         if row is None or is_stale(row):
+            return False
+        from app.game_artwork import gallery
+
+        photos = gallery(media_id, cached_only=True)
+        if photos is None or photos:
             return False
         has_overview = bool(row.logo_url and row.backdrop_url)
     else:
@@ -170,7 +175,10 @@ def resolve_carousel_media(
         if cached_only:
             data = cache.get(f"igdb_carousel_v4_{media_id}")
             if data is None:
-                return None
+                if credentials.is_configured(Sources.IGDB.value):
+                    return None
+                # A missing IGDB key must not hide an already cached provider gallery.
+                data = {"video": None, "photos": [], "hero_image_id": None}
         else:
             with services.interactive_request_scope():
                 data = CustomList()._get_igdb_carousel_media(media_id)
@@ -193,6 +201,18 @@ def resolve_carousel_media(
         else:
             with services.interactive_request_scope():
                 artwork = _game_artwork(media_id, data.get("hero_image_id"))
+        from app.game_artwork import gallery
+
+        with services.interactive_request_scope():
+            provider_photos = gallery(media_id, cached_only=cached_only)
+        if provider_photos is None:
+            return None
+        seen = {photo["url"] for photo in photos}
+        for photo in provider_photos:
+            url = rewrite_image_url(photo["url"])
+            if url not in seen:
+                photos.append({**photo, "url": url, "thumb_url": rewrite_image_url(photo["thumb_url"])})
+                seen.add(url)
         backdrop, logo = artwork["backdrop"], artwork["logo"]
         overview = None
         if backdrop and logo:
@@ -232,7 +252,7 @@ def _igdb_image_url(image_id):
 
 def _game_artwork(media_id, igdb_hero_image_id, *, cached_only=False):
     """Return the game's logo and backdrop, IGDB artwork being the backdrop fallback."""
-    from app.game_artwork import peek, query_for, resolve
+    from app.game_artwork import peek, query_for, resolve, stored_query
     from app.game_artwork.base import Art
     from app.providers import igdb
 
@@ -249,7 +269,13 @@ def _game_artwork(media_id, igdb_hero_image_id, *, cached_only=False):
             artwork["backdrop"] = fallback or artwork["backdrop"]
         return artwork
     try:
-        return resolve(query_for(media_id, igdb.game(media_id)), fallback_backdrop=fallback)
+        try:
+            query = query_for(media_id, igdb.game(media_id))
+        except services.ProviderAPIError:
+            query = stored_query(media_id)
+            if query is None:
+                raise
+        return resolve(query, fallback_backdrop=fallback)
     except Exception:
         logger.warning("Game artwork lookup failed for game %s", media_id, exc_info=True)
         return {"logo": None, "backdrop": fallback}

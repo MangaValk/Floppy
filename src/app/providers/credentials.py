@@ -356,7 +356,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
             validator=_validate_thegamesdb,
             label="TheGamesDB",
             description="Extra coverage. Clear logos and fanart.",
-            docs_url="https://forums.thegamesdb.net/viewforum.php?f=10",
+            docs_url="https://api.thegamesdb.net/key.php",
             fields=(CredentialField("api_key", "API key", "THEGAMESDB_API_KEY"),),
         ),
         ProviderCredentialSpec(

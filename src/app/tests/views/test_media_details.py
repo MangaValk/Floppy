@@ -776,7 +776,10 @@ class MediaDetailsViewTests(TestCase):
                 "title": "warm-game",
             },
         )
-        with patch("lists.models.CustomList._get_igdb_carousel_media") as gallery:
+        with (
+            patch("lists.models.CustomList._get_igdb_carousel_media") as gallery,
+            patch("app.game_artwork.gallery", return_value=[]),
+        ):
             response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()

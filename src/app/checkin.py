@@ -93,6 +93,25 @@ def supports(media_type, source):
     )
 
 
+def card_control(user_id, state):
+    """Return the stop action only for the manual check-in owning this card."""
+    token = state.get("checkin_token")
+    if not token:
+        return None
+    from app import checkin_session
+
+    for record, action in ((_record(user_id), "pause"), (checkin_session._record(user_id), "stop")):
+        if record and record["token"] == token:
+            return {
+                "token": token,
+                "source": record.get("source", Sources.TMDB.value),
+                "media_type": record["media_type"],
+                "media_id": record["media_id"],
+                "action": action,
+            }
+    return None
+
+
 def episode_code(season_number, episode_number):
     """Return the standard S02E05 form the Now Playing card already uses."""
     return f"S{int(season_number):02d}E{int(episode_number):02d}"

@@ -7,7 +7,7 @@ from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from app import checkin, checkin_session, helpers
+from app import checkin, checkin_session, helpers, live_playback
 from app.activity_builders import _build_detail_activity_state
 from app.models import BasicMedia, MediaTypes
 from app.services.completion import select_preferred_activity_entry
@@ -45,6 +45,18 @@ def checkin_action(request, source, media_type, media_id):
     name = request.POST.get("action")
     if name == "refresh" and media_type in INLINE_TYPES:
         return _render_checkin_state(request, source, media_type, media_id)
+    from_card = request.POST.get("from_now_playing") == "1"
+    if from_card:
+        state = live_playback.peek_user_playback_state(request.user.id) or {}
+        control = checkin.card_control(request.user.id, state)
+        if not control or (
+            control["token"] != request.POST.get("checkin_token")
+            or control["source"] != source
+            or control["media_type"] != media_type
+            or str(control["media_id"]) != str(media_id)
+            or name not in (control["action"], "cancel")
+        ):
+            return HttpResponseBadRequest("This check-in is no longer active.")
     if checkin_session.supports(media_type):
         action = SESSION_ACTIONS.get(name)
         arguments = (request.user, source, media_type, media_id)
@@ -62,6 +74,13 @@ def checkin_action(request, source, media_type, media_id):
         logger.exception("Check-in action failed")
         return HttpResponse("Check-in failed. Try again.", status=502)
 
+    if from_card:
+        card = live_playback.build_home_playback_card(request.user)
+        if card is None:
+            return HttpResponse("")
+        return render(request, "app/components/active_playback_card.html", {
+            "active_playback_card": card,
+        })
     if request.POST.get("then") == "edit":
         # The page opens the edit dialog itself, and refreshes when that is saved.
         return HttpResponse(status=204)

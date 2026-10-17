@@ -1104,6 +1104,9 @@ def build_home_playback_card(user) -> dict | None:
     if not state:
         return None
 
+    from app import checkin
+
+    control = checkin.card_control(user.id, state)
     state_item = _resolve_state_item(state)
     title = _resolve_card_title(state, state_item)
     episode_code, subtitle = _resolve_card_subtitle(state, title)
@@ -1161,6 +1164,7 @@ def build_home_playback_card(user) -> dict | None:
                 library_media_type = MediaTypes.ANIME.value
 
     return {
+        "checkin_control": control,
         "title": title,
         "subtitle": subtitle,
         "episode_code": episode_code,

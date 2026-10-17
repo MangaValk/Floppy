@@ -786,6 +786,60 @@ class CheckInViewTests(TestCase):
         Movie.objects.create(item=self.item, user=other, status=Status.PLANNING.value)
         self.assertEqual(self.client.post(self.url, {"action": "refresh"}).status_code, 400)
 
+    def test_now_playing_stop_keeps_position_and_removes_the_card(self):
+        with no_provider_calls():
+            self.client.post(self.url, {"action": "start"})
+        record = checkin._record(self.user.id)
+        card = live_playback.build_home_playback_card(self.user)
+        self.assertEqual(card["checkin_control"]["action"], "pause")
+        fragment = self.client.get(reverse("active_playback_fragment"))
+        self.assertContains(fragment, "Stop check-in")
+        with patch("app.checkin._now_ts", return_value=record["started_at_ts"] + 300):
+            response = self.client.post(self.url, {
+                "action": "pause", "from_now_playing": "1", "checkin_token": record["token"],
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"")
+        self.assertNotIn("HX-Refresh", response)
+        self.assertIsNone(live_playback.build_home_playback_card(self.user))
+        self.assertEqual(PlaybackProgress.objects.get(user=self.user, item=self.item).position_seconds, 300)
+        self.assertEqual(Movie.objects.get(user=self.user, item=self.item).status, Status.IN_PROGRESS.value)
+
+    def test_now_playing_cancel_restores_the_movie(self):
+        with no_provider_calls():
+            self.client.post(self.url, {"action": "start"})
+        record = checkin._record(self.user.id)
+        response = self.client.post(self.url, {
+            "action": "cancel", "from_now_playing": "1", "checkin_token": record["token"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"")
+        self.assertEqual(Movie.objects.get(user=self.user, item=self.item).status, Status.PLANNING.value)
+        self.assertIsNone(live_playback.build_home_playback_card(self.user))
+
+    def test_stale_card_cannot_stop_a_new_checkin(self):
+        with no_provider_calls():
+            self.client.post(self.url, {"action": "start"})
+        token = checkin._record(self.user.id)["token"]
+        response = self.client.post(self.url, {
+            "action": "pause", "from_now_playing": "1", "checkin_token": "stale-token",
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(checkin._record(self.user.id)["token"], token)
+
+    def test_card_taken_over_by_a_scrobbler_has_no_manual_controls(self):
+        with no_provider_calls():
+            self.client.post(self.url, {"action": "start"})
+        state = live_playback.peek_user_playback_state(self.user.id)
+        token = state.pop("checkin_token")
+        live_playback.set_user_playback_state(self.user.id, state)
+        self.assertIsNone(live_playback.build_home_playback_card(self.user)["checkin_control"])
+        response = self.client.post(self.url, {
+            "action": "pause", "from_now_playing": "1", "checkin_token": token,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNotNone(live_playback.peek_user_playback_state(self.user.id))
+
     def test_unknown_action_is_rejected(self):
         self.assertEqual(
             self.client.post(self.url, {"action": "explode"}).status_code, 400

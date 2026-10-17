@@ -1,7 +1,8 @@
 # Game artwork
 
-IGDB stays Floppy's game metadata source. Its screenshots and trailer fill the
-details-page gallery. The **logo** and the **backdrop** shown over the gallery
+IGDB stays Floppy's game metadata source. Its screenshots and trailer are joined
+by SteamGridDB heroes, TheGamesDB fanart and ScreenScraper fanart/screenshots in the
+details-page gallery. Other artwork sources contribute their backdrop when available. The **logo** and the **backdrop** shown over the gallery
 are resolved separately, by `app.game_artwork`, so each can come from the
 provider that does it best.
 
@@ -25,7 +26,9 @@ online collections are not dependable for logos.
 * Anything else: SteamGridDB, TheGamesDB.
 
 Each asset is resolved on its own: a provider is only asked for what an earlier
-one did not find. IGDB's own artwork is the backdrop fallback and is recorded as
+one did not find. If IGDB is unavailable, a stored game's title, platforms, release date and external
+ids still let the artwork providers search. IGDB's own artwork is the backdrop
+fallback and is recorded as
 provider `igdb`. There is no IGDB logo, so a game with no provider logo shows
 the details page without the overview logo.
 
@@ -78,3 +81,8 @@ Add a module with `PROVIDER` and `find(query, wanted)` returning
 registry entry in `app.providers.credentials` if it takes a key.
 
 Media details render a fresh cached gallery and stored artwork in the initial response, including the logo and hero layout. Missing or expired artwork stays on the deferred carousel path; the initial response never calls artwork providers. Seasons use the cached parent show artwork as well.
+
+The additional gallery is capped at 24 unique images and cached for six hours.
+Provider errors use a five-minute retry cache. Saving artwork credentials or
+refreshing the game reopens the gallery. Fetching stays in the deferred carousel
+request; repeat visits read the cached images without calling providers.

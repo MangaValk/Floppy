@@ -535,6 +535,36 @@ class SessionViewTests(SessionTestCase):
         self.assertEqual(list(Game.objects.all()), [self.earlier])
         self.assertContains(cancelled, "Check-in</span>")
 
+    def test_now_playing_stop_saves_elapsed_game_time(self):
+        self.client.post(self.url(), {"action": "start"})
+        record = checkin_session._record(self.user.id)
+        card = live_playback.build_home_playback_card(self.user)
+        self.assertEqual(card["checkin_control"]["action"], "stop")
+        with patch("app.checkin_session._now_ts", return_value=record["started_at_ts"] + 120):
+            response = self.client.post(self.url(), {
+                "action": "stop", "from_now_playing": "1", "checkin_token": record["token"],
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"")
+        self.assertNotIn("HX-Refresh", response)
+        self.assertIsNone(live_playback.build_home_playback_card(self.user))
+        self.assertEqual(Game.objects.get(pk=record["row_id"]).progress, 2)
+
+    def test_now_playing_cancel_removes_the_session_it_started(self):
+        self.client.post(self.url(), {"action": "start"})
+        record = checkin_session._record(self.user.id)
+        fragment = self.client.get(reverse("active_playback_fragment"))
+        self.assertContains(fragment, 'aria-label="Stop check-in"')
+        self.assertContains(fragment, 'aria-label="Cancel check-in"')
+        self.assertContains(fragment, "rounded-full", count=2)
+        response = self.client.post(self.url(), {
+            "action": "cancel", "from_now_playing": "1", "checkin_token": record["token"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"")
+        self.assertEqual(list(Game.objects.all()), [self.earlier])
+        self.assertIsNone(live_playback.build_home_playback_card(self.user))
+
     def test_movie_actions_are_not_available_for_a_game(self):
         for name in ("pause", "finish", "resume"):
             with self.subTest(action=name):
