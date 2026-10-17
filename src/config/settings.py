@@ -232,6 +232,10 @@ if BASE_URL:
 
 USE_X_FORWARDED = config("USE_X_FORWARDED", default=False, cast=bool)
 
+# External artwork and links must not receive private page paths or query strings.
+# Keep same-origin referrers for Django's HTTPS CSRF fallback when Origin is absent.
+SECURE_REFERRER_POLICY = "same-origin"
+
 SECURE_PROXY_SSL_HEADER = (
     ("HTTP_X_FORWARDED_PROTO", "https")
     if (config("USE_X_FORWARDED_PROTO", default=USE_X_FORWARDED, cast=bool))

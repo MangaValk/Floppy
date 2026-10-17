@@ -698,19 +698,22 @@ uninstalled and can crash Celery with a `ModuleNotFoundError` at runtime.
 Gunicorn does not write a request access log. A request line holds the query
 string, and a query string can hold an OAuth code or an integration token, so
 the container writes one access line at the Nginx boundary instead, with the
-query string and the referrer removed. Gunicorn still writes its error log.
+path, query string and referrer removed. Gunicorn still writes its error log.
 
 A source-based deployment therefore gets its request log from its own reverse
-proxy. Configure that proxy to leave the query string out of its log format.
+proxy. Configure that proxy to omit paths, query strings and referrers, since
+bearer tokens can also appear in path segments.
 The container's format is in `nginx.conf`:
 
 ```nginx
 log_format floppy_safe '$remote_addr [$time_local] '
-                       '"$request_method $uri $server_protocol" '
+                       '"$request_method $server_protocol" '
                        '$status $body_bytes_sent';
 ```
 
-Application logs are separate and are always redacted before they are written.
+Application logs are separate and redact known credential patterns before they
+are written. They can still contain usernames, media titles and activity;
+review downloaded logs before sharing them.
 See [docs/architecture/log-redaction.md](docs/architecture/log-redaction.md).
 
 ### Upgrading container images

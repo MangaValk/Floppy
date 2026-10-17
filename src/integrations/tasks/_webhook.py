@@ -1,4 +1,3 @@
-import json
 import logging
 from contextlib import contextmanager, suppress
 from types import SimpleNamespace
@@ -10,7 +9,7 @@ from django.utils.module_loading import import_string
 from simple_history.models import HistoricalRecords
 
 from app import cache_safety
-from app.log_safety import redact_payload_pii, redact_secrets
+from app.log_safety import mapping_keys
 from app.providers.services import ProviderAPIError
 from integrations import anime_mapping
 from integrations.models import PlexWebhookShare
@@ -25,10 +24,6 @@ WEBHOOK_PROCESSORS = {
     "kodi": "integrations.webhooks.kodi.KodiWebhookProcessor",
     "stremio": "integrations.webhooks.stremio.StremioWebhookProcessor",
 }
-
-# Bounds one event's logged payload so a pathological payload can't crowd out
-# other log history in the rotating file the sanitized log export reads from.
-_WEBHOOK_PAYLOAD_LOG_CAP = 4000
 
 
 @contextmanager
@@ -115,12 +110,7 @@ def _process_webhook(provider, payload, user_id, share_id=None):
                 error,
             )
 
-    dumped_payload = redact_secrets(
-        json.dumps(redact_payload_pii(payload), default=str),
-    )
-    if len(dumped_payload) > _WEBHOOK_PAYLOAD_LOG_CAP:
-        dumped_payload = dumped_payload[:_WEBHOOK_PAYLOAD_LOG_CAP] + "...[truncated]"
-    logger.info("Webhook payload for %s: %s", provider, dumped_payload)
+    logger.info("Webhook received provider=%s keys=%s", provider, mapping_keys(payload))
 
     try:
         with _webhook_history_user(user):

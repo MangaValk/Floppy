@@ -1277,3 +1277,48 @@ class PocketCastsRefreshTokenApiTests(TestCase):
 
         self.assertNotIsInstance(ctx.exception, pocketcasts_api.PocketCastsAuthError)
         self.assertIn("503", str(ctx.exception))
+
+    @patch("integrations.pocketcasts_api.requests.post")
+    def test_refresh_error_does_not_log_response_body(self, mock_post):
+        response = self._response(401)
+        response._content = b"private@example.test unlabelled-refresh-credential"
+        mock_post.return_value = response
+
+        with self.assertLogs(pocketcasts_api.logger, level="WARNING") as logs:
+            with self.assertRaises(pocketcasts_api.PocketCastsAuthError):
+                pocketcasts_api.refresh_token("stale")
+
+        output = " ".join(logs.output)
+        self.assertIn("401", output)
+        self.assertNotIn("private@example.test", output)
+        self.assertNotIn("unlabelled-refresh-credential", output)
+
+
+class PocketCastsLoginPrivacyTests(TestCase):
+    """Authentication diagnostics must not retain remote account values."""
+
+    @patch("integrations.pocketcasts_api.requests.post")
+    def test_login_logs_structure_without_account_or_credential_values(self, mock_post):
+        credential = "unlabelled-credential-" * 4
+        for data in (
+            {"accessToken": "access", "email": "private@example.test"},
+            {"session": credential},
+            {"message": "private@example.test " + credential, "status": "error"},
+            credential,
+        ):
+            with self.subTest(data_type=type(data).__name__):
+                mock_post.return_value.json.return_value = data
+                with self.assertLogs(pocketcasts_api.logger, level="DEBUG") as logs:
+                    try:
+                        result = pocketcasts_api.login(
+                            "private@example.test", "password"
+                        )
+                    except pocketcasts_api.PocketCastsAuthError as error:
+                        self.assertNotIn(credential, str(error))
+                        self.assertNotIn("private@example.test", str(error))
+                    else:
+                        self.assertIn(result["accessToken"], ("access", credential))
+
+                output = " ".join(logs.output)
+                self.assertNotIn("private@example.test", output)
+                self.assertNotIn(credential, output)
