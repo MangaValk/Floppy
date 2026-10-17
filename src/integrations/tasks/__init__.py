@@ -74,8 +74,6 @@ _EXPORT_MODULES = {
             "import_jellyfin_playback_reporting",
             "import_kavita",
             "import_kavita_recurring",
-            "import_kavita",
-            "import_kavita_recurring",
             "import_kitsu",
             "import_komga",
             "import_komga_recurring",
