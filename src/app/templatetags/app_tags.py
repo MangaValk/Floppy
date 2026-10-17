@@ -2196,10 +2196,10 @@ def detail_action_row(context, media, media_type):
 
 @register.simple_tag(takes_context=True)
 def media_track_actions(context, media_type, instance):
-    """Return the detail-page split button actions, and when the page should refresh.
+    """Return the detail-page split button actions, and when their phase should refresh.
 
     A running check-in changes its own button label (Pause becomes Finish, then
-    the movie completes), so the page reloads at those moments.
+    the movie completes), so the controls refresh at those moments.
     """
     request = context.get("request")
     phase = checkin.phase(request.user, instance) if request and instance else None

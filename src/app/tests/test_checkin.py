@@ -751,18 +751,40 @@ class CheckInViewTests(TestCase):
         )
         self.client.login(username="checkin-view", password="12345")
 
-    def test_start_then_pause_refreshes_the_page(self):
+    def test_start_then_pause_updates_tracking_without_reloading(self):
         with no_provider_calls():
             started = self.client.post(self.url, {"action": "start"})
         paused = self.client.post(self.url, {"action": "pause"})
 
         for response in (started, paused):
-            self.assertEqual(response.status_code, 204)
-            self.assertEqual(response["HX-Refresh"], "true")
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("HX-Refresh", response)
+            self.assertContains(response, 'hx-swap-oob="outerHTML"')
+            self.assertNotContains(response, "detail-carousel-wrap")
         self.assertEqual(
             Movie.objects.get(item=self.item).status,
             Status.IN_PROGRESS.value,
         )
+
+    def test_timed_refresh_updates_phase_without_starting_another_watch(self):
+        with no_provider_calls():
+            self.client.post(self.url, {"action": "start"})
+        count = Movie.objects.filter(user=self.user).count()
+        record = checkin._record(self.user.id)
+        with patch("app.checkin._now_ts", return_value=record["started_at_ts"] + int(RUNTIME_SECONDS * 0.95)):
+            response = self.client.post(self.url, {"action": "refresh"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("HX-Refresh", response)
+        self.assertContains(response, ">Finish</span>")
+        self.assertContains(response, "checkin-refresh")
+        self.assertNotContains(response, "location.reload()")
+        self.assertEqual(Movie.objects.filter(user=self.user).count(), count)
+
+    def test_refresh_requires_a_tracker_owned_by_the_viewer(self):
+        Movie.objects.filter(user=self.user).delete()
+        other = get_user_model().objects.create_user(username="other-checkin")
+        Movie.objects.create(item=self.item, user=other, status=Status.PLANNING.value)
+        self.assertEqual(self.client.post(self.url, {"action": "refresh"}).status_code, 400)
 
     def test_unknown_action_is_rejected(self):
         self.assertEqual(

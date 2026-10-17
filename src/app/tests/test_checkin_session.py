@@ -228,7 +228,7 @@ class GameSessionTests(SessionTestCase):
         idle = checkin.phase(self.user, self.earlier)
         self.assertEqual(
             [a["key"] for a in track_actions("game", Status.COMPLETED.value, idle)],
-            ["create", "start", "edit"],
+            ["start", "create", "edit"],
         )
         self.start()
         running = checkin.phase(self.user, self.earlier)
@@ -507,14 +507,33 @@ class SessionViewTests(SessionTestCase):
             kwargs={"source": "igdb", "media_type": media_type, "media_id": "1942"},
         )
 
-    def test_start_then_stop_refreshes_the_page(self):
+    def test_start_then_stop_updates_tracking_without_reloading(self):
         started = self.client.post(self.url(), {"action": "start"})
         stopped = self.client.post(self.url(), {"action": "stop"})
 
         for response in (started, stopped):
-            self.assertEqual(response.status_code, 204)
-            self.assertEqual(response["HX-Refresh"], "true")
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("HX-Refresh", response)
+            self.assertContains(response, 'hx-swap-oob="outerHTML"')
+            self.assertNotContains(response, "detail-carousel-wrap")
         self.assertEqual(Game.objects.count(), 2)
+
+    def test_refresh_keeps_the_same_session_and_modal_targets(self):
+        started = self.client.post(self.url(), {"action": "start"})
+        current = Game.objects.order_by("-id").first()
+        self.assertContains(started, "Stop</span>")
+        self.assertContains(started, f'"instance_id": "{current.id}"')
+        count = Game.objects.count()
+        with patch("app.providers.services.get_media_metadata", side_effect=AssertionError("provider called")):
+            refreshed = self.client.post(self.url(), {"action": "refresh"})
+        self.assertEqual(refreshed.status_code, 200)
+        self.assertEqual(Game.objects.count(), count)
+        self.assertContains(refreshed, "/details/igdb/game/1942/hades")
+        self.assertNotContains(refreshed, "location.reload()")
+        cancelled = self.client.post(self.url(), {"action": "cancel"})
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(list(Game.objects.all()), [self.earlier])
+        self.assertContains(cancelled, "Check-in</span>")
 
     def test_movie_actions_are_not_available_for_a_game(self):
         for name in ("pause", "finish", "resume"):
