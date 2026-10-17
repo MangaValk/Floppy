@@ -65,17 +65,23 @@ def _process_webhook(provider, payload, user_id, share_id=None):
                 recipient_enabled=True,
             )
         except PlexWebhookShare.DoesNotExist:
-            logger.info("Skipping disabled or missing Plex webhook share id %s", share_id)
+            logger.info(
+                "Skipping disabled or missing Plex webhook share id %s", share_id
+            )
             return
 
         if not share.owner.is_active:
-            logger.info("Skipping Plex webhook share from inactive owner id %s", share.owner_id)
+            logger.info(
+                "Skipping Plex webhook share from inactive owner id %s", share.owner_id
+            )
             return
 
         user = share.recipient
         source_account = getattr(share.owner, "plex_account", None)
         if not source_account or not source_account.plex_token:
-            logger.info("Skipping Plex webhook share %s without an owner Plex account", share.id)
+            logger.info(
+                "Skipping Plex webhook share %s without an owner Plex account", share.id
+            )
             return
         source_username = share.plex_username
         source_libraries = share.allowed_libraries
@@ -83,7 +89,9 @@ def _process_webhook(provider, payload, user_id, share_id=None):
         try:
             user = user_model.objects.get(pk=user_id)
         except user_model.DoesNotExist:
-            logger.warning("Skipping %s webhook for missing user id %s", provider, user_id)
+            logger.warning(
+                "Skipping %s webhook for missing user id %s", provider, user_id
+            )
             return
 
     if not user.is_active:
