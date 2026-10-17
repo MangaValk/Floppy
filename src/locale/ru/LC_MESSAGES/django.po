@@ -1,4 +1,3 @@
-Attempting to perform the InitializeDefaultDrives operation on the 'FileSystem' provider failed.
 # Russian translations for Floppy.
 msgid ""
 msgstr ""
@@ -27,7 +26,7 @@ msgstr "Нет"
 #: app/collection_views.py:289
 #, python-format
 msgid "%(count)s collected"
-msgstr "%(count)s собранных сообщений"
+msgstr "Собрано элементов: %(count)s"
 
 #: app/collection_views.py:290
 msgid "View all"
@@ -36,7 +35,7 @@ msgstr "Просмотреть все"
 #: app/collection_views.py:676 app/collection_views.py:697
 #, python-format
 msgid "Added %(value_1)s episode(s) to collection"
-msgstr "Добавлен %(value_1)sэпизодов в коллекцию"
+msgstr "В коллекцию добавлено эпизодов: %(value_1)s"
 
 #: app/collection_views.py:682 app/collection_views.py:704
 msgid "All episodes are already in your collection"
@@ -54,7 +53,7 @@ msgstr "Элемент не найден"
 #: app/collection_views.py:812
 #, python-format
 msgid "Added %(value_1)s to collection"
-msgstr "Добавлен %(value_1)s в коллекцию"
+msgstr "Добавлено в коллекцию: %(value_1)s"
 
 #: app/collection_views.py:848
 #, python-format
@@ -65,7 +64,7 @@ msgstr "Обновлена запись в коллекции для %(value_1)s
 #: app/collection_views.py:915
 #, python-format
 msgid "Removed %(value_1)s from collection"
-msgstr "Удален %(value_1)s из коллекции"
+msgstr "Удалено из коллекции: %(value_1)s"
 
 #: app/collection_views.py:920
 #, python-format
