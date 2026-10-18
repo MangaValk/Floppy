@@ -1777,7 +1777,9 @@ def media_list(request, media_type):
         engine_query = from_media_list_filters(sql_media_filters, (media_type,))
         engine = LibraryQueryExecutor(request.user, engine_query)
         engine_total = engine.count()
-        media_page = Paginator(range(engine_total), items_per_page).get_page(max(page, 1))
+        media_page = Paginator(range(engine_total), items_per_page).get_page(
+            max(page, 1)
+        )
         engine_page = engine.page(
             (media_page.number - 1) * items_per_page,
             items_per_page,
@@ -1827,12 +1829,12 @@ def media_list(request, media_type):
                 author="",
                 format="",
                 provider="",
-                platforms=() if media_type == MediaTypes.GAME.value else platform_values,
+                platforms=()
+                if media_type == MediaTypes.GAME.value
+                else platform_values,
             )
             provider_region_for_values = (
-                watch_provider_region
-                if media_type in provider_media_types
-                else None
+                watch_provider_region if media_type in provider_media_types else None
             )
 
             def _menu_rows(filters):
@@ -1842,7 +1844,9 @@ def media_list(request, media_type):
                 )
                 return list(
                     BasicMedia.objects.item_values_for_menu(
-                        Item.objects.filter(pk__in=menu_engine.filtered.values("pk")).order_by(),
+                        Item.objects.filter(
+                            pk__in=menu_engine.filtered.values("pk")
+                        ).order_by(),
                         provider_region_for_values,
                     ),
                 )
@@ -2578,7 +2582,9 @@ def media_list(request, media_type):
         "current_genre": genre_filter,
         "current_implied_genre": implied_genre_filter,
         "current_year": year_filter,
-        "current_completed_date_from": "" if completed_date_within else completed_date_from,
+        "current_completed_date_from": ""
+        if completed_date_within
+        else completed_date_from,
         "current_completed_date_to": "" if completed_date_within else completed_date_to,
         "current_completed_date_within": completed_date_within,
         "current_completed_date_within_unit": completed_date_within_unit,

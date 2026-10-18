@@ -369,9 +369,7 @@ class ForkBackdropFieldTests(FloppyApiTestCase):
         """Clients need to distinguish "no artwork" from "a poster", so: null."""
         mock_metadata.return_value = self._tv_metadata()
         # The provider's cached "no backdrop" answer.
-        cache.set(
-            f"tmdb_backdrop_tv_{self.tv_item.media_id}", settings.IMG_NONE, 60
-        )
+        cache.set(f"tmdb_backdrop_tv_{self.tv_item.media_id}", settings.IMG_NONE, 60)
 
         payload = self._get_detail().json()
 

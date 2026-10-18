@@ -313,7 +313,9 @@ class StatisticsStaleResultTests(TestCase):
             self.user, None, None, "This Month"
         )
 
-        self.assertEqual(result["hours_per_media_type"], self.data["hours_per_media_type"])
+        self.assertEqual(
+            result["hours_per_media_type"], self.data["hours_per_media_type"]
+        )
         self.assertNotIn("statistics_building", result)
 
     @patch("app.tasks_interactive.statistics_sync_task.apply_async")
@@ -1005,9 +1007,7 @@ class NormalizeHistoryHighlightImagesTests(TestCase):
 
     @patch("app.tasks_backdrops.warm_backdrops_task.apply_async")
     @patch("app.backdrops.cached_backdrop")
-    def test_marked_backdrop_is_served_without_any_lookup(
-        self, mock_cached, mock_warm
-    ):
+    def test_marked_backdrop_is_served_without_any_lookup(self, mock_cached, mock_warm):
         """A payload built after #1249 keeps its backdrop after Redis expiry."""
         entry = _highlight_entry(_tv_item_dict(), image=BACKDROP_URL)
         entry["image_is_backdrop"] = True

@@ -946,14 +946,19 @@ class CustomList(models.Model):
                 next(iter(videos), None),
             )
             if best_video:
-                video = {"key": best_video["video_id"], "name": best_video.get("name", "")}
+                video = {
+                    "key": best_video["video_id"],
+                    "name": best_video.get("name", ""),
+                }
 
             game_response = response[0] if response else {}
             artworks_raw = game_response.get("artworks") or []
             screenshots_raw = game_response.get("screenshots") or []
 
             artwork_ids = [a["id"] for a in artworks_raw if a.get("id")]
-            artwork_image_ids = {a["id"]: a["image_id"] for a in artworks_raw if a.get("image_id")}
+            artwork_image_ids = {
+                a["id"]: a["image_id"] for a in artworks_raw if a.get("image_id")
+            }
             screenshot_image_ids = [
                 s["image_id"] for s in screenshots_raw if s.get("image_id")
             ]
@@ -1005,7 +1010,9 @@ class CustomList(models.Model):
         except Exception:
             failed = True
             logger.warning(
-                "Failed to fetch IGDB carousel media for game %s", media_id, exc_info=True
+                "Failed to fetch IGDB carousel media for game %s",
+                media_id,
+                exc_info=True,
             )
 
         data = {
