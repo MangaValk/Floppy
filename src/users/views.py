@@ -358,7 +358,9 @@ def account(request):
             if limited is not None:
                 return limited
             if action != "regenerate_recovery_codes":
-                confirmation = RegenerateRecoveryCodesForm(request.POST, user=request.user)
+                confirmation = RegenerateRecoveryCodesForm(
+                    request.POST, user=request.user
+                )
                 if not confirmation.is_valid():
                     messages.error(
                         request,
@@ -998,7 +1000,8 @@ def toggle_obfuscate_episodes(request):
         user.save(update_fields=["obfuscate_episodes"])
     return redirect(
         app_helpers.safe_return_url(
-            request, request.POST.get("next") or request.META.get("HTTP_REFERER"),
+            request,
+            request.POST.get("next") or request.META.get("HTTP_REFERER"),
             reverse("home"),
         )
     )
@@ -1114,7 +1117,9 @@ def cards(request, media_type=None):
         )
         fields = ["card_metadata"]
         if "clickable_media_cards" in request.POST:
-            request.user.clickable_media_cards = request.POST.get("clickable_media_cards") == "on"
+            request.user.clickable_media_cards = (
+                request.POST.get("clickable_media_cards") == "on"
+            )
             fields.append("clickable_media_cards")
         request.user.save(update_fields=fields)
         messages.success(request, "Media cards updated")
@@ -3272,7 +3277,9 @@ def update_plex_usernames(request):
     """Update the Plex usernames for the user."""
     usernames = request.POST.get("plex_usernames", "")
     redirect_target = app_helpers.safe_return_url(
-        request, request.POST.get("next"), reverse("integrations"),
+        request,
+        request.POST.get("next"),
+        reverse("integrations"),
     )
 
     username_list = [u.strip() for u in usernames.split(",") if u.strip()]
@@ -3479,7 +3486,9 @@ def delete_plex_webhook_share(request):
 def update_plex_webhook_libraries(request):
     """Update selected Plex libraries allowed for webhook events."""
     redirect_target = app_helpers.safe_return_url(
-        request, request.POST.get("next"), reverse("integrations"),
+        request,
+        request.POST.get("next"),
+        reverse("integrations"),
     )
     selected_libraries = request.POST.getlist("plex_webhook_libraries")
 
@@ -3564,7 +3573,9 @@ def update_jellyseerr_settings(request):
             )
             return redirect(
                 app_helpers.safe_return_url(
-                    request, request.META.get("HTTP_REFERER"), reverse("import_data"),
+                    request,
+                    request.META.get("HTTP_REFERER"),
+                    reverse("import_data"),
                 ),
             )
         trigger_statuses = ",".join(tokens)
@@ -3652,7 +3663,9 @@ def update_jellyseerr_settings(request):
     messages.success(request, "Seerr settings saved.")
     return redirect(
         app_helpers.safe_return_url(
-            request, request.META.get("HTTP_REFERER"), reverse("import_data"),
+            request,
+            request.META.get("HTTP_REFERER"),
+            reverse("import_data"),
         ),
     )
 
