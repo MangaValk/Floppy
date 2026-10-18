@@ -3265,9 +3265,7 @@ def media_list(request, media_type):
                     direction=direction,
                     layout=layout,
                     page=page,
-                    is_pagination_req=bool(
-                        request.GET.get("page") and int(request.GET.get("page", 1)) > 1
-                    ),
+                    is_pagination_req=page > 1,
                 )
             )
 
@@ -3345,7 +3343,7 @@ def media_list(request, media_type):
             return response
 
         # Check if this is a pagination request (has page parameter and is not the first page)
-        is_pagination = request.GET.get("page") and int(request.GET.get("page", 1)) > 1
+        is_pagination = page > 1
         context["is_pagination"] = bool(is_pagination)
 
         if layout == "grid":

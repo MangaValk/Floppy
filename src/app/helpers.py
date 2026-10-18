@@ -54,6 +54,14 @@ _ENCODED_NAVIGATION_SEPARATOR_PATTERNS = (
 )
 
 
+def get_page_number(request):
+    """Return the ``page`` query parameter as an int, or 1 when it is not numeric."""
+    try:
+        return int(request.GET.get("page", 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def is_htmx_fragment(request):
     """Return whether this HTMX request expects a partial fragment response.
 
