@@ -766,6 +766,131 @@ class MediaListViewTests(TestCase):
         artist.refresh_from_db()
         self.assertEqual(artist.image, "")
 
+    def test_artist_list_filters_keep_facets_before_genre_and_origin_selection(self):
+        today = timezone.localdate()
+        for name, genre, country, score, status, released in [
+            ("Match A", "Rock", "gb", 8, Status.COMPLETED.value, today),
+            ("Match B", "Jazz", "jp", 7, Status.COMPLETED.value, today),
+            ("Match C", "Rock", "gb", None, Status.COMPLETED.value, today),
+            ("Match D", "Rock", "gb", 9, Status.PLANNING.value, today),
+            ("Other", "Pop", "us", 8, Status.COMPLETED.value, today),
+            (
+                "Match Future",
+                "Pop",
+                "us",
+                8,
+                Status.COMPLETED.value,
+                today + timedelta(days=30),
+            ),
+        ]:
+            artist = Artist.objects.create(
+                name=name, genres=[genre], country=country, image="/artist.jpg"
+            )
+            Album.objects.create(title=name, artist=artist, release_date=released)
+            ArtistTracker.objects.create(
+                user=self.user, artist=artist, score=score, status=status
+            )
+
+        response = self.client.get(
+            reverse("medialist", args=[MediaTypes.MUSIC.value]),
+            {
+                "status": Status.COMPLETED.value,
+                "search": "Match",
+                "rating": "rated",
+                "release": "released",
+                "genre": " rock ",
+                "origin": "GB",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [tracker.artist.name for tracker in response.context["media_list"]],
+            ["Match A"],
+        )
+        self.assertEqual(response.context["filter_data"]["genres"], ["Jazz", "Rock"])
+        self.assertEqual(
+            response.context["filter_data"]["origins"],
+            [
+                {
+                    "value": "gb",
+                    "label": "United Kingdom of Great Britain and Northern Ireland",
+                },
+                {"value": "jp", "label": "Japan"},
+            ],
+        )
+
+    def test_artist_list_release_sort_uses_earliest_album_in_table(self):
+        today = timezone.localdate()
+        for name, release_dates in [
+            ("Later", [today]),
+            ("Earlier", [today, today - timedelta(days=30)]),
+            ("Unknown", []),
+        ]:
+            artist = Artist.objects.create(name=name, image="/artist.jpg")
+            ArtistTracker.objects.create(user=self.user, artist=artist)
+            for release_date in release_dates:
+                Album.objects.create(
+                    title=name, artist=artist, release_date=release_date
+                )
+
+        response = self.client.get(
+            reverse("medialist", args=[MediaTypes.MUSIC.value]),
+            {"layout": "table", "sort": "release_date", "direction": "asc"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["table_type"], "artist")
+        self.assertEqual(
+            [tracker.artist.name for tracker in response.context["media_list"]],
+            ["Earlier", "Later", "Unknown"],
+        )
+        self.assertEqual(
+            response.context["media_list"][0].first_release_date,
+            today - timedelta(days=30),
+        )
+
+    def test_artist_list_htmx_pagination_only_backfills_visible_artists(self):
+        artists = [
+            Artist.objects.create(name=f"Artist {i:02d}", image="") for i in range(33)
+        ]
+        ArtistTracker.objects.bulk_create(
+            [ArtistTracker(user=self.user, artist=artist) for artist in artists]
+        )
+        url = reverse("medialist", args=[MediaTypes.MUSIC.value])
+        params = {"sort": "title", "direction": "asc", "page": 2, "layout": "grid"}
+        with mock.patch("app.tasks.prefetch_album_covers_batch.delay") as delay:
+            response = self.client.get(url, params, HTTP_HX_REQUEST="true")
+            repeated = self.client.get(url, params, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertTemplateUsed(response, "app/components/artist_grid_items.html")
+        self.assertEqual(response.context["media_list"].number, 2)
+        self.assertEqual(response.context["media_list"].paginator.count, 33)
+        self.assertEqual(
+            [tracker.artist.id for tracker in response.context["media_list"]],
+            [artists[-1].id],
+        )
+        delay.assert_called_once_with([artists[-1].id], limit_per_artist=5)
+        self.assertEqual(
+            json.loads(response["HX-Trigger"]), {"resultCountUpdated": {"count": 33}}
+        )
+        boosted = self.client.get(
+            url, params, HTTP_HX_REQUEST="true", HTTP_HX_BOOSTED="true"
+        )
+        self.assertTemplateUsed(boosted, "app/media_list.html")
+
+    def test_artist_list_empty_htmx_target_preserves_redirect_contract(self):
+        url = reverse("medialist", args=[MediaTypes.MUSIC.value])
+        headers = {"HTTP_HX_REQUEST": "true", "HTTP_HX_TARGET": "empty_list"}
+        self.assertEqual(self.client.get(url, **headers).status_code, 204)
+        artist = Artist.objects.create(name="New Artist", image="/artist.jpg")
+        ArtistTracker.objects.create(user=self.user, artist=artist)
+        response = self.client.get(url, **headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["HX-Redirect"], url)
+
     def test_movie_grid_aggregates_duplicate_completed_plays(self):
         """Grid cards should show total plays across duplicate completed movie entries."""
         item = Item.objects.get(
