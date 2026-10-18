@@ -582,6 +582,26 @@ class HelpersTest(TestCase):
         episode = Episode.objects.get(related_season=season)
         self.assertEqual(episode.end_date, watched_on)
 
+    def test_backfill_uses_history_date_for_a_rating_only_season(self):
+        """A season carrying only its history date still dates its fan-out."""
+        season = self._make_completed_season()
+        rated_on = timezone.now() - timedelta(days=500)
+        season._history_date = rated_on
+        season_metadata = {
+            "episodes": [{"episode_number": 1, "still_path": None}],
+            "max_progress": 1,
+        }
+
+        with patch(
+            "app.providers.services.get_media_metadata",
+            return_value=season_metadata,
+        ):
+            warnings = helpers._backfill_completed_season_episodes([season])
+
+        self.assertEqual(warnings, [])
+        episode = Episode.objects.get(related_season=season)
+        self.assertEqual(episode.end_date, rated_on)
+
     def test_backfill_surfaces_warning_after_exhausted_retries(self):
         """A persistently failing fetch should be reported, not silently dropped."""
         season = self._make_completed_season()

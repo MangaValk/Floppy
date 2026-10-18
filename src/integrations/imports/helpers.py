@@ -477,7 +477,12 @@ def _backfill_completed_season_episodes(seasons, *, prepare_only=False):
                     # the user's preference, which defaults to "now" — so an
                     # import of old history stamps every invented episode with
                     # the import time and the show reads as watched today.
-                    end_date=getattr(season, "_pending_end_date", _UNSET_END_DATE),
+                    # A rating-only season carries only its history date.
+                    end_date=getattr(
+                        season,
+                        "_pending_end_date",
+                        getattr(season, "_history_date", _UNSET_END_DATE),
+                    ),
                 ),
             )
         except (
