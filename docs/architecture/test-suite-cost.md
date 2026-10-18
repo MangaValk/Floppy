@@ -57,9 +57,9 @@ apps, so the schema is created straight from the models: **141 s → 2.8 s**.
 
 It is **opt-in, not the default**, for two honest reasons:
 
-* it stops the suite exercising the migration graph at all, and
-  `config.tests.test_migration_hygiene` fails under it (correctly — that test
-  reads the migration graph, which is exactly what the flag skips);
+* ordinary database setup no longer exercises the migration graph. The hygiene
+  tests explicitly restore migration modules to inspect the real graph, but
+  passing them does not replay the migrations;
 * it skips `RunPython` data migrations, so anything depending on rows a
   migration creates would silently differ.
 
@@ -261,14 +261,17 @@ so every thread's stack is dumped if a run outlives its budget.
 `FLOPPY_TEST_TIMEOUT`, so a hang now dumps its stacks *before* the timeout
 kills it, with no one needing to remember a flag.
 
-CI now accepts workflow changes through the normal PR checks and sets
-`FLOPPY_TEST_WATCHDOG=2400` for its 45-minute test job, so a hang leaves thread
-stacks before the job times out. The equivalent step configuration is:
+CI accepts workflow changes through the normal PR checks. Hosted run
+`38993407779` took almost 69 minutes, so the test job now allows 120 minutes,
+with `FLOPPY_TEST_TIMEOUT=6600` and `FLOPPY_TEST_WATCHDOG=6300`. Both PR and
+coverage runs have the same bounded test budget, with time left for setup and
+reporting. The watchdog leaves thread stacks before the runner times out:
 
 ```yaml
       - name: Run Tests
         env:
-          FLOPPY_TEST_WATCHDOG: "2400"
+          FLOPPY_TEST_TIMEOUT: "6600"
+          FLOPPY_TEST_WATCHDOG: "6300"
 ```
 
 ### Fixed: the suite runs serially, and survives parallel if you ask for it

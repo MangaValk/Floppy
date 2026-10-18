@@ -359,7 +359,9 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
                     card.get_by_title(action, exact=True).click()
                     self._assert_visible_overlay_fills_viewport()
                     self.page.keyboard.press("Escape")
-                    expect(self.page.locator("div.fixed.inset-0:visible")).to_have_count(0)
+                    expect(
+                        self.page.locator("div.fixed.inset-0:visible")
+                    ).to_have_count(0)
 
     def set_date_input(self, locator, value):
         """Set a hidden date-picker input and dispatch its change events."""
@@ -737,6 +739,7 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
 
         expect(self.page.get_by_role("main")).to_contain_text("Test Movie")
 
+        self.page.get_by_role("button", name="More tracking actions").click()
         expect(self.page.get_by_role("button", name="Add new entry")).to_be_visible()
         self.page.get_by_role("button", name="Add new entry").click()
 
@@ -745,6 +748,7 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
         create_modal.locator("button[type='button']").first.click()
         expect(self.page.locator("[data-track-modal-root]:visible")).to_have_count(0)
 
+        self.page.get_by_role("button", name="More tracking actions").click()
         self.page.get_by_role("button", name="Add new entry").click()
         expect(create_modal).to_be_visible()
 
@@ -1035,6 +1039,7 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
         expect(self.page.get_by_role("main")).to_contain_text("Test Movie")
         self._stretch_content_container()
 
+        self.page.get_by_role("button", name="More tracking actions").click()
         self.page.get_by_role("button", name="Add new entry").click()
         expect(self.page.locator("[data-track-modal-root]:visible")).to_be_visible()
 
@@ -1202,6 +1207,7 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
             name="Close activity history",
         ).click()
 
+        self.page.get_by_role("button", name="More tracking actions").click()
         self.page.get_by_role("button", name="Add new entry").click()
         track_modal = self.page.locator("[data-track-modal-root]:visible").first
         track_modal.get_by_role("button", name="Open End date picker").click()
@@ -1578,7 +1584,6 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
         )
         self.assertEqual(layout["overflowX"], "auto")
         self.assertEqual(layout["overflowY"], "hidden")
-        self.assertGreater(layout["scrollWidth"], layout["clientWidth"])
 
         page_layout = self.page.evaluate(
             """() => ({
@@ -1608,9 +1613,13 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
         )
         self.assertEqual(filtered_layout["overflowX"], "auto")
         self.assertEqual(filtered_layout["overflowY"], "hidden")
-        self.assertGreater(
-            filtered_layout["scrollWidth"], filtered_layout["clientWidth"]
+        # A wider card may fit every row. Constrain the legend to exercise
+        # horizontal scrolling without depending on sidebar/card breakpoints.
+        legend.evaluate("element => element.style.maxWidth = '180px'")
+        self.assertTrue(
+            legend.evaluate("element => element.scrollWidth > element.clientWidth")
         )
+        legend.evaluate("element => element.style.removeProperty('max-width')")
 
         self.page.set_viewport_size({"width": 390, "height": 774})
         mobile_layout = self.page.evaluate(

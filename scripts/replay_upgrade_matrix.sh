@@ -149,7 +149,7 @@ start_postgres() {
     -e POSTGRES_USER=postgres \
     -e POSTGRES_PASSWORD=postgres \
     -e POSTGRES_DB=postgres \
-    -p 0:5432 \
+    -p 127.0.0.1:0:5432 \
     postgres:16-alpine >/dev/null
 
   REPLAY_PORT="$(

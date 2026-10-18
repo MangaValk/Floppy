@@ -1779,15 +1779,16 @@ class IntegrationEventReceipt(models.Model):
 
 
 class CatalogGrant(models.Model):
-    """A revocable, per-resource grant for published read-only catalogs.
+    """A revocable grant for catalogs and optional playback tracking.
 
     The Stremio add-on install URL carries its credential in the path, which
     means it lands in server logs, browser history and any screenshot of the
     settings page. Before this that credential was the account token: full
     API access, and revoking it broke every webhook and integration at once.
 
-    A grant reads the selected catalogs and nothing else, and revoking one
-    affects only the install it was minted for.
+    A grant reads selected catalogs and, when allow_playback_start is enabled,
+    permits the add-on's playback tracking. Revoking one affects only the
+    install it was minted for.
     """
 
     user = models.ForeignKey(
@@ -1796,10 +1797,9 @@ class CatalogGrant(models.Model):
         related_name="catalog_grants",
     )
     name = models.CharField(max_length=255)
-    # Stored in the clear, unlike IntegrationToken: Stremio replays the install
-    # URL on every request, so there is nothing to compare a digest against
-    # without indexing the digest anyway. Entropy is the control here, plus
-    # the narrow read-only scope and independent revocation.
+    # Stored in the clear, unlike IntegrationToken. Treat database copies as
+    # bearer-credential stores. A digest-based lookup is possible, but changing
+    # storage requires a compatibility plan for existing installs and token UI.
     token = models.CharField(max_length=64, unique=True, db_index=True)
     # Empty means every supported catalog. A populated list is an allowlist of
     # CatalogSpec.catalog_id values.

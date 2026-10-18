@@ -117,7 +117,7 @@ Floppy combines the jobs people often split between a watchlist, a media diary, 
 - **Configurable home screen**: choose what rows appear and in what order; rows from library queries, custom lists, smart lists, or recently played but not rated; direction and media-type filters stored per user.
 - **Configurable table columns**: choose and reorder visible columns per view, with media tables and list-detail tables configured independently; available columns include critic rating, episodes left, time left, time to beat, runtime, time watched, last watched, next air date, date added, popularity, and more.
 - **Scheduled data exports and database snapshots**: recurring CSV export scheduling with media-type and list inclusion options and export history visible in settings, plus an independent nightly raw database snapshot for disaster recovery.
-- **Account security**: TOTP authenticator setup and management; recovery codes; password recovery via authenticator or recovery code; session duration as a per-user preference.
+- **Account security**: TOTP and recovery codes for password recovery (not a second factor at login); session duration as a per-user preference.
 
 ### Day-to-day polish
 
@@ -131,6 +131,29 @@ Floppy combines the jobs people often split between a watchlist, a media diary, 
 ### Also included
 
 Multi-user accounts with OIDC and social login; calendar and iCalendar feeds for upcoming releases; release notifications through Apprise; Jellyfin, Plex, and Emby playback integrations; imports from Trakt, Simkl, MyAnimeList, AniList, Kitsu, Steam, Goodreads, StoryGraph, Hardcover, IMDb, HowLongToBeat, Grouvee and more; a REST API at `/api/v1` with an MCP server; and CSV export/import so your data is always yours to take elsewhere. Floppy is also an installable PWA, so you can add it to your phone's Home Screen and launch it like an app ([installation guide](https://github.com/dannyvfilms/Floppy/wiki/2.-User-Guide#installing-floppy-on-your-phone)).
+
+## Privacy and trust
+
+Floppy stores your library, ratings, notes, and activity in the database and
+storage services you configure. Normal use contacts metadata providers and image
+hosts; searches and background enrichment can disclose titles, IDs, and your
+server's IP. Artwork loads directly in your browser by default. Optional image
+caching covers approved hosts, not every image or YouTube resource. Connected
+accounts, notifications, and enabled outbound sync send the data those features
+need to their configured services.
+
+The application code has no usage-analytics uploader or central Floppy update
+checker. This is not an offline application or a guarantee of no external
+requests.
+
+Run a personal instance or give accounts only to people you trust. Connected
+services can intentionally reach your LAN, and catalog metadata is shared across
+users. Disable registration after setup. Protect the database, Redis, backups,
+and signing key: some credentials are stored in plaintext, and application
+encryption does not protect against an instance compromise. Diagnostic logs can
+contain private activity even after known credential patterns are redacted;
+review them before sharing. Report sensitive issues privately as described in
+[SECURITY.md](SECURITY.md).
 
 ## Screenshots
 
@@ -175,7 +198,7 @@ Collections add ownership context alongside tracking, with room for copy-level d
 
 ## Coming from Yamtrack?
 
-Floppy started as a fork of [Yamtrack](https://github.com/FuzzyGrim/Yamtrack) and has diverged substantially since — the rename exists so the two projects stop being confused for each other. The upgrade path is intentionally boring:
+Floppy started as a fork of [Yamtrack](https://github.com/FuzzyGrim/Yamtrack) and has diverged substantially since — the rename exists so the two projects stop being confused for each other. The rename preserves these compatibility paths:
 
 - **Your data moves over as-is.** Export a CSV from Yamtrack and import it under **Settings → Import**; the formats are identical. Floppy's own data export writes `floppy_<date>.csv` and uses the same format, so nothing is one-way.
 - **Your existing container keeps working.** If you already run this project's image, the rename doesn't break your compose file: the old `/yamtrack/db` mount path still resolves inside the image, and pre-rename `YAMTRACK_*` environment variables are still read.
@@ -239,7 +262,9 @@ log, with a memory line every 5 minutes and a note on the next start when the
 previous run did not shut down cleanly), `supervisord.log` (which process
 exited and how) and `faulthandler.log` (Python traceback after a segfault). It
 can be read from the host even while the container is down. Settings →
-Advanced → Download Sanitized Logs bundles all three with secrets redacted.
+Advanced → Download Sanitized Logs bundles all three and redacts known credential
+patterns. The download can still contain private activity or unrecognized secrets;
+review it before sharing.
 
 `BACKUP_DIR` defaults to `/floppy/backups` inside the container. The
 Settings → Export page shows this path, but it is a container path, not a
@@ -1034,7 +1059,7 @@ For contributing or customizing locally:
 ```bash
 git clone https://github.com/dannyvfilms/Floppy.git
 cd Floppy
-docker run -d --name redis -p 6379:6379 --restart unless-stopped redis:8-alpine
+docker run -d --name redis -p 127.0.0.1:6379:6379 --restart unless-stopped redis:8-alpine
 uv sync --locked
 ```
 

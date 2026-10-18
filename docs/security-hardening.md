@@ -12,8 +12,12 @@ Before upgrading an existing installation:
 
 1. Stop new submissions and all beat/scheduled producers. Keep the old workers
    running on the trusted broker until outstanding work finishes. Check active,
-   reserved and scheduled tasks and **both** interactive and background queues,
-   including priority queues and Redis unacknowledged deliveries.
+   reserved and scheduled tasks and **all** configured queues (`celery`,
+   `interactive`, `discover`, and any custom queues), including priority queues
+   and Redis unacknowledged deliveries. The container's background worker embeds
+   beat (`--beat`): stopping only a separate beat service does not stop that
+   producer. Drain using old-version workers without beat while submissions and
+   the ordinary application containers are stopped.
 2. Stop all old workers and publishers together, then deploy the new version.
    Do not use a mixed-version rolling deployment for this transition.
 3. If draining is impossible, explicitly cancel/requeue unfinished imports and
@@ -21,6 +25,32 @@ Before upgrading an existing installation:
    and discarded by new workers; they will not be converted automatically, and
    old task rows may continue to show pending. Do not flush a shared Redis or
    delete application data to perform this upgrade.
+
+An ordinary `docker compose pull && docker compose up -d` does **not** perform
+this drain. Queued pickle messages are discarded on delivery; reserved and ETA
+messages restored after worker shutdown are discarded too. An abrupt stop can
+leave deliveries in Redis's `unacked` hash/sorted set until the visibility timeout
+expires (normally at least an hour). An empty ready queue alone is therefore not
+proof of a completed drain. Obtain replies from every expected old worker for
+`celery -A config inspect active`, `reserved`, `scheduled`, and `active_queues`;
+verify all configured priority queues and unacknowledged deliveries are empty on
+the isolated broker or application key prefix. Missing worker replies do not
+mean no work. Run those inspection commands with the trusted old release's
+configuration: old control replies also use pickle, which a JSON-only client
+refuses. Do not re-enable pickle in the upgraded deployment to inspect them.
+ETA jobs must finish on trusted old workers or be explicitly
+cancelled and recreated; waiting only for currently active jobs is insufficient.
+
+Rejected messages do not invoke task-failure handlers. A tracked `TaskResult`
+can remain `PENDING`; the imports screen hides pending rows after 30 minutes and
+housekeeping later removes them, without replaying their task. Such rows are
+status records, not a durable copy of the original arguments or uploaded file.
+Cancel a pending import through the imports screen while available, retain its
+source file, and submit a fresh job after upgrading. For an interrupted running
+import, inspect Recent Import Runs and its partial changes before cancelling,
+rolling back where supported, or resubmitting: replay is not universally
+idempotent. Durable import/outbox recovery covers its own workflows, not every
+Celery task. JSON serialization alone supplies no generic lost-job recovery.
 
 The prior default result serializer was already JSON. Historical non-JSON
 results from custom deployments are no longer readable. Retain a backup and

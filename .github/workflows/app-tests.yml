@@ -15,11 +15,14 @@ permissions:
 
 jobs:
   test:
-    timeout-minutes: 45
+    # Hosted full-suite execution has exceeded 68 minutes (run 38993407779).
+    # Leave setup/coverage time beyond the runner's bounded 110-minute budget.
+    timeout-minutes: 120
     env:
       SECRET: ci-tests-only-not-a-production-secret
       FLOPPY_TEST_FAST_DB: "0"
-      FLOPPY_TEST_WATCHDOG: "2400"
+      FLOPPY_TEST_TIMEOUT: "6600"
+      FLOPPY_TEST_WATCHDOG: "6300"
     runs-on: ubuntu-latest
     strategy:
       max-parallel: 4
@@ -72,7 +75,8 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             scripts/test.sh app users integrations lists events api config
           else
-            uv run --no-sync coverage run src/manage.py test \
+            timeout --kill-after=30s "$FLOPPY_TEST_TIMEOUT" \
+              uv run --no-sync coverage run src/manage.py test \
               app users integrations lists events api config \
               --parallel --buffer --exclude-tag network
           fi

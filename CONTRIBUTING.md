@@ -43,7 +43,7 @@ Every contribution should maintain and elevate our codebase baseline.
 Security is critical. Every change touching authentication, user data, or network integrations must prevent common security risks (including the OWASP Top 10):
 - **Injection Safety**: Use Django ORM parameterized queries. Never construct raw SQL queries with string formatting or pass unsanitized input to shell commands.
 - **Access Control & Tenancy (IDOR Prevention)**: Always scope database queries to the authenticated user (`MediaItem.objects.filter(user=request.user, ...)`). Never assume an identifier in a URL or request body belongs to the active session.
-- **Credential Storage & Secrets**: Never commit tokens, passwords, or API keys. Store secrets in environment variables or use encrypted database fields (`SecretBox` for external provider credentials).
+- **Credential Storage & Secrets**: Never commit private tokens, passwords, or API keys. Use environment variables or the existing Fernet credential helpers (`encrypt_data` / `decrypt_data` in `integrations/imports/helpers.py`). Their key derives from the instance signing key; not all stored credentials are encrypted. Preserve that key with database backups.
 - **Server-Side Request Forgery (SSRF)**: Validate and restrict URLs when fetching third-party provider metadata or processing webhook destinations.
 - **XSS & CSRF Prevention**: Rely on Django template auto-escaping. Never mark user-supplied data as `|safe`. Include `{% csrf_token %}` on all state-modifying POST/PUT forms.
 

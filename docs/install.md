@@ -105,6 +105,19 @@ sudo launchctl bootstrap system /Library/LaunchDaemons/com.floppy.app.plist
 sudo launchctl bootout system /Library/LaunchDaemons/com.floppy.app.plist
 ```
 
+**Upgrade validation limits**
+
+The current CI upgrade replay starts at `v26.9.24` and checks representative
+tracking data against the candidate source on SQLite and PostgreSQL. Its
+presence is not evidence that a particular candidate passed; check that
+candidate's Actions results before upgrading. It does not establish every
+historical version or an old-container-to-new-container restore path.
+`v26.10.1` has a known clean-initialization migration-graph conflict; newer
+source joins the conflicting leaves. Do not select that tag for a fresh install.
+For an existing installation, keep a verified backup and the matching old image
+and configuration before upgrading; report migration errors rather than faking
+migration records or deleting data.
+
 Normal `migrate` on an existing database also stops at the `v26.10.1` graph
 conflict, before applying migrations. Move to a release/source revision that
 contains `users/0141_merge_search_all_discover_seerr.py`, keeping the database

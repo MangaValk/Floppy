@@ -39,6 +39,7 @@ TODO.txt
 .env.*
 # Runtime databases, backup directories and logs are never release inputs.
 src/db/
+src/backups/
 db/
 src/logs/
 .v2c/
