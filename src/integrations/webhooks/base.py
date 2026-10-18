@@ -1784,6 +1784,7 @@ class BaseWebhookProcessor:
         tv_metadata,
         external_ids,
         anime_mapping_data=None,
+        anibridge_only=False,
     ):
         """Recover TMDB's real (season, episode) for a Plex/TVDB-numbered event.
 
@@ -1808,6 +1809,9 @@ class BaseWebhookProcessor:
             )
             if remapped is not None:
                 return remapped
+
+        if anibridge_only:
+            return None
 
         return episode_remap.remap_via_tmdb_find(
             external_ids,
@@ -1982,7 +1986,17 @@ class BaseWebhookProcessor:
         # Try remapping before show recovery: the payload's episode-level GUID
         # is authoritative, while recovery's title search only guesses at a
         # different show that happens to have a season with this number.
-        if not season_metadata and int(season_number) != 0:
+        # A season TMDB has but that lacks the episode is a TVDB/TMDB split
+        # (TVDB Demon Slayer S2E10 is TMDB S3E3), where only AniBridge may speak.
+        season_lacks_episode = (
+            season_metadata_authoritative
+            and bool(season_metadata)
+            and not episode_remap.episode_in_season(
+                int(episode_number),
+                season_metadata,
+            )
+        )
+        if int(season_number) != 0 and (not season_metadata or season_lacks_episode):
             anime_mapping_data = None
             if user.anime_enabled:
                 try:
@@ -1999,6 +2013,7 @@ class BaseWebhookProcessor:
                 tv_metadata,
                 external_ids,
                 anime_mapping_data,
+                anibridge_only=season_lacks_episode,
             )
             if remapped is not None:
                 remapped_season, remapped_episode, season_metadata = remapped
