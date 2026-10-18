@@ -570,6 +570,9 @@
   .my-6 {
     margin-block: calc(var(--spacing) * 6);
   }
+  .ms-1\.5 {
+    margin-inline-start: calc(var(--spacing) * 1.5);
+  }
   .me-2 {
     margin-inline-end: calc(var(--spacing) * 2);
   }

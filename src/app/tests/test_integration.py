@@ -1162,7 +1162,7 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
             )
         expect(self.page.get_by_role("main")).to_contain_text("Test Movie")
 
-        self.page.get_by_role("button", name="View session history").first.click()
+        self.page.get_by_role("button", name="View play history").first.click()
         session_modal = self.page.locator(
             '[role="dialog"][aria-label="Activity history"]:visible',
         )
