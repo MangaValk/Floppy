@@ -22,15 +22,9 @@ from config.sqlite_integrity import check_database_integrity
 ENTRYPOINT = Path(__file__).resolve().parents[3] / "entrypoint.sh"
 _ACTION_ENV = "FLOPPY_SQLITE_CONFLICT_ACTION"
 
-# _create_verified_backup() re-opens a dir_fd-created staging file through
-# /proc/self/fd/<fd>/<name> to avoid a TOCTOU race on the path lookup - a
-# Linux-only mechanism. Production only ever runs in the Linux container
-# (see docs/agents/sqlite_integrity_recovery_handoff.md), and CI runs on
-# ubuntu-latest, so the hardened path is exercised there; skip it here so a
-# native macOS/BSD `scripts/test.sh` run doesn't report unrelated failures.
+# Linux page-cache advice is separate from portable backup publication.
 requires_proc_fd_backup = skipUnless(
-    sys.platform.startswith("linux"),
-    "verified-backup path requires /proc/self/fd (Linux-only)",
+    sys.platform.startswith("linux"), "page-cache advice requires Linux"
 )
 
 
@@ -96,7 +90,6 @@ class SqliteIntegrityTests(SimpleTestCase):
         """Read the bounded recovery report written beside the database."""
         return json.loads(Path(f"{db_path}.integrity.json").read_text())
 
-    @requires_proc_fd_backup
     def test_orphaned_album_artist_credit_is_removed(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = str(Path(tmp_dir) / "db.sqlite3")
@@ -234,7 +227,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertIn(f"accept:{report['incident_token']}", output)
             self.assertNotIn(f"accept:{report['fingerprint']}", output)
 
-    @requires_proc_fd_backup
     def test_quarantine_action_backs_up_then_deletes_orphans(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir, rows=3)
@@ -346,7 +338,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertEqual(second["incident_token"], first["incident_token"])
             self.assertNotEqual(second["incident_token"], second["fingerprint"])
 
-    @requires_proc_fd_backup
     def test_special_database_paths_backup_the_exact_live_database(self):
         names_and_decoys = {
             "db?real.sqlite3": "db",
@@ -428,7 +419,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertFalse(report_path.is_symlink())
             self.assertEqual(json.loads(report_path.read_text())["status"], "blocked")
 
-    @requires_proc_fd_backup
     def test_resolved_quarantine_token_cannot_delete_a_recreated_conflict(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir)
@@ -717,7 +707,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             )
             conn.close()
 
-    @requires_proc_fd_backup
     def test_verified_backup_survives_call_during_exception_handling(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir)
@@ -737,7 +726,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertEqual(backup.execute("PRAGMA quick_check").fetchone(), ("ok",))
             backup.close()
 
-    @requires_proc_fd_backup
     def test_prepared_report_survives_resolved_report_failure_and_reconciles(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir)
@@ -780,7 +768,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertEqual(resolved["status"], "resolved")
             self.assertEqual(resolved["resolution"], "quarantine")
 
-    @requires_proc_fd_backup
     def test_resolved_directory_fsync_failure_restores_prepared_report(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir)
@@ -835,7 +822,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertEqual(resolved["status"], "resolved")
             self.assertEqual(resolved["resolution"], "quarantine")
 
-    @requires_proc_fd_backup
     def test_resolved_report_restoration_failure_does_not_claim_success(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir)
@@ -879,7 +865,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             )
             conn.close()
 
-    @requires_proc_fd_backup
     def test_unverifiable_prepared_backup_does_not_block_a_healthy_database(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir)
@@ -921,7 +906,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertIn("could not be finalized", stderr.getvalue())
             self.assertEqual(self.read_incident_report(db_path)["status"], "prepared")
 
-    @requires_proc_fd_backup
     def test_main_table_named_like_conflict_staging_table_is_quarantined(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = str(Path(tmp_dir) / "db.sqlite3")
@@ -960,7 +944,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             )
             conn.close()
 
-    @requires_proc_fd_backup
     def test_wal_backup_is_complete_and_restorable(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = str(Path(tmp_dir) / "db.sqlite3")
@@ -1179,7 +1162,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             with self.assertRaises(ProcessLookupError):
                 os.kill(checker_pid, 0)
 
-    @requires_proc_fd_backup
     def test_repair_holds_write_lock_from_check_through_delete(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = str(Path(tmp_dir) / "db.sqlite3")
@@ -1236,7 +1218,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertEqual(competing_result, ["database is locked"])
             competing_conn.close()
 
-    @requires_proc_fd_backup
     def test_repair_stays_below_sqlite_variable_limit(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = str(Path(tmp_dir) / "db.sqlite3")
@@ -1654,7 +1635,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertIn(f"accept:{report['incident_token']}", output)
             self.assertEqual(report["affected"], [])
 
-    @requires_proc_fd_backup
     def test_default_auto_repair_removes_orphans_and_boots(self):
         """When auto-repair is enabled (default), startup cleans safe orphans and continues."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1689,7 +1669,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             )
             backup.close()
 
-    @requires_proc_fd_backup
     def test_auto_repair_handles_multiple_arbitrary_tables(self):
         """Auto-repair cleans multiple damaged child tables atomically."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1751,7 +1730,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertIn("db-backup-14.sqlite3", remaining)
             self.assertIn("db-backup-05.sqlite3", remaining)
 
-    @requires_proc_fd_backup
     def test_repeated_repairs_do_not_grow_the_recovery_folder(self):
         """Retention must run during a repair, not only when called by hand."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1795,7 +1773,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertEqual(ctx.exception.code, 1)
             self.assertFalse(decision.exists())
 
-    @requires_proc_fd_backup
     def test_live_snapshot_writes_a_valid_verified_copy(self):
         """create_live_database_snapshot (#1053) mirrors _create_verified_backup.
 
@@ -1828,7 +1805,6 @@ class SqliteIntegrityTests(SimpleTestCase):
                 [snapshot_path.name],
             )
 
-    @requires_proc_fd_backup
     def test_live_snapshot_retention_prunes_to_max_keep(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = self.create_orphan_database(tmp_dir)
@@ -1869,7 +1845,6 @@ class SqliteIntegrityTests(SimpleTestCase):
             if dest_dir.exists():
                 self.assertEqual(list(dest_dir.iterdir()), [])
 
-    @requires_proc_fd_backup
     def test_live_snapshot_corrupt_source_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = str(Path(tmp_dir) / "db.sqlite3")

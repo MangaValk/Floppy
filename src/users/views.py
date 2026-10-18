@@ -2260,10 +2260,17 @@ def _db_snapshot_status():
     written by app.tasks_db_backup.write_database_snapshot, so the same page
     that explains CSV export can show whether a real database backup exists.
     """
+    if not settings.USING_SQLITE_DATABASE:
+        return {"supported": False}
     snapshot_dir = Path(settings.BACKUP_DIR) / "database"
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    file_count = sum(1 for entry in snapshot_dir.iterdir() if entry.is_file())
+    snapshot_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    file_count = sum(
+        1
+        for entry in snapshot_dir.glob("*.sqlite3")
+        if entry.is_file() and not entry.is_symlink() and not entry.name.startswith(".")
+    )
     return {
+        "supported": True,
         "path": str(snapshot_dir),
         "file_count": file_count,
         "host_reachable": _mount_is_host_reachable(snapshot_dir),

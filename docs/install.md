@@ -58,9 +58,11 @@ cannot touch the database. Back up this root with Floppy stopped, or use a
 consistent database snapshot; copying a live SQLite file alone is unsafe.
 Keep an encrypted copy on another disk or machine, including the original
 signing key and external secret files. PostgreSQL needs a consistent
-`pg_dump` backup rather than a copy of its live data volume. Native macOS installs
-currently need manual SQLite backups: the built-in snapshot writer requires
-Linux `/proc/self/fd` and does not work on macOS.
+`pg_dump` backup rather than a copy of its live data volume. Native macOS SQLite
+snapshots use a private system-temporary workspace, requiring room for another
+full database copy there as well as in `backups/`. Linux snapshots stage directly
+in the backup directory. Both verify before atomic publication. Monitor backup
+file dates and failure logs; a running scheduler does not prove backups succeed.
 
 ## Running it again
 
@@ -102,6 +104,13 @@ sudo systemctl stop floppy
 sudo launchctl bootstrap system /Library/LaunchDaemons/com.floppy.app.plist
 sudo launchctl bootout system /Library/LaunchDaemons/com.floppy.app.plist
 ```
+
+Normal `migrate` on an existing database also stops at the `v26.10.1` graph
+conflict, before applying migrations. Move to a release/source revision that
+contains `users/0141_merge_search_all_discover_seerr.py`, keeping the database
+and original key intact. That migration joins the three published leaves; do
+not generate a local merge, edit published migrations, or fake their records.
+A database already modified by manual repairs needs individual assessment.
 
 **Source upgrades (both systems)**
 
