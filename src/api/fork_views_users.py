@@ -482,5 +482,10 @@ class UserTokenRegenerateView(drf_views.APIView):
 
     def post(self, request):
         """Regenerate and return the new token once."""
+        if request.user.is_demo:
+            return Response(
+                {"detail": "This section is view-only for demo accounts."},
+                status=HTTP.FORBIDDEN,
+            )
         request.user.regenerate_token()
         return Response({"token": request.user.token}, status=HTTP.OK)

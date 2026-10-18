@@ -354,6 +354,11 @@ def account(request):
             "disable_authenticator",
             "regenerate_recovery_codes",
         }:
+            # The demo password is public: an authenticator attached to it
+            # would let one visitor reset the password for everyone else.
+            if request.user.is_demo:
+                messages.error(request, "This section is view-only for demo accounts.")
+                return redirect("account")
             limited = ratelimit.consume_or_429(request, action="reauthenticate")
             if limited is not None:
                 return limited

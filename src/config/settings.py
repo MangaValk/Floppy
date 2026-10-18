@@ -431,6 +431,7 @@ MIDDLEWARE = [
     "app.middleware.UserLanguageMiddleware",
     "app.middleware.DiscoverWarmupMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "app.middleware.DemoAccountGuardMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django.contrib.auth.middleware.LoginRequiredMiddleware",
     # Answer htmx requests with HX-Redirect instead of a followable 302 to the
