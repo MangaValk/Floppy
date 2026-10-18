@@ -38,6 +38,7 @@ from app.services import grouped_anime
 from integrations import (
     anime_mapping,
     connection_health,
+    episode_remap,
     import_progress,
     stremio_events,
 )
@@ -767,6 +768,11 @@ class StremioImporter:
                 status=tv_status,
             )
             tv_instance._history_date = self._get_history_date(entry)
+            # A show imported as Completed fans out episodes through
+            # `TV._completed`, which reads `_pending_end_date` off the TV. Without
+            # it those episodes take the user's preference (default "now"), so
+            # history imported from years back reads as watched today.
+            tv_instance._pending_end_date = tv_instance._history_date
             self.bulk_media[MediaTypes.TV.value].append(tv_instance)
 
         if (
@@ -824,7 +830,7 @@ class StremioImporter:
         metadata_ids = metadata.get("provider_external_ids") or {}
         tvdb_id = metadata.get("tvdb_id") or metadata_ids.get("tvdb_id")
 
-        canonical_episodes = []
+        mapped_pairs = []
         for season_number, episode_number in watched_episodes:
             mapped = anime_mappings.get_tmdb_episode_mapping(
                 mapping_data,
@@ -833,14 +839,19 @@ class StremioImporter:
                 episode_number,
                 tvdb_id=tvdb_id,
             )
-            canonical_episodes.append(mapped or (season_number, episode_number))
+            mapped_pairs.append(((season_number, episode_number), mapped))
 
-        canonical_episodes = sorted(set(canonical_episodes))
-        if canonical_episodes == watched_episodes:
+        if all(mapped in (None, original) for original, mapped in mapped_pairs):
             return watched_episodes, metadata
 
+        # Load the mapped seasons plus the source seasons, so a mapping TMDB
+        # does not confirm can fall back to the episode as Stremio reported it.
         target_seasons = sorted(
-            {season_number for season_number, _ in canonical_episodes},
+            {
+                season_number
+                for original, mapped in mapped_pairs
+                for season_number, _ in (original, mapped or original)
+            },
         )
         try:
             canonical_metadata = app.providers.tmdb.tv_with_seasons(
@@ -853,6 +864,23 @@ class StremioImporter:
                 tmdb_id,
                 exception_summary(error),
             )
+            return watched_episodes, metadata
+
+        canonical_episodes = []
+        for original, mapped in mapped_pairs:
+            season_metadata = (
+                canonical_metadata.get(f"season/{mapped[0]}") if mapped else None
+            )
+            if mapped and season_metadata and episode_remap.episode_in_season(
+                mapped[1],
+                season_metadata,
+            ):
+                canonical_episodes.append(mapped)
+            else:
+                canonical_episodes.append(original)
+
+        canonical_episodes = sorted(set(canonical_episodes))
+        if canonical_episodes == watched_episodes:
             return watched_episodes, metadata
 
         logger.info(
@@ -1037,6 +1065,11 @@ class StremioImporter:
                     ),
                 )
                 season_instance._history_date = history_date
+                # A season imported as Completed may still fan out episodes
+                # the bitfield did not credit. They belong to this entry's
+                # viewing, so they must carry its date rather than the import
+                # time (`_backfill_completed_season_episodes` reads this).
+                season_instance._pending_end_date = history_date
                 self.bulk_media[MediaTypes.SEASON.value].append(season_instance)
                 self.bulk_season_by_item_id[season_item.id] = season_instance
 
