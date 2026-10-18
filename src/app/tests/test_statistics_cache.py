@@ -539,7 +539,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     """
     Tests for statistics_cache._get_horizontal_history_image.
 
-    Every test mocks CustomList._get_tmdb_backdrop / _get_igdb_backdrop so no
+    Every test mocks backdrops.get_tmdb_backdrop / _get_igdb_backdrop so no
     real network calls are made. The Redis cache is cleared before each test so
     _cached_horizontal_backdrop always starts cold unless explicitly primed.
     """
@@ -577,7 +577,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # Cached backdrop already in Redis — no network call needed
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_tv_show_uses_redis_cache_without_network_call(self, mock_backdrop):
         item = _tv_item_dict()  # Breaking Bad, media_id=1396
         cache.set("tmdb_backdrop_tv_1396", BACKDROP_URL, 60)
@@ -587,7 +587,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         self.assertEqual(result, BACKDROP_URL)
         mock_backdrop.assert_not_called()
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_movie_uses_redis_cache_without_network_call(self, mock_backdrop):
         item = _movie_item_dict()  # On Stranger Tides, media_id=1865
         cache.set("tmdb_backdrop_movie_1865", BACKDROP_URL, 60)
@@ -601,7 +601,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # Network fetch — TMDB TV (Breaking Bad)
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_tv_show_fetches_tmdb_backdrop_when_cache_cold(self, mock_backdrop):
         """Breaking Bad (tv, 1396): cold Redis → should call TMDB and return backdrop."""
         item = _tv_item_dict(media_id="1396", title="Breaking Bad")
@@ -613,7 +613,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         self.assertEqual(result, BACKDROP_URL)
         mock_backdrop.assert_called_once_with(MediaTypes.TV.value, "1396")
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_anime_tmdb_fetches_backdrop_via_tv_endpoint(self, mock_backdrop):
         """
         Devil May Cry (media_type=anime, source=tmdb): cold Redis → backdrop fetched.
@@ -633,7 +633,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         # Anime from TMDB must use the /tv/{id} endpoint
         mock_backdrop.assert_called_once_with(MediaTypes.TV.value, "94954")
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_anime_tmdb_redis_cache_hit_skips_network(self, mock_backdrop):
         """TMDB anime whose backdrop is already in Redis must not re-fetch."""
         item = _anime_item_dict(media_id="94954")
@@ -645,7 +645,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         self.assertEqual(result, BACKDROP_URL)
         mock_backdrop.assert_not_called()
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_anime_mal_source_falls_back_to_portrait(self, mock_backdrop):
         """
         MAL-sourced anime has no backdrop provider, so the portrait poster is
@@ -664,7 +664,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # Network fetch — TMDB movie (Pirates of the Caribbean: On Stranger Tides)
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_movie_fetches_tmdb_backdrop_when_cache_cold(self, mock_backdrop):
         """On Stranger Tides (movie, 1865): cold Redis → should call TMDB."""
         item = _movie_item_dict(
@@ -683,7 +683,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # Network fetch — TMDB episode (Game of Thrones)
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_episode_fetches_show_backdrop_via_tv_path(self, mock_backdrop):
         """
         Game of Thrones episode (media_type=episode, media_id=1399).
@@ -699,7 +699,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         # Must request the TV backdrop, not an episode-specific path
         mock_backdrop.assert_called_once_with(MediaTypes.TV.value, "1399")
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_season_fetches_show_backdrop_via_tv_path(self, mock_backdrop):
         """Season items (media_type=season) also resolve via the TV backdrop path."""
         item = {
@@ -735,7 +735,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # Media types that have no backdrop path — should fall back gracefully
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_music_media_type_falls_back_to_portrait(self, mock_backdrop):
         """Music has no backdrop source; portrait poster should be returned."""
         item = {
@@ -756,7 +756,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # allow_network=False — must NOT make network calls
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_allow_network_false_returns_fallback_without_network_call(
         self, mock_backdrop
     ):
@@ -778,7 +778,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # TMDB returns IMG_NONE — fall back to portrait
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=settings.IMG_NONE)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=settings.IMG_NONE)
     def test_tmdb_returns_img_none_falls_back_to_portrait(self, mock_backdrop):
         item = _tv_item_dict()
 
@@ -793,7 +793,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # ------------------------------------------------------------------
 
     @patch(
-        "lists.models.CustomList._get_tmdb_backdrop",
+        "app.backdrops.get_tmdb_backdrop",
         side_effect=Exception("network error"),
     )
     def test_tmdb_exception_falls_back_to_portrait(self, mock_backdrop):
@@ -809,7 +809,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # Model instance (not dict) — Breaking Bad as a real Item object
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_model_instance_tv_fetches_backdrop(self, mock_backdrop):
         """_get_horizontal_history_image must work with Django Item instances too."""
         item = Item.objects.create(
@@ -831,7 +831,7 @@ class GetHorizontalHistoryImageTests(TestCase):
     # TVDB source — cross-reference to TMDB via provider_external_ids
     # ------------------------------------------------------------------
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_tvdb_tv_show_uses_tmdb_cross_reference(self, mock_backdrop):
         """
         Game of Thrones / Breaking Bad / HIMYM added via TVDB:
@@ -852,7 +852,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         self.assertEqual(result, BACKDROP_URL)
         mock_backdrop.assert_called_once_with(MediaTypes.TV.value, "1399")
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_tvdb_episode_uses_tmdb_cross_reference(self, mock_backdrop):
         """TVDB episodes carry the show-level provider_external_ids tmdb_id."""
         item = _tvdb_episode_item_dict(tvdb_id="121361", tmdb_id="1399")
@@ -864,7 +864,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         self.assertEqual(result, BACKDROP_URL)
         mock_backdrop.assert_called_once_with(MediaTypes.TV.value, "1399")
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_tvdb_tv_redis_cache_hit_skips_network(self, mock_backdrop):
         """TVDB show whose TMDB backdrop is already cached avoids a network call."""
         item = _tvdb_tv_item_dict(tvdb_id="121361", tmdb_id="1399")
@@ -875,7 +875,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         self.assertEqual(result, BACKDROP_URL)
         mock_backdrop.assert_not_called()
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_tvdb_tv_without_tmdb_cross_reference_falls_back_to_portrait(
         self, mock_backdrop
     ):
@@ -899,7 +899,7 @@ class GetHorizontalHistoryImageTests(TestCase):
         self.assertEqual(result, PORTRAIT_POSTER)
         mock_backdrop.assert_not_called()
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop")
+    @patch("app.backdrops.get_tmdb_backdrop")
     def test_tvdb_tv_missing_provider_external_ids_falls_back_to_portrait(
         self, mock_backdrop
     ):
@@ -929,7 +929,7 @@ class GetHorizontalHistoryImageTests(TestCase):
 
 
 def _fill_tmdb_backdrop_cache(media_type, media_id):
-    """Stand-in for CustomList._get_tmdb_backdrop that caches like the real one."""
+    """Stand-in for backdrops.get_tmdb_backdrop that caches like the real one."""
     cache.set(f"tmdb_backdrop_{media_type}_{media_id}", BACKDROP_URL, 60)
     return BACKDROP_URL
 
@@ -963,7 +963,7 @@ class NormalizeHistoryHighlightImagesTests(TestCase):
         cache.clear()
 
     @patch("app.tasks_backdrops.warm_backdrops_task.apply_async")
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_serve_never_calls_the_provider(self, mock_backdrop, mock_warm):
         """Core regression test for issue #1249: a cold cache means no network."""
         data = {"history_highlights": _portrait_highlights()}
@@ -987,7 +987,7 @@ class NormalizeHistoryHighlightImagesTests(TestCase):
         )
 
     @patch(
-        "lists.models.CustomList._get_tmdb_backdrop",
+        "app.backdrops.get_tmdb_backdrop",
         side_effect=_fill_tmdb_backdrop_cache,
     )
     def test_portrait_poster_recovers_on_next_serve(self, mock_backdrop):
@@ -1080,7 +1080,7 @@ class NormalizeHistoryHighlightImagesTests(TestCase):
             statistics_cache._normalize_history_highlight_images(value)
             statistics_cache._normalize_history_highlights_by_type(value)
 
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_backdrop_already_stored_in_cache_is_reused(self, mock_backdrop):
         """A warm Redis backdrop (e.g. from a Lists Hub visit) is used directly."""
         cache.set("tmdb_backdrop_tv_1396", BACKDROP_URL, 60)
@@ -1106,7 +1106,7 @@ class HighlightArtworkRequestPathTests(TestCase):
         cache.clear()
 
     @patch("app.tasks_backdrops.warm_backdrops_task.apply_async")
-    @patch("lists.models.CustomList._get_tmdb_backdrop", return_value=BACKDROP_URL)
+    @patch("app.backdrops.get_tmdb_backdrop", return_value=BACKDROP_URL)
     def test_warm_statistics_cache_serve_makes_no_provider_call(
         self, mock_backdrop, mock_warm
     ):

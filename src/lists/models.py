@@ -410,43 +410,10 @@ class CustomList(models.Model):
         return first_item.image
 
     def _get_tmdb_backdrop(self, media_type, media_id):
-        """Get backdrop image URL from TMDB for movies and TV shows.
+        """Delegate shared TMDB artwork fetching outside list persistence."""
+        from app.backdrops import get_tmdb_backdrop
 
-        Uses caching to avoid repeated API calls for the same item.
-        """
-        cache_key = f"tmdb_backdrop_{media_type}_{media_id}"
-        cached_backdrop = cache.get(cache_key)
-        if cached_backdrop is not None:
-            return cached_backdrop
-
-        try:
-            from app.providers import tmdb
-
-            if media_type == MediaTypes.MOVIE.value:
-                url = f"{tmdb.base_url}/movie/{media_id}"
-            else:
-                url = f"{tmdb.base_url}/tv/{media_id}"
-
-            params = dict(tmdb.base_params())
-            response = services.api_request(
-                Sources.TMDB.value,
-                "GET",
-                url,
-                params=params,
-            )
-
-            backdrop_path = response.get("backdrop_path")
-            if backdrop_path:
-                backdrop_url = f"https://image.tmdb.org/t/p/w1280{backdrop_path}"
-                # Cache for 7 days (same as TMDB metadata cache)
-                cache.set(cache_key, backdrop_url, 60 * 60 * 24 * 7)
-                return backdrop_url
-        except Exception:  # noqa: S110  # deliberate best-effort; failure is non-fatal here
-            pass
-
-        # Cache the absence of backdrop to avoid repeated failed calls
-        cache.set(cache_key, settings.IMG_NONE, 60 * 60 * 24)
-        return settings.IMG_NONE
+        return get_tmdb_backdrop(media_type, media_id)
 
     def _get_igdb_backdrop(self, media_id):
         """Get widescreen backdrop image URL from IGDB for games.

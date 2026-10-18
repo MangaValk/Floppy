@@ -123,12 +123,9 @@ def get_tmdb_backdrop_image(media_type, media_id):
         return None
 
     try:
-        from lists.models import CustomList
-    except Exception:
-        return None
+        from app.backdrops import get_tmdb_backdrop
 
-    try:
-        backdrop = CustomList()._get_tmdb_backdrop(media_type, media_id)
+        backdrop = get_tmdb_backdrop(media_type, media_id)
     except Exception:
         return None
 
