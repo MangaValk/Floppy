@@ -739,6 +739,7 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
 
         expect(self.page.get_by_role("main")).to_contain_text("Test Movie")
 
+        # A completed movie leads with Check-in; Add new entry is in the menu.
         self.page.get_by_role("button", name="More tracking actions").click()
         expect(self.page.get_by_role("button", name="Add new entry")).to_be_visible()
         self.page.get_by_role("button", name="Add new entry").click()
@@ -1282,7 +1283,7 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
         )
 
         expect(self.page.get_by_role("main")).to_contain_text("Wordle")
-        # A game offers Add new entry, Check-in and Edit, so Edit is in the menu.
+        # A game offers Check-in, Add new entry and Edit, so Edit is in the menu.
         self.page.get_by_role("button", name="More tracking actions").click()
         self.page.get_by_role("button", name="Edit", exact=True).click()
 
@@ -1563,7 +1564,9 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
                 progress=1 if status == Status.COMPLETED.value else 0,
             )
 
-        self.page.set_viewport_size({"width": 1024, "height": 774})
+        # Wider layouts give the legend the card's full width; a phone keeps it
+        # beside the chart, where five statuses still need to scroll.
+        self.page.set_viewport_size({"width": 390, "height": 844})
         self.page.goto(
             self.live_server_url
             + reverse("statistics")
