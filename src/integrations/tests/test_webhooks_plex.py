@@ -974,6 +974,71 @@ class PlexWebhookTests(TestCase):
         processor._process_tv(self._rag_payload(2, 1), self.user, ids, 2, 1)
         self.assertEqual(handle_tv_episode.call_args.args[1:3], (2, 1))
 
+    @patch(
+        "integrations.webhooks.anime_mappings.fetch_mapping_data",
+        return_value={
+            "tvdb_show:76906:s2": {"tmdb_show:11235:s3": {"8-12": "1-5"}},
+        },
+    )
+    @patch("app.providers.tmdb.search", return_value={"results": []})
+    @patch("app.providers.tmdb.tv")
+    @patch("app.providers.tmdb.tv_with_seasons")
+    def test_episode_missing_from_existing_season_remaps_via_anibridge(
+        self,
+        mock_tv_with_seasons,
+        mock_tmdb_tv,
+        _mock_tmdb_search,
+        _mock_mapping_data,
+    ):
+        """TVDB S2E10 lands on TMDB S3E3 when TMDB's S2 only has seven episodes."""
+        show_metadata = {
+            "title": "Demon Slayer",
+            "image": "",
+            "tvdb_id": "76906",
+            "synopsis": "",
+            "external_links": {},
+            "related": {
+                "seasons": [
+                    {"season_number": 2, "episode_count": 7},
+                    {"season_number": 3, "episode_count": 12},
+                ],
+            },
+        }
+
+        def fake_tv_with_seasons(_media_id, season_numbers):
+            metadata = dict(show_metadata)
+            for number, count in ((2, 7), (3, 12)):
+                if number in season_numbers:
+                    metadata[f"season/{number}"] = self._season_payload(count)
+            return metadata
+
+        mock_tv_with_seasons.side_effect = fake_tv_with_seasons
+        mock_tmdb_tv.return_value = dict(show_metadata)
+        self.user.anime_enabled = True
+        self.user.save(update_fields=["anime_enabled"])
+
+        PlexWebhookProcessor()._handle_tv_episode(
+            "11235",
+            2,
+            10,
+            self._rag_payload(2, 10),
+            self.user,
+        )
+
+        self.assertTrue(
+            Episode.objects.filter(
+                item__media_id="11235",
+                item__season_number=3,
+                item__episode_number=3,
+            ).exists(),
+        )
+        self.assertFalse(
+            Episode.objects.filter(
+                item__media_id="11235",
+                item__season_number=2,
+            ).exists(),
+        )
+
     @patch("app.providers.tmdb.search", return_value={"results": []})
     @patch("app.providers.tmdb.find")
     @patch("app.providers.tmdb.tv_with_seasons")
