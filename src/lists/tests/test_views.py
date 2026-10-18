@@ -3748,6 +3748,43 @@ class ListsModalViewTests(TestCase):
         mock_get_metadata.assert_not_called()
 
     @patch("app.providers.services.get_media_metadata")
+    def test_album_release_id_considers_duplicate_without_release_group(
+        self,
+        mock_get_metadata,
+    ):
+        """A tracked duplicate that lacks the group id still wins for its release id."""
+        release_id = "123e4567-e89b-12d3-a456-426614174005"
+        with_group = Album.objects.create(
+            title="Running",
+            artist=Artist.objects.create(name="Alan Braxe"),
+            musicbrainz_release_id=release_id,
+            musicbrainz_release_group_id="123e4567-e89b-12d3-a456-426614174006",
+        )
+        tracked = Album.objects.create(
+            title="Running",
+            artist=Artist.objects.create(name="Alan Braxe & Fred Falke"),
+            musicbrainz_release_id=release_id,
+        )
+        AlbumTracker.objects.create(
+            user=self.user,
+            album=tracked,
+            status=Status.COMPLETED.value,
+        )
+        self.assertLess(with_group.id, tracked.id)
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                args=[Sources.MUSICBRAINZ.value, MediaTypes.MUSIC.value, release_id],
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{tracked.id}"')
+        self.assertNotContains(response, f'value="{with_group.id}"')
+        mock_get_metadata.assert_not_called()
+
+    @patch("app.providers.services.get_media_metadata")
     def test_anonymous_album_link_goes_to_album_page(self, mock_get_metadata):
         """A public list's album card reaches the album route, not the provider."""
         artist = Artist.objects.create(name="Alan Braxe")
