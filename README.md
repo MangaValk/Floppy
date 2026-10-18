@@ -712,6 +712,13 @@ uv run --no-sync gunicorn --config python:config.gunicorn config.wsgi:applicatio
 Do not start the service with bare `gunicorn config.wsgi:application`; that
 skips the shipped configuration and its process lifecycle hooks.
 
+Before upgrading a pickle-era installation, follow the
+[Celery JSON transition procedure](docs/security-hardening.md#celery-json-transition)
+while the old code and workers are still available. Stop submissions and beat,
+drain all old queues, then stop the old workers before changing code. Undrained
+jobs can be discarded without a failure status; an ordinary restart does not
+recover them. This also applies to the source installers on Linux and macOS.
+
 When upgrading a source-based install, run `uv sync --locked --no-default-groups`
 after `git pull` and before restarting gunicorn/Celery — the same flag the
 [Dockerfile](Dockerfile) uses, so the runtime dependency set matches the
@@ -742,6 +749,13 @@ review downloaded logs before sharing them.
 See [docs/architecture/log-redaction.md](docs/architecture/log-redaction.md).
 
 ### Upgrading container images
+
+**Before pulling or recreating a pickle-era deployment**, complete the
+[Celery drain procedure](docs/security-hardening.md#celery-json-transition)
+using the old image and configuration. Ordinary pull/recreate commands do not
+drain queued, reserved or scheduled jobs; JSON-only workers discard old pickle
+messages. Retain import inputs and review partial imports before resubmitting.
+Do not use a mixed-version rolling upgrade for this transition.
 
 The migration conflict involving `0147_item_calendar_checked_at` and
 `0148_merge_duplicate_item_buckets` is fixed in current images by the

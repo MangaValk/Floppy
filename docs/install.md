@@ -84,6 +84,13 @@ docker compose -f ~/floppy/docker-compose.yml down        # stop
 docker compose -f ~/floppy/docker-compose.yml logs -f     # logs
 ```
 
+Before upgrading a pickle-era installation, complete the
+[Celery drain procedure](security-hardening.md#celery-json-transition) with the
+old image and configuration. Stop submissions and beat, drain all old workers
+and queues, then stop the workers. Pull/recreate does not drain jobs, and new
+workers discard old pickle messages without necessarily marking them failed.
+Retain import inputs and inspect partial imports before resubmitting.
+
 For upgrades, record the current image digest, stop Floppy, and make a complete
 backup first. Pin the desired image in the generated Compose file, then run
 `pull` and `up -d` with that file. Startup applies migrations automatically.
@@ -126,6 +133,13 @@ not generate a local merge, edit published migrations, or fake their records.
 A database already modified by manual repairs needs individual assessment.
 
 **Source upgrades (both systems)**
+
+For a pickle-era installation, first complete the
+[Celery drain procedure](security-hardening.md#celery-json-transition) while the
+old code, environment and workers are still available. Stop submissions and all
+beat producers, drain every queue, then stop the old workers. Stopping the
+service or updating dependencies first can strand jobs that the new JSON-only
+workers will discard. Do not run old and new workers together.
 
 Stop the service using the command above and back up the installation root
 before changing code. Record the old commit. Then, as the installation owner,
