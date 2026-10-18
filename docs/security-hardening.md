@@ -10,7 +10,12 @@ supports typed dates and bytes), not Django models, querysets or open files.
 
 Before upgrading an existing installation:
 
-1. Stop new submissions and all beat/scheduled producers. Keep the old workers
+1. Record the old image digest or source commit. Make and verify a database
+   backup and retain the matching configuration and original signing/encryption
+   key (`SECRET`, `SECRET_FILE`, or generated `secret_key`). Retain import source
+   files too. Follow the [backup and restore guidance](../README.md#sqlite-data-paths);
+   a CSV export alone cannot restore accounts, credentials and settings.
+2. Stop new submissions and all beat/scheduled producers. Keep the old workers
    running on the trusted broker until outstanding work finishes. Check active,
    reserved and scheduled tasks and **all** configured queues (`celery`,
    `interactive`, `discover`, and any custom queues), including priority queues
@@ -18,9 +23,9 @@ Before upgrading an existing installation:
    beat (`--beat`): stopping only a separate beat service does not stop that
    producer. Drain using old-version workers without beat while submissions and
    the ordinary application containers are stopped.
-2. Stop all old workers and publishers together, then deploy the new version.
+3. Stop all old workers and publishers together, then deploy the new version.
    Do not use a mixed-version rolling deployment for this transition.
-3. If draining is impossible, explicitly cancel/requeue unfinished imports and
+4. If draining is impossible, explicitly cancel/requeue unfinished imports and
    jobs through their normal workflows. Old pickle messages will be rejected
    and discarded by new workers; they will not be converted automatically, and
    old task rows may continue to show pending. Do not flush a shared Redis or

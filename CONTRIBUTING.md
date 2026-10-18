@@ -43,7 +43,7 @@ Every contribution should maintain and elevate our codebase baseline.
 Security is critical. Every change touching authentication, user data, or network integrations must prevent common security risks (including the OWASP Top 10):
 - **Injection Safety**: Use Django ORM parameterized queries. Never construct raw SQL queries with string formatting or pass unsanitized input to shell commands.
 - **Access Control & Tenancy (IDOR Prevention)**: Always scope database queries to the authenticated user (`MediaItem.objects.filter(user=request.user, ...)`). Never assume an identifier in a URL or request body belongs to the active session.
-- **Credential Storage & Secrets**: Never commit private tokens, passwords, or API keys. Use environment variables or the existing Fernet credential helpers (`encrypt_data` / `decrypt_data` in `integrations/imports/helpers.py`). Their key derives from the instance signing key; not all stored credentials are encrypted. Preserve that key with database backups.
+- **Credential Storage & Secrets**: Never commit private tokens, passwords, or API keys. Use environment variables or the existing Fernet credential helpers (`encrypt` / `decrypt` in `integrations/imports/helpers.py`). Their key derives from the instance signing key; not all stored credentials are encrypted. Preserve that key with database backups.
 - **Server-Side Request Forgery (SSRF)**: Validate and restrict URLs when fetching third-party provider metadata or processing webhook destinations.
 - **XSS & CSRF Prevention**: Rely on Django template auto-escaping. Never mark user-supplied data as `|safe`. Include `{% csrf_token %}` on all state-modifying POST/PUT forms.
 
@@ -140,7 +140,17 @@ Match validation depth to risk. Always run targeted tests before opening a PR:
 | **Python View / Business Logic** | `uv run --no-sync ruff check src` + targeted test (`scripts/test.sh <dotted.label>`) |
 | **API Endpoints / Serialization** | Targeted test + Spectacular OpenAPI regeneration + Contract tests |
 | **Database Models / Migrations** | `uv run --no-sync python src/manage.py check_migration_hygiene --strict` + full test suite |
-| **Upstream Sync (`upstream` → `latest`)** | Migration sync gate + `scripts/replay_upgrade_matrix.sh` |
+| **Upstream outcome port** | Classify in [UPSTREAM_PORTS.md](UPSTREAM_PORTS.md), adapt against the current graph, and run the migration sync gate + `scripts/replay_upgrade_matrix.sh` |
+
+`upstream` is an exact upstream mirror. Do not merge or rebase it into `latest`;
+port the accepted behavior through Floppy's existing boundaries. Keep targeted
+regressions and fix confirmed baseline failures. Record a large or risky repair
+that cannot safely be completed instead of silently treating it as green.
+
+The [release checklist](docs/releasing.md) defines the complete offline,
+browser/slow, MCP, dependency, migration, upgrade and built-image gates. A PR
+run and a published artifact are separate evidence. Record what ran at the
+actual source tree; do not reuse an older green run as a new commit's result.
 
 ---
 
@@ -161,7 +171,11 @@ Match validation depth to risk. Always run targeted tests before opening a PR:
 
 **Logging:** Call `logger.info("...", value)` as usual. A process-wide log record factory redacts credentials before any handler writes them, so you do not need a wrapper or a manual sanitizer. Two things still need care: a rule matches the *name* of a value, so give secrets a name that ends in `token`, `secret`, `password`, `api_key` or similar, and never log a raw response body or a full URL — use `safe_url()`. See [docs/architecture/log-redaction.md](docs/architecture/log-redaction.md); `src/app/tests/test_log_safety.py` enforces the rules that are easiest to break.
 
-**Lint cleanup:** If you spot pre-existing ruff/lint violations while working, do not fix them in the same PR. Either open a separate lint-only PR (welcome and easy to review) or leave a note. Fixing unrelated lint mid-feature PR inflates the diff and obscures the actual change.
+**Lint cleanup:** Keep the zero-failure baseline. Confirm whether a discovered
+failure predates the change, then fix it in a separate cleanup commit and,
+where practical, a separate PR. A large or risky repair may need a documented
+exception; state why and track the remaining work. Keep unrelated cleanup
+separate from behavior changes so each patch remains reviewable.
 
 ---
 

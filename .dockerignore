@@ -1,4 +1,5 @@
 __pycache__
+**/.DS_Store
 *.pyc
 .env
 .coverage*
@@ -44,6 +45,7 @@ db/
 src/logs/
 .v2c/
 .video_agent/
+/floppy-film/
 reports/
 wiki/
 node_modules/
@@ -52,3 +54,6 @@ node_modules/
 
 # Local audit reports are review notes, not release inputs or cache artifacts.
 /*_AUDIT.md
+/*_FOLLOWUP.md
+/*_REVIEW.md
+/*_CLOSEOUT.md

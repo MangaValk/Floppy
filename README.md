@@ -300,6 +300,19 @@ damaged `db.sqlite3`:
   configuration. Restore the matching application version first, verify the
   library and integrations, then upgrade separately.
 
+Raw SQLite snapshots default to 02:37 in `TZ`, with seven completed files kept
+(`DB_SNAPSHOT_HOUR`, `DB_SNAPSHOT_MINUTE`, `DB_SNAPSHOT_RETENTION_COUNT`). They
+need beat, Redis, a live worker, writable storage and disk headroom. There is
+no immediate first-install or guaranteed pre-upgrade snapshot. Check actual
+task completion and file freshness; web/container health does not prove a
+backup exists. Keep encrypted off-host copies and rehearse restoration with
+the matching application, original key and configuration.
+
+CSV exports are partial, unencrypted exports. An interrupted export can leave
+an incomplete final file, and exports do not have built-in retention. Verify
+completion and importability before relying on one. They are not substitutes
+for a verified database snapshot or PostgreSQL dump.
+
 This example stores the SQLite file and the generated key in one mounted
 directory:
 
@@ -425,6 +438,15 @@ networks:
 ```
 
 > Already running Postgres with `DB_NAME=yamtrack`? Leave those values alone. Renaming the database, role, or password against an existing volume breaks the deployment.
+
+PostgreSQL backups are operator-managed; Floppy's raw SQLite snapshot task does
+not back up PostgreSQL. Use a consistent `pg_dump`, check its exit status before
+retaining the archive, and test restoration into a separate empty database with
+`pg_restore --exit-on-error --no-owner` for custom-format dumps. A failed restore
+can leave partial objects: recreate that disposable destination before retrying.
+Preserve required roles/extensions, the original signing key and configuration;
+encrypt off-host copies. An ordinary live PostgreSQL volume copy is not a
+consistent database backup, and an older image cannot undo migrated data.
 
 ### Docker Run
 
@@ -767,8 +789,10 @@ docker compose pull floppy
 docker compose up -d --force-recreate floppy
 ```
 
-Because `latest` is mutable, pin a versioned image tag when reproducible
-upgrades matter.
+Channel and version tags can move. For a fixed deployment, use a verified image digest;
+see [verifying a published image](#verifying-a-published-image-actually-has-a-fix).
+Maintainers should use the [release checklist](docs/releasing.md), which also
+lists the upgrade notices to include with the next hardened release.
 
 ### Persistence checklist
 
@@ -1129,3 +1153,9 @@ AGPL-3.0.
 ## Origins
 
 Floppy began as a fork of [FuzzyGrim/Yamtrack](https://github.com/FuzzyGrim/Yamtrack) and still shares its foundation and data model — Yamtrack CSV exports import directly, and this repository will keep showing the fork link. Since then it has grown into a distinct project with its own direction: a Trakt-replacement daily driver for people who want something more opinionated and more feature-dense. Thanks to FuzzyGrim and Yamtrack's contributors for the groundwork.
+
+Floppy uses AI coding agents for implementation, tests, and documentation under
+maintainer direction. This describes Floppy's development, not all inherited
+Yamtrack history. PRs should disclose the model/workflow used and record human
+review only when it actually occurred. Agent reviews and passing checks are
+not independent security certification.
