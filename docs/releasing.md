@@ -52,7 +52,7 @@ Carry these points into the actual release notes before publication:
 - SQLite snapshots and failure reporting are repaired on Linux/macOS. Persist
   the database, backup path and original signing key, verify restores and keep
   encrypted off-host copies. CSV exports are incomplete recovery artifacts;
-  PostgreSQL backup remains operator-managed. See [backup guidance](../README.md#sqlite-data-paths).
+  PostgreSQL backup remains operator-managed. See [backup guidance](deployment.md#sqlite-data-paths).
 - The historical `v26.10.1` migration graph conflicts on fresh installs and
   ordinary upgrades. Use a revision containing
   `users/0141_merge_search_all_discover_seerr.py`; retain data/key, never fake
@@ -85,7 +85,7 @@ Carry these points into the actual release notes before publication:
    Python audit alone does not cover OS packages or vendored browser code.
 7. Pull by digest and verify baked identity, health/login/static responses,
    migrations, representative persistence and startup on both platforms.
-   Follow [image verification](../README.md#verifying-a-published-image-actually-has-a-fix).
+   Follow [image verification](deployment.md#verifying-a-published-image-actually-has-a-fix).
 8. Publish accurate release notes and upgrade warnings after those checks.
    Record digest/run evidence with the release. Digest pinning fixes bytes;
    unsigned BuildKit metadata does not establish a trusted signer identity.

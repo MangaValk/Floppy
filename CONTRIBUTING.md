@@ -18,6 +18,45 @@ Our bar is practical: **make changes clean, minimal, safe, and well-understood.*
 | **Faster Tests** | Skip the 141s migration replay while iterating (not for migration changes) | `FLOPPY_TEST_FAST_DB=1 SECRET=test-only scripts/test.sh <dotted.path>` |
 | **Lint / Style** | Ruff (line length 88, migrations excluded) | `uv run --no-sync ruff check src` |
 
+## Local development
+
+Running Floppy from source for development:
+
+```bash
+git clone https://github.com/dannyvfilms/Floppy.git
+cd Floppy
+docker run -d --name redis -p 127.0.0.1:6379:6379 --restart unless-stopped redis:8-alpine
+uv sync --locked
+```
+
+Django/manage.py commands require `SECRET`. Create a `.env` with at least `SECRET`, `DEBUG=True`, and whichever metadata API keys you need (names are listed in [Environment variables](docs/deployment.md#environment-variables)), then:
+
+```bash
+uv run --no-sync python src/manage.py migrate
+uv run --no-sync python src/manage.py createsuperuser
+uv run --no-sync python src/manage.py runserver
+```
+
+Celery and Tailwind run in separate terminals:
+
+```bash
+PYTHONPATH=src uv run --no-sync celery -A config worker --queues interactive --hostname celery-interactive@%h --loglevel DEBUG
+PYTHONPATH=src uv run --no-sync celery -A config worker --queues celery --beat --scheduler django --hostname celery@%h --loglevel DEBUG
+```
+
+```bash
+npx @tailwindcss/cli -i ./src/static/css/input.css -o ./src/static/css/main.css --watch
+```
+
+Visit `http://localhost:8000`. For a shared demo login, set `DEMO_ACCOUNT_ENABLED=True` before the first start; provisioning is otherwise off by default.
+
+`pyproject.toml` and `uv.lock` are the dependency source of truth for the app
+and bundled MCP workspace. Use uv 0.12.3 and keep the lockfile in sync; the
+removed requirements files are not maintained in parallel. The MCP package's
+`setuptools>=68` isolated build-backend range is the only build-time resolver
+exception to the runtime lock and is intentionally not pinned as an application
+dependency.
+
 ---
 
 ## 1. Core Engineering & Quality Standards

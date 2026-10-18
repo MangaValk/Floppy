@@ -13,7 +13,7 @@ Before upgrading an existing installation:
 1. Record the old image digest or source commit. Make and verify a database
    backup and retain the matching configuration and original signing/encryption
    key (`SECRET`, `SECRET_FILE`, or generated `secret_key`). Retain import source
-   files too. Follow the [backup and restore guidance](../README.md#sqlite-data-paths);
+   files too. Follow the [backup and restore guidance](deployment.md#sqlite-data-paths);
    a CSV export alone cannot restore accounts, credentials and settings.
 2. Stop new submissions and all beat/scheduled producers. Keep the old workers
    running on the trusted broker until outstanding work finishes. Check active,
