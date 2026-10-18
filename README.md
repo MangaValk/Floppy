@@ -165,22 +165,37 @@ can read lists and report owned media ([FlexGet guide](docs/integrations/flexget
 
 ## Community and support
 
-- **Questions and ideas:** the [Discord](https://discord.gg/uFgha7Kb6n) is the
-  place to share setups and help each other out.
-- **Bugs and feature requests:** [open an issue](https://github.com/dannyvfilms/Floppy/issues).
-- **Contributing:** code, docs, and polish are welcome — see the
-  [contributing guide](CONTRIBUTING.md).
-- **Sponsoring:** Floppy is free, with no paid features or premium edition. If
-  it's earned a place in your routine,
-  [sponsoring on GitHub](https://github.com/sponsors/dannyvfilms?metadata_source=readme)
-  helps it keep improving for everyone.
-- **Starring** the repository helps more people find it.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <ul>
+        <li><b>Questions and ideas:</b> <a href="https://discord.gg/uFgha7Kb6n">Discord</a> is the place to share setups and help each other out.</li>
+        <li><b>Bugs and feature requests:</b> <a href="https://github.com/dannyvfilms/Floppy/issues">open an issue</a>.</li>
+        <li><b>Contributing:</b> code, docs, and polish are welcome — see the <a href="CONTRIBUTING.md">contributing guide</a>.</li>
+        <li><b>Sponsoring:</b> <a href="https://github.com/sponsors/dannyvfilms">support Floppy on GitHub Sponsors</a>.</li>
+        <li><b>Starring</b> the repository helps more people find it.</li>
+        <li><i>The card refreshes daily from GitHub Sponsors public data.</i></li>
+      </ul>
+    </td>
+    <td width="50%" align="center" valign="middle">
+      <a href="https://github.com/sponsors/dannyvfilms">
+        <img src="docs/brand/sponsors-goal.svg" alt="Live GitHub Sponsors goal progress for Floppy" width="100%" />
+      </a>
+    </td>
+  </tr>
+</table>
 
-<a href="https://github.com/dannyvfilms/Floppy/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=dannyvfilms/Floppy" alt="Contributors" />
-</a>
+<hr>
 
-Thank you to everyone who has contributed to Floppy and to Yamtrack before it.
+<p align="center">
+  Thank you to everyone who has contributed to Floppy and to Yamtrack before it.<br><br>
+</p>
+
+<p align="center">
+  <a href="https://github.com/dannyvfilms/Floppy/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=dannyvfilms/Floppy&amp;columns=16" alt="Contributors" width="60%" />
+  </a>
+</p>
 
 ## Configuration and deployment
 
