@@ -3,6 +3,8 @@
 One command installs Floppy, starts it, and hands you a URL. It asks a few
 plain questions and never asks for a password or an API key.
 
+**macOS and Linux:** open Terminal and paste:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.sh -o /tmp/floppy-install.sh && bash /tmp/floppy-install.sh
 ```
@@ -10,6 +12,15 @@ curl -fsSL https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/i
 The download and the run are separate steps on purpose: the installer is
 interactive, and piping it straight into a shell would leave it without a
 terminal to ask questions on.
+
+**Windows 10 and 11:** open PowerShell (not Command Prompt) and paste:
+
+```powershell
+irm https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.ps1 | iex
+```
+
+The Bash command above does not work in PowerShell. See
+[Windows](#windows) for what the PowerShell installer does differently.
 
 ## What it asks
 
@@ -32,10 +43,38 @@ account the owner. It never asks for the password.
 | Ubuntu / Debian | Installs Docker for you, with permission | systemd services |
 | Other Linux with Docker | Yes | Use Docker |
 | macOS | Needs Docker Desktop running | launchd services, via Homebrew |
-| WSL2 | Yes | Use Docker |
+| Windows 10 / 11 | Docker Desktop (offers to install it with winget) | Use Docker |
+| Inside WSL2 | Yes, with the macOS/Linux command | Use Docker |
 
 An unsupported host is told exactly which prerequisite is missing rather than
 being half-installed.
+
+## Windows
+
+`scripts/install.ps1` runs in Windows PowerShell 5.1 or PowerShell 7 and uses
+Docker Desktop. If Docker Desktop is missing it offers to install it with
+`winget` (Windows asks for permission) and stops so you can finish Docker
+Desktop's own first-run setup; paste the command again afterwards. If Docker
+Desktop is installed but stopped, it starts it.
+
+It asks the same questions as the macOS/Linux installer (network access, port,
+time zone), writes `%USERPROFILE%\floppy\docker-compose.yml` and `floppy.env`,
+starts Floppy, waits for it to answer, and then walks through owner setup and
+closing registration. Rerunning it keeps the existing configuration and only
+starts Floppy again.
+
+Two differences from the macOS/Linux Docker path:
+
+- The database, backups and Redis data live in Docker volumes
+  (`floppy_floppy_db`, `floppy_floppy_backups`, `floppy_redis_data`), not
+  folders on `C:`. SQLite's file locking is unreliable on Windows folder mounts.
+  With Floppy stopped, this PowerShell command copies the database volume to
+  `floppy-db.tgz` in the current folder:
+  `docker run --rm -v floppy_floppy_db:/data -v "${PWD}:/out" alpine tar czf /out/floppy-db.tgz -C /data .`
+- There is no repository checkout, so nothing needs git.
+
+Floppy runs while Docker Desktop runs. Turn on **Start Docker Desktop when you
+sign in** in Docker Desktop's settings so Floppy is back after a restart.
 
 ## What it creates
 
@@ -174,8 +213,8 @@ Floppy works without them.
 
 Automatic upgrades, moving an installation between Docker and source,
 PostgreSQL setup, and public HTTPS are all deliberately out of scope. The
-existing Compose and Unraid instructions in [README.md](../README.md) are
-unchanged and remain the right path for those.
+[configuration and deployment reference](deployment.md) covers Compose by
+hand, Unraid, PostgreSQL, and reverse proxies.
 
 ## If it does not finish
 

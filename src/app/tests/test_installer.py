@@ -292,6 +292,29 @@ class InstallerShellSyntaxTests(SimpleTestCase):
         self.assertTrue(ROOT.joinpath("scripts", "install.sh").stat().st_mode & 0o111)
 
 
+class WindowsInstallerTests(SimpleTestCase):
+    """scripts/install.ps1 runs under Windows PowerShell 5.1, which CI lacks.
+
+    The default Windows shell rejects PowerShell 7 syntax at parse time, before
+    a single line runs - the failure a first-time Windows user hit with the
+    Bash one-liner. These checks keep the script inside 5.1's grammar and on
+    the same image as the Bash installer.
+    """
+
+    text = (ROOT / "scripts" / "install.ps1").read_text(encoding="utf-8")
+
+    def test_no_powershell_7_only_syntax(self):
+        code = "\n".join(line.split("#", 1)[0] for line in self.text.splitlines())
+        for token in ("&&", "||", "??", "$IsWindows", "-AsHashtable"):
+            with self.subTest(token=token):
+                self.assertNotIn(token, code)
+
+    def test_image_matches_the_bash_installer(self):
+        common = (INSTALL_DIR / "common.sh").read_text(encoding="utf-8")
+        image = re.search(r"FLOPPY_IMAGE=\$\{FLOPPY_IMAGE:-([^}]+)\}", common).group(1)
+        self.assertIn(f"else {{ '{image}' }}", self.text)
+
+
 class RenderTemplateTests(SimpleTestCase):
     def test_placeholders_are_replaced_including_paths_with_spaces(self):
         with tempfile.TemporaryDirectory() as temp_dir:
