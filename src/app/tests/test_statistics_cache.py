@@ -1,3 +1,4 @@
+import json
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
@@ -382,6 +383,26 @@ class StatisticsHourBucketTests(TestCase):
         self.assertEqual(
             day_stats["totals"]["plays_by_type"][MediaTypes.MOVIE.value],
             2,
+        )
+        # Day payloads cross the cache boundary before the range aggregator
+        # consumes them. IDs/hours and datetimes must survive serialization.
+        serialized_day = json.loads(json.dumps(day_stats))
+        self.assertEqual(serialized_day["day"], midnight.date().isoformat())
+        self.assertEqual(serialized_day["activity"], {"count": 2})
+        self.assertEqual(
+            set(serialized_day["items"]["movie"]),
+            {str(item_id) for item_id in Item.objects.values_list("id", flat=True)},
+        )
+        self.assertEqual(
+            {
+                entry["activity_dt"]
+                for entry in serialized_day["items"]["movie"].values()
+            },
+            {midnight.isoformat(), (midnight + timedelta(minutes=30)).isoformat()},
+        )
+        self.assertEqual(
+            _aggregate_minutes_per_media_type_from_days(self.user, [midnight.date()]),
+            {"movie": 210},
         )
 
 
