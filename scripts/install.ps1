@@ -1,8 +1,7 @@
 # Floppy guided installer for Windows.
 #
-#   irm https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.ps1 | iex
-#
-# Paste that into PowerShell (Windows PowerShell 5.1 or PowerShell 7). It runs
+# Start with the universal command in docs/install.md. This is its Windows
+# branch (Windows PowerShell 5.1 or PowerShell 7). It runs
 # Floppy in Docker Desktop: the same image and Compose shape as the Linux/macOS
 # installer's Docker path (scripts/install/docker.sh and finish.sh), with two
 # deliberate differences:

@@ -103,8 +103,8 @@ you add is visible to everyone else trying it.
 ## Install
 
 Floppy runs on a computer or server you leave on. You open it from any browser
-on your network. One guided installer covers the common setups. You paste one
-line, and the line depends on your system.
+on your network. One guided installer covers the common setups. Paste the
+same line on Windows, macOS, or Linux; it selects the right installer.
 
 | Your system | What the installer does |
 | --- | --- |
@@ -117,22 +117,11 @@ The installer asks a few plain questions and asks before it installs anything.
 It never asks for a password or API key. It finishes with Floppy open in your
 browser.
 
-### Windows
+Open **PowerShell** on Windows or **Terminal** on macOS/Linux. Paste this entire
+line and press Enter:
 
-Open **PowerShell**: press the Windows key, type `PowerShell`, and press Enter.
-Paste this line and press Enter:
-
-```powershell
-irm https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.ps1 | iex
-```
-
-### macOS and Linux
-
-Open **Terminal**. On a Mac it is in Applications → Utilities. Paste this line
-and press Enter:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.sh -o /tmp/floppy-install.sh && bash /tmp/floppy-install.sh
+```text
+echo "\" | Out-Null; irm 'https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.ps1' -ErrorAction Stop | iex; #" >/dev/null; bash -c 'p=$(mktemp) || exit; cleanup() { rm -f "$p"; }; trap cleanup EXIT; curl -fsSL https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.sh -o "$p" && bash "$p"'
 ```
 
 ### Phones and tablets

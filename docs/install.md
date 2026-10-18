@@ -3,24 +3,22 @@
 One command installs Floppy, starts it, and hands you a URL. It asks a few
 plain questions and never asks for a password or an API key.
 
-**macOS and Linux:** open Terminal and paste:
+Open **PowerShell** on Windows 10/11 or **Terminal** on macOS/Linux and paste
+the same complete line:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.sh -o /tmp/floppy-install.sh && bash /tmp/floppy-install.sh
+```text
+echo "\" | Out-Null; irm 'https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.ps1' -ErrorAction Stop | iex; #" >/dev/null; bash -c 'p=$(mktemp) || exit; cleanup() { rm -f "$p"; }; trap cleanup EXIT; curl -fsSL https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.sh -o "$p" && bash "$p"'
 ```
 
-The download and the run are separate steps on purpose: the installer is
-interactive, and piping it straight into a shell would leave it without a
-terminal to ask questions on.
+No Python, Node, or preinstalled Docker is needed to launch it. On Windows,
+use PowerShell rather than Command Prompt. On macOS/Linux, use the normal
+Terminal shell (Bash, zsh, or sh) with Bash and curl available.
 
-**Windows 10 and 11:** open PowerShell (not Command Prompt) and paste:
-
-```powershell
-irm https://raw.githubusercontent.com/dannyvfilms/Floppy/latest/scripts/install.ps1 | iex
-```
-
-The Bash command above does not work in PowerShell. See
-[Windows](#windows) for what the PowerShell installer does differently.
+The line selects the existing platform installer without running the other
+platform's commands. Unix downloads use a private temporary file, stop on
+download errors, and keep terminal input available for the questions. The file
+is removed when the installer exits. See [Windows](#windows) for its Docker
+Desktop setup and [Where it works](#where-it-works) for supported hosts.
 
 ## What it asks
 
@@ -44,7 +42,7 @@ account the owner. It never asks for the password.
 | Other Linux with Docker | Yes | Use Docker |
 | macOS | Needs Docker Desktop running | launchd services, via Homebrew |
 | Windows 10 / 11 | Docker Desktop (offers to install it with winget) | Use Docker |
-| Inside WSL2 | Yes, with the macOS/Linux command | Use Docker |
+| Inside WSL2 | Yes, with the same command | Use Docker |
 
 An unsupported host is told exactly which prerequisite is missing rather than
 being half-installed.
