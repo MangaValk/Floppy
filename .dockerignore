@@ -48,3 +48,6 @@ wiki/
 node_modules/
 .pytest_cache/
 .ruff_cache/
+
+# Local audit reports are review notes, not release inputs or cache artifacts.
+/*_AUDIT.md
