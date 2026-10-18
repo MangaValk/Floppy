@@ -1917,7 +1917,11 @@ def artist_save(request):
         )
 
     next_url = request.GET.get("next", "")
-    if next_url:
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
         return redirect(next_url)
     return redirect(_music_artist_detail_url(artist))
 
@@ -1943,6 +1947,10 @@ def artist_delete(request):
         )
 
     next_url = request.GET.get("next", "")
-    if next_url:
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
         return redirect(next_url)
     return redirect(_music_artist_detail_url(artist))

@@ -79,6 +79,18 @@ class PublishedComposeNetworkTests(SimpleTestCase):
                     f"{label} ships a fixed Django signing key",
                 )
 
+    def test_datastores_are_not_published_or_on_external_networks(self):
+        for label, stack in _published_stacks():
+            for name in ("redis", "db"):
+                service = stack["services"].get(name)
+                if service is None:
+                    continue
+                with self.subTest(stack=label, service=name):
+                    self.assertFalse(service.get("ports"))
+                    self.assertNotEqual(service.get("network_mode"), "host")
+                    for network in _service_networks(service):
+                        self.assertFalse((stack["networks"][network] or {}).get("external"))
+
     def test_the_readme_stacks_are_found(self):
         """Guard the guard: a regex change must not silently check nothing."""
         labels = [label for label, _stack in _published_stacks()]

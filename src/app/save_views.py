@@ -1434,7 +1434,7 @@ def episode_bulk_save(request):
             )
             return response
         messages.error(request, gettext("Start and end dates are required."))
-        return redirect(request.POST.get("return_url") or "/")
+        return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))
 
     try:
         first_season_number = int(request.POST["first_season_number"])
@@ -1454,7 +1454,7 @@ def episode_bulk_save(request):
             )
             return response
         messages.error(request, gettext("Invalid episode range."))
-        return redirect(request.POST.get("return_url") or "/")
+        return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))
 
     episode_count = max(int(request.POST.get("episode_count") or 0), 0)
     write_mode = request.POST.get("write_mode", "add")
@@ -1506,4 +1506,4 @@ def episode_bulk_save(request):
         request,
         gettext("Adding plays to %(value_1)s episodes.") % {"value_1": episode_count},
     )
-    return redirect(request.POST.get("return_url") or "/")
+    return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))

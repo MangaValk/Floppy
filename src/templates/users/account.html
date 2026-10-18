@@ -239,6 +239,13 @@
             <form method="post" class="inline">
               {% csrf_token %}
               <input type="hidden" name="action" value="start_authenticator_setup">
+              <label class="block text-sm" for="start_authenticator_setup_password">{% translate "Current Password" %}</label>
+              <input id="start_authenticator_setup_password"
+                     name="current_password"
+                     type="password"
+                     autocomplete="current-password"
+                     required
+                     class="w-full p-2 mb-2 bg-[var(--color-surface-strong)] rounded-md">
               <button type="submit"
                       class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm cursor-pointer">
                 {% translate "Add New Authenticator App" %}
@@ -247,6 +254,13 @@
             <form method="post" class="inline">
               {% csrf_token %}
               <input type="hidden" name="action" value="disable_authenticator">
+              <label class="block text-sm" for="disable_authenticator_password">{% translate "Current Password" %}</label>
+              <input id="disable_authenticator_password"
+                     name="current_password"
+                     type="password"
+                     autocomplete="current-password"
+                     required
+                     class="w-full p-2 mb-2 bg-[var(--color-surface-strong)] rounded-md">
               <button type="submit"
                       class="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800 transition-colors text-sm cursor-pointer">
                 {% translate "Deactivate Authenticator" %}
@@ -260,6 +274,13 @@
         <form method="post" class="space-y-3">
           {% csrf_token %}
           <input type="hidden" name="action" value="enable_authenticator">
+          <label class="block text-sm" for="enable_authenticator_password">{% translate "Current Password" %}</label>
+          <input id="enable_authenticator_password"
+                 name="current_password"
+                 type="password"
+                 autocomplete="current-password"
+                 required
+                 class="w-full p-2 mb-2 bg-[var(--color-surface-strong)] rounded-md">
           <div>
             <label class="block text-sm font-medium mb-2 text-[var(--color-text-secondary)]"
                    for="authenticator_code">{% translate "Authenticator Code" %}</label>

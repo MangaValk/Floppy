@@ -123,13 +123,10 @@ def update_metadata_provider_preference(request, source, media_type, media_id):
         )
         messages.success(request, gettext("Metadata provider updated."))
 
-    if return_url and (
-        return_url.startswith("/")
-        or url_has_allowed_host_and_scheme(
-            return_url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        )
+    if return_url and url_has_allowed_host_and_scheme(
+        return_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
     ):
         return redirect(return_url)
 
@@ -171,13 +168,10 @@ def update_metadata_language_preference(request, source, media_type, media_id):
             reset_metadata_language_repair(request.user.pk)
         messages.success(request, gettext("Metadata language updated."))
 
-    if return_url and (
-        return_url.startswith("/")
-        or url_has_allowed_host_and_scheme(
-            return_url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        )
+    if return_url and url_has_allowed_host_and_scheme(
+        return_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
     ):
         return redirect(return_url)
 
@@ -455,13 +449,10 @@ def remap_metadata_provider(request, source, media_type, media_id):
         )
         messages.success(request, gettext("Remapped to the selected match."))
 
-    if return_url and (
-        return_url.startswith("/")
-        or url_has_allowed_host_and_scheme(
-            return_url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        )
+    if return_url and url_has_allowed_host_and_scheme(
+        return_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
     ):
         return redirect(return_url)
 
@@ -546,13 +537,10 @@ def set_hardcover_edition(request, item_id):
         )
         messages.success(request, gettext("Edition updated."))
 
-    if return_url and (
-        return_url.startswith("/")
-        or url_has_allowed_host_and_scheme(
-            return_url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        )
+    if return_url and url_has_allowed_host_and_scheme(
+        return_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
     ):
         return redirect(return_url)
 
@@ -591,13 +579,10 @@ def update_item_image(request, item_id):
     else:
         messages.success(request, gettext("Image URL already matches this item."))
 
-    if return_url and (
-        return_url.startswith("/")
-        or url_has_allowed_host_and_scheme(
-            return_url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        )
+    if return_url and url_has_allowed_host_and_scheme(
+        return_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
     ):
         return redirect(return_url)
 
@@ -646,13 +631,10 @@ def update_manual_item_metadata(request, item_id):
         logger.error(form.errors.as_json())
         helpers.form_error_messages(form, request)
 
-    if return_url and (
-        return_url.startswith("/")
-        or url_has_allowed_host_and_scheme(
-            return_url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        )
+    if return_url and url_has_allowed_host_and_scheme(
+        return_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
     ):
         return redirect(return_url)
 

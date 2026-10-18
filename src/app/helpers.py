@@ -135,6 +135,17 @@ def get_tmdb_backdrop_image(media_type, media_id):
     return backdrop if has_real_image(backdrop) else None
 
 
+def safe_return_url(request, destination, fallback="/"):
+    """Keep user-supplied navigation on this host and preserve HTTPS."""
+    if url_has_allowed_host_and_scheme(
+        destination,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return destination
+    return fallback
+
+
 def redirect_back(request):
     """Redirect to the previous page, removing the 'page' parameter if present."""
     next_url = normalize_navigation_url(

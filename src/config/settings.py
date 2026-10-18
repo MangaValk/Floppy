@@ -236,6 +236,10 @@ USE_X_FORWARDED = config("USE_X_FORWARDED", default=False, cast=bool)
 # Keep same-origin referrers for Django's HTTPS CSRF fallback when Origin is absent.
 SECURE_REFERRER_POLICY = "same-origin"
 
+# Opt in for HTTPS deployments; HTTP LAN installations must remain usable.
+SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=False, cast=bool)
+CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=False, cast=bool)
+
 SECURE_PROXY_SSL_HEADER = (
     ("HTTP_X_FORWARDED_PROTO", "https")
     if (config("USE_X_FORWARDED_PROTO", default=USE_X_FORWARDED, cast=bool))
@@ -1684,13 +1688,11 @@ CELERY_RESULT_EXPIRES = 60 * 60 * 24 * 7  # 7 days
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#task-serializer
-CELERY_TASK_SERIALIZER = "pickle"
-# https://docs.celeryq.dev/en/stable/userguide/configuration.html#std-setting-accept_content
-CELERY_ACCEPT_CONTENT = [
-    "application/json",
-    "application/x-python-serialize",
-    "application/x-pickle",
-]
+# Old pickle queues must be drained before upgrading; see docs/security-hardening.md.
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_RESULT_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_ROUTES = {
     "app.tasks.populate_*": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "app.tasks.reconcile_*": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},

@@ -348,6 +348,24 @@ def account(request):
     if request.method == "POST":
         action = request.POST.get("action", "")
 
+        if action in {
+            "enable_authenticator",
+            "start_authenticator_setup",
+            "disable_authenticator",
+            "regenerate_recovery_codes",
+        }:
+            limited = ratelimit.consume_or_429(request, action="reauthenticate")
+            if limited is not None:
+                return limited
+            if action != "regenerate_recovery_codes":
+                confirmation = RegenerateRecoveryCodesForm(request.POST, user=request.user)
+                if not confirmation.is_valid():
+                    messages.error(
+                        request,
+                        "Enter your current password to change authenticator recovery.",
+                    )
+                    return redirect("account")
+
         if "username" in request.POST:
             user_form = UserUpdateForm(request.POST, instance=request.user)
 
@@ -979,7 +997,10 @@ def toggle_obfuscate_episodes(request):
         user.obfuscate_episodes = not user.obfuscate_episodes
         user.save(update_fields=["obfuscate_episodes"])
     return redirect(
-        request.POST.get("next") or request.META.get("HTTP_REFERER") or "home"
+        app_helpers.safe_return_url(
+            request, request.POST.get("next") or request.META.get("HTTP_REFERER"),
+            reverse("home"),
+        )
     )
 
 
@@ -3250,7 +3271,9 @@ def regenerate_token(request):
 def update_plex_usernames(request):
     """Update the Plex usernames for the user."""
     usernames = request.POST.get("plex_usernames", "")
-    redirect_target = request.POST.get("next") or "integrations"
+    redirect_target = app_helpers.safe_return_url(
+        request, request.POST.get("next"), reverse("integrations"),
+    )
 
     username_list = [u.strip() for u in usernames.split(",") if u.strip()]
 
@@ -3455,7 +3478,9 @@ def delete_plex_webhook_share(request):
 @require_POST
 def update_plex_webhook_libraries(request):
     """Update selected Plex libraries allowed for webhook events."""
-    redirect_target = request.POST.get("next") or "integrations"
+    redirect_target = app_helpers.safe_return_url(
+        request, request.POST.get("next"), reverse("integrations"),
+    )
     selected_libraries = request.POST.getlist("plex_webhook_libraries")
 
     deduplicated_libraries: list[str] = []
@@ -3537,7 +3562,11 @@ def update_jellyseerr_settings(request):
                 + ". Valid: "
                 + ", ".join(sorted(valid_seerr_statuses)),
             )
-            return redirect(request.META.get("HTTP_REFERER", "/settings/integrations"))
+            return redirect(
+                app_helpers.safe_return_url(
+                    request, request.META.get("HTTP_REFERER"), reverse("import_data"),
+                ),
+            )
         trigger_statuses = ",".join(tokens)
     else:
         # Blank means "default behaviour" (processor skips UNKNOWN)
@@ -3621,7 +3650,11 @@ def update_jellyseerr_settings(request):
     )
 
     messages.success(request, "Seerr settings saved.")
-    return redirect(request.META.get("HTTP_REFERER", "/settings/integrations"))
+    return redirect(
+        app_helpers.safe_return_url(
+            request, request.META.get("HTTP_REFERER"), reverse("import_data"),
+        ),
+    )
 
 
 @require_POST
