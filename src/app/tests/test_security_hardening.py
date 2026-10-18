@@ -121,6 +121,24 @@ class ReturnUrlViewTests(TestCase):
                     else:
                         self.assertEqual(response.url, destination)
 
+    def test_podcast_show_redirects_stay_on_this_host(self):
+        from app.models import PodcastShow
+
+        show = PodcastShow.objects.create(podcast_uuid="next-show", title="Show")
+        for destination in ["//outside.example/", "/?sort=title"]:
+            with self.subTest(destination=destination):
+                response = self.client.post(
+                    reverse("podcast_show_delete"),
+                    {"show_id": show.pk},
+                    QUERY_STRING="next=" + destination,
+                    HTTP_HX_REQUEST="true",
+                )
+                target = response["HX-Redirect"]
+                if destination.startswith("//"):
+                    self.assertNotIn("outside.example", target)
+                else:
+                    self.assertEqual(target, destination)
+
     def test_plex_preferences_reject_external_next(self):
         for route in ["update_plex_usernames", "update_plex_webhook_libraries"]:
             response = self.client.post(reverse(route), {"next": "//outside.example/"})

@@ -469,7 +469,7 @@ def podcast_show_save(request):
             % {"value_1": show.title, "value_2": form.errors},
         )
 
-    next_url = request.GET.get("next", "")
+    next_url = helpers.safe_return_url(request, request.GET.get("next", ""), "")
     if next_url:
         redirect_response = redirect(next_url)
     else:
@@ -499,7 +499,7 @@ def podcast_show_delete(request):
             gettext("Removed %(value_1)s from your library") % {"value_1": show.title},
         )
 
-    next_url = request.GET.get("next", "")
+    next_url = helpers.safe_return_url(request, request.GET.get("next", ""), "")
     if next_url:
         redirect_response = redirect(next_url)
     else:

@@ -1555,7 +1555,9 @@ def sync_metadata(request, source, media_type, media_id, season_number=None):
             return HttpResponse(
                 status=204,
                 headers={
-                    "HX-Redirect": request.POST["next"],
+                    "HX-Redirect": helpers.safe_return_url(
+                        request, request.POST.get("next", "/")
+                    ),
                 },
             )
         return helpers.redirect_back(request)
@@ -1577,7 +1579,11 @@ def sync_metadata(request, source, media_type, media_id, season_number=None):
         return HttpResponse(
             msg,
             status=400,
-            headers={"HX-Redirect": request.POST.get("next", "/")},
+            headers={
+                "HX-Redirect": helpers.safe_return_url(
+                    request, request.POST.get("next", "/")
+                )
+            },
         )
 
     if media_type == MediaTypes.PODCAST.value:
