@@ -6,6 +6,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -90,6 +91,31 @@ class SnapshotReliabilityTests(SimpleTestCase):
         report.assert_not_called()
         self.assertEqual(list(self.destination.iterdir()), [])
         self.assertFalse(Path(f"{self.database}.integrity.verified.json").exists())
+
+    def test_damaged_index_copied_verbatim_is_reported_as_corruption(self):
+        # backup() copies a damaged b-tree page without raising; only the
+        # quick_check on the copy notices, and that must still be reported.
+        damaged = self.root / "damaged.sqlite3"
+        with closing(sqlite3.connect(damaged)) as connection:
+            connection.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+            connection.execute("CREATE INDEX ix ON t (v)")
+            connection.executemany(
+                "INSERT INTO t (v) VALUES (?)",
+                [(f"value-{i:06d}",) for i in range(5000)],
+            )
+            connection.commit()
+        data = bytearray(damaged.read_bytes())
+        offset = len(data) - 4096 + 200
+        data[offset : offset + 400] = b"\x55" * 400
+        damaged.write_bytes(bytes(data))
+
+        with mock.patch.object(sqlite_integrity, "_report_corruption") as report:
+            result = sqlite_integrity.create_live_database_snapshot(
+                str(damaged), self.destination, max_keep=3, timeout_seconds=1
+            )
+
+        self.assertIsNone(result)
+        report.assert_called_once()
 
     def test_failed_publication_or_directory_sync_does_not_prune_previous(self):
         previous = self.snapshot()

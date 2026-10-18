@@ -919,6 +919,10 @@ def _report_corruption(db_path: str, reason: str) -> None:
         _log(f"[entrypoint] Could not publish the damaged-file report: {error}")
 
 
+class _SnapshotVerificationError(sqlite3.DatabaseError):
+    """The copy failed quick_check: the source's pages were copied verbatim."""
+
+
 def _backup_to_staging(source, directory_descriptor, staging_name, *, timeout=5.0):
     """Verify a copy before handing it to the descriptor-based publisher.
 
@@ -944,7 +948,7 @@ def _backup_to_staging(source, directory_descriptor, staging_name, *, timeout=5.
             result = destination.execute("PRAGMA quick_check").fetchall()
             if result != [("ok",)]:
                 message = "backup quick_check did not return 'ok'"
-                raise sqlite3.DatabaseError(message)
+                raise _SnapshotVerificationError(message)
         if not sys.platform.startswith("linux"):
             descriptor = os.open(
                 staging_name,
@@ -1086,8 +1090,12 @@ def create_live_database_snapshot(
     except sqlite3.DatabaseError as error:
         _log(f"[db-snapshot] Could not write a database snapshot: {error}")
         code = getattr(error, "sqlite_errorcode", 0) or 0
-        if code & 0xFF in {sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB}:
-            # Only explicit corruption codes justify a damaged-source report.
+        if isinstance(error, _SnapshotVerificationError) or code & 0xFF in {
+            sqlite3.SQLITE_CORRUPT,
+            sqlite3.SQLITE_NOTADB,
+        }:
+            # A failed quick_check on the copy, or an explicit corruption code,
+            # justifies a damaged-source report.
             # CANTOPEN, IOERR and FULL can describe destination failures. A
             # damaged source database must surface the same recovery-page
             # report here, not just a log line, or a live snapshot failure
