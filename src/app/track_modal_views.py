@@ -1154,7 +1154,7 @@ def track_modal(
         from app.music_album_views import album_track_modal
         from app.services.music import album_for_media_id
 
-        album = album_for_media_id(media_id)
+        album = album_for_media_id(media_id, user=request.user)
         if album:
             return album_track_modal(request, album.id)
 

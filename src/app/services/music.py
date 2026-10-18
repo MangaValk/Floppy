@@ -30,28 +30,26 @@ FUZZY_MATCH_SIMILARITY_THRESHOLD = 0.8
 FEW_CANDIDATES_AUTO_TRUST_MAX = 3
 
 
-def album_for_media_id(media_id):
+def album_for_media_id(media_id, user=None):
     """Return the Album behind an album page's media id, or None.
 
     The album page identifies its Item with the release id, else the release
-    group id, else ``album-<pk>`` for an album with no MusicBrainz id.
+    group id, else ``album-<pk>`` for an album with no MusicBrainz id. Duplicate
+    rows for one MusicBrainz identity resolve to the canonical one for ``user``.
     """
     media_id = str(media_id or "")
+    albums = Album.objects.select_related("artist").order_by("id")
     if media_id.startswith("album-"):
         album_pk = media_id.removeprefix("album-")
-        if not album_pk.isdigit():
-            return None
-        return Album.objects.select_related("artist").filter(pk=album_pk).first()
-    if not media_id:
-        return None
-    return (
-        Album.objects.select_related("artist")
-        .filter(
+        album = albums.filter(pk=album_pk).first() if album_pk.isdigit() else None
+    elif media_id:
+        album = albums.filter(
             models.Q(musicbrainz_release_id=media_id)
             | models.Q(musicbrainz_release_group_id=media_id),
-        )
-        .first()
-    )
+        ).first()
+    else:
+        album = None
+    return find_canonical_album(album, user=user) if album else None
 
 
 def _parse_partial_date(date_str):
