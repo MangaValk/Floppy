@@ -24,6 +24,15 @@ MINUTES_PER_HOUR = 60
 # ── Model serializers ─────────────────────────────────────────────────────────
 
 
+def _entry_dates(record):
+    """Return the tracking dates a History card can show as card properties."""
+    return {
+        "created_at": getattr(record, "created_at", None),
+        "start_date": getattr(record, "start_date", None),
+        "end_date": getattr(record, "end_date", None),
+    }
+
+
 def _serialize_item(item):
     if not item:
         return None
@@ -237,6 +246,7 @@ def _build_episode_entry(episode, episode_title_map=None):
         "episode_number": episode_item.episode_number if episode_item else None,
         "status": episode.status,
         "played_at_local": played_at_local,
+        **_entry_dates(episode),
         "runtime_minutes": runtime_minutes,
         "runtime_display": helpers.minutes_to_hhmm(runtime_minutes)
         if runtime_minutes
@@ -275,6 +285,7 @@ def _build_movie_entry(movie):
         "episode_label": None,
         "episode_code": None,
         "played_at_local": played_at_local,
+        **_entry_dates(movie),
         "runtime_minutes": runtime_minutes,
         "runtime_display": helpers.minutes_to_hhmm(runtime_minutes)
         if runtime_minutes
@@ -313,6 +324,7 @@ def _build_video_play_entry(play):
         "episode_label": video.channel or None,
         "episode_code": None,
         "played_at_local": played_at_local,
+        **_entry_dates(play), "created_at": video.created_at,
         "runtime_minutes": runtime_minutes,
         "runtime_display": helpers.minutes_to_hhmm(runtime_minutes) if runtime_minutes else None,
         "instance_id": play.id,
