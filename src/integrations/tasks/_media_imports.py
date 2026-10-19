@@ -9,6 +9,7 @@ import events
 from app import backfill_queue, cache_safety, history_cache, statistics_sync
 from app.mixins import disable_fetch_releases
 from app.providers import credentials
+from app.services.watch_state import importing_watch_state
 from integrations import connection_health, import_progress
 from integrations.imports import (
     anilist,
@@ -138,6 +139,7 @@ def import_media(
             # would not see the user's personal provider keys (#1488).
             credentials.current_user_scope(user),
             helpers.record_bulk_rows() as bulk_rows,
+            importing_watch_state(),
         ):
             if oauth_username is None:
                 imported_counts, warnings = importer_func(
