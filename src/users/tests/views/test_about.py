@@ -132,3 +132,19 @@ class AboutViewTests(TestCase):
         for wrapper in wrappers:
             with self.subTest(classes=wrapper.get("class")):
                 self.assertIn("relative", wrapper.get("class"))
+
+    def test_about_invites_sponsorship_with_a_subtle_inline_link(self):
+        response = self.client.get(reverse("about"))
+
+        soup = BeautifulSoup(response.content, "html.parser")
+        link = next(
+            link
+            for link in soup.find_all("a")
+            if link.get("href") == "https://github.com/sponsors/dannyvfilms"
+        )
+        self.assertEqual(link.get("rel"), ["noopener", "noreferrer"])
+        self.assertIn(
+            "Floppy is free and supported by users like you",
+            link.parent.get_text(" ", strip=True),
+        )
+        self.assertNotIn("began as a fork", response.content.decode())
