@@ -1467,6 +1467,7 @@ class CollectionEditUiTest(TestCase):
             reverse("collection_update_season", args=[season_one.id]),
         )
 
+        before = {key: entry.updated_at for key, entry in episodes.items()}
         response = self.client.post(
             reverse("collection_update_season", args=[season_one.id]),
             {"media_type": "bluray", "resolution": "1080p"},
@@ -1479,6 +1480,9 @@ class CollectionEditUiTest(TestCase):
             self.assertEqual(episodes[key].resolution, "1080p")
         episodes[(2, 1)].refresh_from_db()
         self.assertEqual(episodes[(2, 1)].media_type, "digital")
+        for key in ((1, 1), (1, 2)):
+            self.assertGreater(episodes[key].updated_at, before[key])
+        self.assertEqual(episodes[(2, 1)].updated_at, before[(2, 1)])
 
     def test_season_edit_form_keeps_the_stored_format_selected(self):
         """A stored value missing from the format choices still shows as selected."""

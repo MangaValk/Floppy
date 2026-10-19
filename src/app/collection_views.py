@@ -13,6 +13,7 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from django.utils.translation import gettext
 from django.views.decorators.cache import never_cache
@@ -974,7 +975,7 @@ def collection_update_season(request, season_item_id):
         item__source=season_item.source,
         item__media_type=MediaTypes.EPISODE.value,
         item__season_number=season_item.season_number,
-    ).update(**copy_fields)
+    ).update(**copy_fields, updated_at=timezone.now())
 
     if updated_count:
         message = gettext("Updated %(value_1)s in collection") % {
