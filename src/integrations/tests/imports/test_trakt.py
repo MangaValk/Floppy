@@ -461,6 +461,41 @@ class ImportTrakt(TestCase):
         self.assertEqual(len(again.bulk_media[MediaTypes.MOVIE.value]), 0)
 
     @patch("integrations.imports.trakt.TraktImporter._get_metadata")
+    def test_process_watched_movie_without_date_skips_tracked_movie(
+        self,
+        mock_get_metadata,
+    ):
+        """An undated Trakt watch cannot be deduped, so a tracked movie is left alone."""
+        item = Item.objects.create(
+            media_id="299537",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Captain Marvel",
+        )
+        Movie.objects.create(
+            item=item,
+            user=self.user,
+            end_date="2023-06-01T20:00:00Z",
+            status=Status.COMPLETED.value,
+            progress=1,
+        )
+        mock_get_metadata.return_value = {
+            "title": "Captain Marvel",
+            "image": "movie_image.jpg",
+        }
+
+        trakt_importer = TraktImporter("test", self.user, "new")
+        trakt_importer.process_watched_movie(
+            {
+                "type": "movie",
+                "movie": {"title": "Captain Marvel", "ids": {"tmdb": 299537}},
+                "watched_at": trakt.TRAKT_UNKNOWN_DATE,
+            },
+        )
+
+        self.assertEqual(len(trakt_importer.bulk_media[MediaTypes.MOVIE.value]), 0)
+
+    @patch("integrations.imports.trakt.TraktImporter._get_metadata")
     def test_process_watched_movie_completes_planned_movie(self, mock_get_metadata):
         """A Trakt watch of a movie planned locally completes it, with no extra row."""
         item = Item.objects.create(
