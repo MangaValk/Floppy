@@ -104,6 +104,11 @@ def importing_watch_state():
         _IMPORTING.reset(token)
 
 
+def is_importing_watch_state() -> bool:
+    """Return whether the current block is an import (see importing_watch_state)."""
+    return _IMPORTING.get()
+
+
 def allocate_sequence(user) -> int:
     """Return the next server sequence for this user.
 
@@ -244,7 +249,7 @@ def _project_as_change(user, item, derived):
         watched_at=derived.last_watched_at,
         origin_kind=(
             WatchStateOrigin.IMPORT.value
-            if _IMPORTING.get()
+            if is_importing_watch_state()
             else WatchStateOrigin.LOCAL_UI.value
         ),
         origin_key="local",
