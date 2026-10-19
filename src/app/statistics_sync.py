@@ -25,11 +25,12 @@ from types import MappingProxyType, SimpleNamespace
 from django.apps import apps
 from django.conf import settings
 from django.core.cache import cache
-from django.db import IntegrityError, connection, transaction
+from django.db import IntegrityError, OperationalError, connection, transaction
 from django.db.models import F, Model, Q
 from django.db.models.functions import Coalesce, Greatest
 from django.utils import timezone
 
+from app.db_retry import is_lock_error
 from app.interactive_requests import interactive_request_active
 from app.models import StatisticsDirtyDay, StatisticsSnapshot, StatisticsSyncState
 from app.statistics_day_cache import (
@@ -1002,7 +1003,8 @@ def run_sync(
     ``done``, ``busy`` (another sync holds the lease), ``continued`` (the time
     budget ran out), ``deferred`` (an interactive request is active),
     ``lost_lease`` (a successor claimed the lease mid-run; its fenced
-    operations stopped touching the user's state), or ``missing``.
+    operations stopped touching the user's state), ``locked`` (SQLite stayed
+    locked past the wait; the reconciler retries), or ``missing``.
 
     ``only_ranges`` rebuilds just those ranges, unconditionally; it is the
     inline path the eager/test read and the top-talent upgrade use.
@@ -1217,12 +1219,23 @@ def run_sync(
     except _OutOfTimeError:
         status = "continued"
     except Exception as exc:
-        StatisticsSyncState.objects.filter(
-            user_id=user_id, lease_token=lease_token
-        ).update(last_error=f"{type(exc).__name__}: {exc}"[:1000])
-        raise
+        if isinstance(exc, OperationalError) and is_lock_error(exc):
+            # Another writer held the database past the wait. Nothing is lost:
+            # the dirty days and generation are durable, and the reconciler
+            # queues a fresh sync within a minute.
+            status = "locked"
+            logger.warning("stats_sync_locked user_id=%s error=%s", user_id, exc)
+        else:
+            StatisticsSyncState.objects.filter(
+                user_id=user_id, lease_token=lease_token
+            ).update(last_error=f"{type(exc).__name__}: {exc}"[:1000])
+            raise
     finally:
         _release_lease(user_id, lease_token)
+
+    if status == "locked":
+        # Queueing a follow-up now would just meet the same lock.
+        return {"status": status, "published": published}
 
     elapsed = time.monotonic() - started
     logger.info(
