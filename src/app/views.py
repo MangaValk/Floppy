@@ -845,11 +845,30 @@ def episode_details(
     public_list_view = request.GET.get("public_view") == "1"
     public_view = is_anonymous or public_list_view
 
+    # Match season/media detail pages: honor the user's metadata language
+    # (and any per-show override) instead of always using TMDB_LANG.
+    show_media_type = (
+        MediaTypes.ANIME.value
+        if parent_media_type == MediaTypes.ANIME.value
+        else MediaTypes.TV.value
+    )
+    show_item = Item.objects.filter(
+        media_id=media_id,
+        source=source,
+        media_type=show_media_type,
+    ).first()
+    metadata_language = metadata_resolution.metadata_language_default(
+        None if is_anonymous else request.user,
+        show_item,
+    )
+
     tv_with_seasons_metadata = services.get_media_metadata(
         "tv_with_seasons",
         media_id,
         source,
         [season_number],
+        language=metadata_language,
+        user=None if is_anonymous else request.user,
     )
     season_key = f"season/{season_number}"
     season_metadata = tv_with_seasons_metadata.get(season_key) or {}
@@ -920,7 +939,12 @@ def episode_details(
     episode_metadata = {}
     if source == Sources.TMDB.value:
         with contextlib.suppress(Exception):
-            episode_metadata = tmdb.episode(media_id, season_number, episode_number)
+            episode_metadata = tmdb.episode(
+                media_id,
+                season_number,
+                episode_number,
+                language=metadata_language,
+            )
 
     episode_item_qs = Item.objects.filter(
         media_id=media_id,
