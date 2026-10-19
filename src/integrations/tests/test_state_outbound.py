@@ -10,6 +10,7 @@ import datetime
 import logging
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -387,6 +388,19 @@ class DeliveryTests(OutboundTestCase):
         delivery.refresh_from_db()
         self.assertEqual(delivery.status, OutboundDeliveryStatus.SKIPPED.value)
         self.assertEqual(self.adapter.writes, [])
+
+
+class SweepScheduleTests(TestCase):
+    def test_the_sweep_is_scheduled(self):
+        """Retries and lost kicks only recover if something runs the sweep."""
+        entries = [
+            entry
+            for entry in settings.CELERY_BEAT_SCHEDULE.values()
+            if entry["task"] == "Sweep pending watched state deliveries"
+        ]
+
+        self.assertEqual(len(entries), 1)
+        self.assertLessEqual(entries[0]["schedule"], 60)
 
 
 class SweepTests(OutboundTestCase):
