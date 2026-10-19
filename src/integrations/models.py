@@ -2051,6 +2051,7 @@ class SyncClientKind(models.TextChoices):
     AUDIOBOOKSHELF = "audiobookshelf", "Audiobookshelf"
     GENERIC = "generic", "Generic client"
     TMDB = "tmdb", "TMDb"
+    WETRAKR = "wetrakr", "WeTrakr"
 
 
 class SyncDirection(models.TextChoices):
@@ -2079,6 +2080,17 @@ CAPABILITY_WATCHED_PUSH_PLAYED = "watched.push_played"
 CAPABILITY_WATCHED_PUSH_UNPLAYED = "watched.push_unplayed"
 CAPABILITY_LISTEN_READ = "listen.read"
 CAPABILITY_RATING_PUSH = "rating.push"
+CAPABILITY_PLAY_PUSH = "play.push"
+CAPABILITY_STATUS_PUSH = "status.push"
+CAPABILITY_PLAY_REMOVE = "play.remove"
+
+
+class SyncDeliverySchedule(models.TextChoices):
+    """How soon queued deliveries for one binding are sent."""
+
+    LIVE = "live", "As it happens"
+    HOURLY = "hourly", "Hourly"
+    DAILY = "daily", "Daily"
 
 
 class SyncBinding(models.Model):
@@ -2118,6 +2130,14 @@ class SyncBinding(models.Model):
     kill_switch = models.BooleanField(default=False)
 
     label = models.CharField(max_length=255, blank=True, default="")
+    # Live sends within a short batching window; the others hold deliveries and
+    # send them together once the interval since the last flush has passed.
+    delivery_schedule = models.CharField(
+        max_length=16,
+        choices=SyncDeliverySchedule,
+        default=SyncDeliverySchedule.LIVE.value,
+    )
+    last_flushed_at = models.DateTimeField(null=True, blank=True)
     last_reconciled_at = models.DateTimeField(null=True, blank=True)
     last_error_message = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -2536,9 +2556,18 @@ class OutboundStateDelivery(models.Model):
     operation = models.CharField(
         max_length=16,
         default="watched",
-        choices=[("watched", "Watched"), ("rating", "Rating")],
+        choices=[
+            ("watched", "Watched"),
+            ("rating", "Rating"),
+            ("play", "Play"),
+            ("status", "Status"),
+            ("play_remove", "Play removal"),
+        ],
     )
     rating = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
+    # Operation-specific values that need no column of their own: a play's
+    # watch time, a status name.
+    payload = models.JSONField(default=dict, blank=True)
     target_digest = models.CharField(max_length=64, blank=True, default="")
     intent = models.BooleanField(
         default=True,

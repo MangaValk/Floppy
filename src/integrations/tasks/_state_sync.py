@@ -1,6 +1,6 @@
 """Celery tasks for shared outbound delivery and watched-state reconciliation.
 
-All three run on the default queue. The interactive queue stays dedicated to
+All of them run on the default queue. The interactive queue stays dedicated to
 user-triggered refreshes, and a library sweep is exactly the kind of
 long-running work that must never sit in front of one.
 """
@@ -36,6 +36,12 @@ def deliver_watched_state(delivery_id):
     return outbound.run_delivery(delivery_id)
 
 
+@shared_task(name="Send queued deliveries to a batching provider", max_retries=0)
+def flush_outbound_batch(binding_id):
+    """Send everything due for one binding that takes its writes in batches."""
+    return outbound.flush_binding(binding_id)
+
+
 @shared_task(name="Sweep pending watched state deliveries")
 def sweep_watched_state_deliveries(limit=100):
     """Pick up deliveries whose enqueue kick was lost, and due retries.
@@ -43,10 +49,7 @@ def sweep_watched_state_deliveries(limit=100):
     The outbox is the source of truth for what still needs sending, so a
     dropped broker message costs latency rather than correctness.
     """
-    swept = 0
-    for delivery in outbound.due_deliveries(limit=limit):
-        outbound.run_delivery(delivery.pk)
-        swept += 1
+    swept = outbound.sweep_due_deliveries(limit=limit)
 
     from integrations import connection_health
     from integrations.models import TMDbAccount

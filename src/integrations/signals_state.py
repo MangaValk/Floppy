@@ -13,8 +13,12 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from app.models import TV, Season, WatchState, WatchStateChange
-from integrations.state.outbound import enqueue_deliveries, schedule_delivery
+from app.models import TV, Movie, Season, WatchState, WatchStateChange
+from integrations.state.outbound import (
+    enqueue_deliveries,
+    enqueue_status_change,
+    schedule_delivery,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,3 +59,16 @@ def enqueue_on_state_change(sender, instance, created, **kwargs):
 
     for delivery in enqueue_deliveries(instance):
         schedule_delivery(delivery)
+
+
+@receiver(post_save, sender=Movie)
+@receiver(post_save, sender=TV)
+def enqueue_on_status_change(sender, instance, created, **kwargs):
+    """Queue a tracking-status change for destinations that mirror statuses."""
+    from app.signals import media_change_side_effects_suppressed
+
+    if kwargs.get("raw") or media_change_side_effects_suppressed():
+        return
+    if not created and not instance.tracker.has_changed("status"):
+        return
+    enqueue_status_change(instance.user, instance.item, instance.status)

@@ -147,6 +147,7 @@ _EXPORT_MODULES = {
     **dict.fromkeys(
         (
             "deliver_watched_state",
+            "flush_outbound_batch",
             "reconcile_watched_state",
             "sweep_watched_state_deliveries",
         ),
@@ -233,6 +234,7 @@ __all__ = [
     "deliver_watched_state",
     "export_tmdb_ratings",
     "fetch_collection_metadata_for_item",
+    "flush_outbound_batch",
     "format_import_message",
     "format_media_type_display",
     "format_watchlist_sync_message",
