@@ -5,7 +5,7 @@ on:
     - cron: "17 8 * * *"
   workflow_dispatch:
 
-# SPONSORS_GOAL_TOKEN is a personal access token from dannyvfilms. The built-in
+# SPONSORS_GOAL_TOKEN (or SPONSORS_TOKEN) is a personal access token from dannyvfilms. The built-in
 # workflow token cannot read Sponsors data ("Resource not accessible by
 # integration"), and PRs it opens do not start CI, so the token does both jobs.
 permissions:
@@ -17,17 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          token: ${{ secrets.SPONSORS_GOAL_TOKEN }}
+          token: ${{ secrets.SPONSORS_GOAL_TOKEN || secrets.SPONSORS_TOKEN }}
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Fetch GitHub Sponsors goal and render card
         env:
-          GITHUB_TOKEN: ${{ secrets.SPONSORS_GOAL_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.SPONSORS_GOAL_TOKEN || secrets.SPONSORS_TOKEN }}
         run: python scripts/update_sponsors_goal.py
       - name: Open a PR with the updated card
         env:
-          GH_TOKEN: ${{ secrets.SPONSORS_GOAL_TOKEN }}
+          GH_TOKEN: ${{ secrets.SPONSORS_GOAL_TOKEN || secrets.SPONSORS_TOKEN }}
         run: |
           if git diff --quiet -- docs/brand/sponsors-goal.svg; then
             echo "Sponsors goal card is already current"
