@@ -34,6 +34,7 @@ from integrations import wetrakr_api
 from integrations.imports.helpers import decrypt, encrypt
 from integrations.models import (
     CAPABILITY_PLAY_PUSH,
+    CAPABILITY_PLAY_REMOVE,
     CAPABILITY_RATING_PUSH,
     CAPABILITY_STATUS_PUSH,
     OutboundDeliveryStatus,
@@ -731,6 +732,51 @@ class AdapterReplyTests(WeTrakrTestCase):
         self.assertEqual(results[0].outcome, BATCH_DELIVERED)
         self.assertEqual(results[0].receipt, "9001")
 
+    def test_a_receipt_is_matched_when_wetrakr_writes_the_date_differently(self):
+        reply = {
+            "added": {
+                "plays": [
+                    {
+                        "play_id": 9001,
+                        "ids": {"tmdb": 155},
+                        "tracked_at": "2026-10-18T20:15:00.000Z",
+                    },
+                ],
+            },
+        }
+
+        results = self._send([_play_item(1, "movie:155")], reply)
+
+        self.assertEqual(results[0].receipt, "9001")
+
+    def test_a_receipt_without_a_date_is_used_when_only_one_play_was_sent(self):
+        reply = {"added": {"plays": [{"play_id": 9001, "ids": {"tmdb": 155}}]}}
+
+        results = self._send([_play_item(1, "movie:155")], reply)
+
+        self.assertEqual(results[0].receipt, "9001")
+
+    def test_receipts_without_dates_are_not_guessed_for_two_plays_of_one_title(self):
+        reply = {
+            "added": {
+                "plays": [
+                    {"play_id": 9001, "ids": {"tmdb": 155}},
+                    {"play_id": 9002, "ids": {"tmdb": 155}},
+                ],
+            },
+        }
+
+        results = self._send(
+            [
+                _play_item(1, "movie:155", "2026-10-01T20:00:00+00:00"),
+                _play_item(2, "movie:155", "2026-10-02T20:00:00+00:00"),
+            ],
+            reply,
+        )
+
+        self.assertEqual([r.receipt for r in results], ["", ""])
+        self.assertEqual([r.outcome for r in results], [BATCH_DELIVERED] * 2)
+
     def test_an_item_wetrakr_cannot_find_is_skipped_and_the_rest_delivered(self):
         reply = {
             "added": {},
@@ -813,8 +859,8 @@ class AdapterReplyTests(WeTrakrTestCase):
         self.assertEqual([r.outcome for r in results], [BATCH_DELIVERED, BATCH_RETRY])
 
 
-class EndToEndTests(WeTrakrTestCase):
-    """The real engine, the real adapter, and a mocked WeTrakr."""
+class EndToEndBase(WeTrakrTestCase):
+    """The real engine and adapter, a mocked WeTrakr, and a Floppy movie."""
 
     def setUp(self):
         super().setUp()
@@ -848,6 +894,8 @@ class EndToEndTests(WeTrakrTestCase):
             end_date=datetime.datetime(2026, 10, 18, 20, 15, tzinfo=datetime.UTC),
         )
 
+
+class EndToEndTests(EndToEndBase):
     def test_a_movie_watched_in_floppy_reaches_wetrakr_with_its_date(self):
         self._watch()
         OutboundStateDelivery.objects.update(next_attempt_at=None)
@@ -1061,6 +1109,21 @@ class ConnectViewTests(TestCase):
         self.assertEqual(binding.approved_capabilities, [CAPABILITY_PLAY_PUSH])
         self.assertEqual(binding.delivery_schedule, SyncDeliverySchedule.DAILY.value)
 
+    def test_removing_plays_is_its_own_switch_and_starts_off(self):
+        self._connect()
+        self.client.post(reverse("wetrakr_settings"), {"plays": "on"})
+        binding = SyncBinding.objects.get(user=self.user, client_kind="wetrakr")
+        self.assertFalse(
+            binding.allows(SyncDirection.OUTBOUND.value, CAPABILITY_PLAY_REMOVE),
+        )
+
+        self.client.post(reverse("wetrakr_settings"), {"plays": "on", "removals": "on"})
+
+        binding.refresh_from_db()
+        self.assertTrue(
+            binding.allows(SyncDirection.OUTBOUND.value, CAPABILITY_PLAY_REMOVE),
+        )
+
     def test_switching_everything_off_stops_all_sending(self):
         self._connect()
         self.client.post(reverse("wetrakr_settings"), {"plays": "on", "ratings": "on"})
@@ -1269,3 +1332,217 @@ class ExportTests(WeTrakrTestCase):
         self.binding.delete()
 
         self.assertEqual(export_wetrakr_library(self.user.pk), 0)
+
+
+def _removal_item(
+    delivery_id, external_id, *, receipt="", watched_at="2026-10-18T20:15:00+00:00"
+):
+    return BatchItem(
+        delivery_id=delivery_id,
+        operation="play_remove",
+        item=None,
+        external_id=external_id,
+        payload={"watched_at": watched_at, "receipt": receipt, "play_delivery": 1},
+        rating=None,
+    )
+
+
+class AdapterRemovalTests(WeTrakrTestCase):
+    def _remove(self, item, *replies):
+        adapter = WeTrakrAdapter(self.account)
+        with patch(
+            "integrations.wetrakr_api.requests.request",
+            side_effect=list(replies),
+        ) as call:
+            results = adapter.write_batch([item], idempotency_key="batch-1")
+        return results, call
+
+    def test_a_play_with_a_receipt_is_deleted_by_that_id(self):
+        results, call = self._remove(
+            _removal_item(1, "movie:155", receipt="9001"),
+            FakeResponse(200, {}),
+        )
+
+        self.assertEqual(results[0].outcome, BATCH_DELIVERED)
+        self.assertEqual(call.call_count, 1)
+        self.assertEqual(call.call_args.args[0], "DELETE")
+        self.assertTrue(call.call_args.args[1].endswith("/sync/tracklogs/9001"))
+
+    def test_a_play_wetrakr_no_longer_has_counts_as_removed(self):
+        results, _call = self._remove(
+            _removal_item(1, "movie:155", receipt="9001"),
+            FakeResponse(404, {"error": "NOT_FOUND"}),
+        )
+
+        self.assertEqual(results[0].outcome, BATCH_DELIVERED)
+
+    def test_without_a_receipt_the_exact_date_is_removed(self):
+        results, call = self._remove(
+            _removal_item(1, "movie:155"),
+            FakeResponse(200, {"removed": {}}),
+        )
+
+        self.assertEqual(results[0].outcome, BATCH_DELIVERED)
+        self.assertTrue(call.call_args.args[1].endswith("/sync/tracking/remove"))
+        self.assertEqual(
+            call.call_args.kwargs["json"],
+            {
+                "movies": [
+                    {
+                        "ids": {"tmdb": 155},
+                        "status": "watched",
+                        "tracked_at": "2026-10-18T20:15:00+00:00",
+                    },
+                ],
+            },
+        )
+
+    def test_an_episode_is_removed_by_its_exact_date_too(self):
+        _results, call = self._remove(
+            _removal_item(1, "episode:1399:1:2"),
+            FakeResponse(200, {}),
+        )
+
+        episode = call.call_args.kwargs["json"]["shows"][0]["seasons"][0]["episodes"][0]
+        self.assertEqual(episode["number"], 2)
+        self.assertEqual(episode["tracked_at"], "2026-10-18T20:15:00+00:00")
+
+    def test_the_remove_all_and_remove_last_routes_are_never_called(self):
+        for item in (
+            _removal_item(1, "movie:155"),
+            _removal_item(2, "movie:155", receipt="9001"),
+        ):
+            _results, call = self._remove(item, FakeResponse(200, {}))
+            for request in call.call_args_list:
+                self.assertNotIn("/all", request.args[1])
+                self.assertNotIn("/last", request.args[1])
+
+    def test_a_date_wetrakr_cannot_find_is_skipped(self):
+        results, _call = self._remove(
+            _removal_item(1, "movie:155"),
+            FakeResponse(200, {"notFound": {"movies": [{"ids": {"tmdb": 155}}]}}),
+        )
+
+        self.assertEqual(results[0].outcome, BATCH_SKIPPED)
+
+    def test_an_outage_retries_the_whole_request(self):
+        with self.assertRaises(TransientAdapterError):
+            self._remove(
+                _removal_item(1, "movie:155", receipt="9001"), FakeResponse(503, {})
+            )
+
+
+class PlayRemovalTests(EndToEndBase):
+    """Removing a play in Floppy removes that exact play from WeTrakr."""
+
+    def setUp(self):
+        super().setUp()
+        activate_binding(
+            self.binding,
+            capabilities=[
+                CAPABILITY_PLAY_PUSH,
+                CAPABILITY_PLAY_REMOVE,
+                CAPABILITY_STATUS_PUSH,
+            ],
+            directions=[SyncDirection.OUTBOUND.value],
+        )
+
+    def _play(self, day, receipt):
+        """Watch the film on one day and let WeTrakr accept it with a receipt."""
+        movie = Movie.objects.create(
+            item=self.item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+            end_date=datetime.datetime(2026, 10, day, 20, 15, tzinfo=datetime.UTC),
+        )
+        OutboundStateDelivery.objects.update(next_attempt_at=None)
+        reply = FakeResponse(
+            200,
+            {"added": {"plays": [{"play_id": receipt, "ids": {"tmdb": 155}}]}},
+        )
+        with patch("integrations.wetrakr_api.requests.request", return_value=reply):
+            outbound.flush_binding(self.binding.pk)
+        return movie
+
+    def _removals(self):
+        return list(OutboundStateDelivery.objects.filter(operation="play_remove"))
+
+    def test_deleting_the_only_play_queues_its_removal_with_the_receipt(self):
+        movie = self._play(18, 9001)
+
+        movie.delete()
+
+        (removal,) = self._removals()
+        self.assertEqual(removal.payload["receipt"], "9001")
+        self.assertEqual(removal.payload["watched_at"], "2026-10-18T20:15:00+00:00")
+
+    def test_deleting_one_of_two_plays_removes_only_that_one(self):
+        first = self._play(10, 9001)
+        self._play(18, 9002)
+
+        first.delete()
+
+        (removal,) = self._removals()
+        self.assertEqual(removal.payload["receipt"], "9001")
+
+    def test_the_removal_is_sent_as_a_delete_of_that_play(self):
+        self._play(18, 9001).delete()
+        OutboundStateDelivery.objects.update(next_attempt_at=None)
+
+        with patch(
+            "integrations.wetrakr_api.requests.request",
+            return_value=FakeResponse(200, {}),
+        ) as call:
+            outbound.flush_binding(self.binding.pk)
+
+        self.assertEqual(call.call_args.args[0], "DELETE")
+        self.assertTrue(call.call_args.args[1].endswith("/sync/tracklogs/9001"))
+        self.assertEqual(
+            self._removals()[0].status, OutboundDeliveryStatus.DELIVERED.value
+        )
+
+    def test_a_play_that_was_never_sent_is_not_sent_after_it_is_deleted(self):
+        movie = self._watch()
+
+        movie.delete()
+
+        self.assertFalse(self._removals())
+        play = OutboundStateDelivery.objects.get(operation="play")
+        self.assertEqual(play.status, OutboundDeliveryStatus.SUPERSEDED.value)
+
+    def test_nothing_is_removed_unless_removal_is_switched_on(self):
+        activate_binding(
+            self.binding,
+            capabilities=[CAPABILITY_PLAY_PUSH],
+            directions=[SyncDirection.OUTBOUND.value],
+        )
+        movie = self._play(18, 9001)
+
+        movie.delete()
+
+        self.assertFalse(self._removals())
+
+    def test_editing_a_date_does_not_remove_anything(self):
+        movie = self._play(18, 9001)
+
+        movie.end_date = datetime.datetime(2026, 10, 19, 20, 15, tzinfo=datetime.UTC)
+        movie.save()
+
+        self.assertFalse(self._removals())
+
+    def test_a_removal_is_queued_once(self):
+        movie = self._play(18, 9001)
+        movie.delete()
+        self._play(19, 9002).delete()
+
+        receipts = sorted(r.payload["receipt"] for r in self._removals())
+
+        self.assertEqual(receipts, ["9001", "9002"])
+
+    def test_a_removal_made_by_an_import_is_not_sent(self):
+        movie = self._play(18, 9001)
+
+        with importing_watch_state():
+            movie.delete()
+
+        self.assertFalse(self._removals())

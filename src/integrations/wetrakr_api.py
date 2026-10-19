@@ -309,14 +309,27 @@ class WeTrakrClient:
         expires = self.account.access_expires_at
         return expires is None or expires - timezone.now() <= REFRESH_MARGIN
 
-    def request(self, method, path, *, json=None, idempotency_key=None):
-        """Call a sync route, recording whether WeTrakr still accepts the login."""
+    def request(
+        self,
+        method,
+        path,
+        *,
+        json=None,
+        idempotency_key=None,
+        missing_ok=False,
+    ):
+        """Call a sync route, recording whether WeTrakr still accepts the login.
+
+        ``missing_ok`` answers a 404 with ``{"missing": True}`` instead of an
+        error, for a delete where "already gone" is the result wanted.
+        """
         try:
             data = self._request(
                 method,
                 path,
                 json=json,
                 idempotency_key=idempotency_key,
+                missing_ok=missing_ok,
             )
         except WeTrakrAuthError as error:
             # Only a rejection of the credentials marks the connection broken.
@@ -329,7 +342,15 @@ class WeTrakrClient:
             connection_health.record_success(self.account)
         return data
 
-    def _request(self, method, path, *, json=None, idempotency_key=None):
+    def _request(
+        self,
+        method,
+        path,
+        *,
+        json=None,
+        idempotency_key=None,
+        missing_ok=False,
+    ):
         if not self.account.refresh_token:
             message = "WeTrakr is not connected. Connect your account."
             raise WeTrakrAuthError(message)
@@ -358,6 +379,8 @@ class WeTrakrClient:
                     json=json,
                     extra_headers=extra,
                 )
+        if missing_ok and response.status_code == HTTPStatus.NOT_FOUND:
+            return {"missing": True}
         raise_for_status(response)
         if not response.content:
             return {}

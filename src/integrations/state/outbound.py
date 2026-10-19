@@ -25,7 +25,8 @@ sweeper needs no second idea of "due".
 """
 
 import logging
-from datetime import timedelta
+from collections import Counter
+from datetime import datetime, timedelta
 from uuid import NAMESPACE_OID, uuid4, uuid5
 
 from django.db import IntegrityError, transaction
@@ -146,11 +147,11 @@ def _usable_adapter(binding, capability, *, importing):
     return adapter
 
 
-def _is_new_play(change):
-    """Return whether a change recorded one more play, not just a new date."""
+def _previous_play_count(change):
+    """Return the play count before this change, or None when there was none."""
     if change.previous_revision is None:
-        return True
-    previous = (
+        return None
+    return (
         WatchStateChange.objects.filter(
             user=change.user,
             item=change.item,
@@ -159,7 +160,97 @@ def _is_new_play(change):
         .values_list("play_count", flat=True)
         .first()
     )
+
+
+def _is_new_play(change):
+    """Return whether a change recorded one more play, not just a new date."""
+    previous = _previous_play_count(change)
     return previous is None or (change.play_count or 0) > (previous or 0)
+
+
+def _lost_a_play(change):
+    """Return whether a change recorded fewer plays than before."""
+    previous = _previous_play_count(change)
+    return previous is not None and (change.play_count or 0) < previous
+
+
+def _queue_play_removals(binding, adapter, change):
+    """Queue the removal of each play the destination holds that Floppy no longer has.
+
+    A removal names one exact play: the receipt the destination gave when it
+    took it, and the date it was sent with. Nothing is inferred from a count, so
+    a rewatch that is still in Floppy is never touched. A play that was never
+    delivered is simply not sent, and one still being sent is left alone.
+    """
+    from app.services.watch_state import derive_state
+
+    current = Counter(derive_state(change.user, change.item).play_dates)
+    sent = OutboundStateDelivery.objects.filter(
+        binding=binding,
+        item=change.item,
+        operation="play",
+        status__in=[
+            OutboundDeliveryStatus.PENDING.value,
+            OutboundDeliveryStatus.IN_FLIGHT.value,
+            OutboundDeliveryStatus.DELIVERED.value,
+        ],
+    ).order_by("pk")
+    handled = {
+        payload.get("play_delivery")
+        for payload in OutboundStateDelivery.objects.filter(
+            binding=binding,
+            item=change.item,
+            operation="play_remove",
+            status__in=[
+                OutboundDeliveryStatus.PENDING.value,
+                OutboundDeliveryStatus.IN_FLIGHT.value,
+                OutboundDeliveryStatus.DELIVERED.value,
+            ],
+        ).values_list("payload", flat=True)
+    }
+    revision = (
+        OutboundStateDelivery.objects.filter(
+            binding=binding,
+            item=change.item,
+            operation="play_remove",
+        ).aggregate(latest=Max("target_revision"))["latest"]
+        or 0
+    )
+    created = []
+    for play in sent:
+        if play.pk in handled:
+            continue
+        try:
+            when = datetime.fromisoformat(play.payload.get("watched_at") or "")
+        except ValueError:
+            continue
+        if current[when] > 0:
+            current[when] -= 1
+            continue
+        if play.status == OutboundDeliveryStatus.PENDING.value:
+            play.status = OutboundDeliveryStatus.SUPERSEDED.value
+            play.save(update_fields=["status", "updated_at"])
+        elif play.status == OutboundDeliveryStatus.DELIVERED.value:
+            revision += 1
+            created.append(
+                OutboundStateDelivery.objects.create(
+                    binding=binding,
+                    user=change.user,
+                    item=change.item,
+                    change=change,
+                    operation="play_remove",
+                    target_revision=revision,
+                    payload={
+                        "watched_at": play.payload["watched_at"],
+                        "receipt": play.payload.get("receipt", ""),
+                        "play_delivery": play.pk,
+                    },
+                    client_event_id=str(uuid4()),
+                    correlation_id=change.correlation_id,
+                    next_attempt_at=_hold_until(binding, adapter),
+                ),
+            )
+    return created
 
 
 def enqueue_deliveries(change):
@@ -175,6 +266,7 @@ def enqueue_deliveries(change):
     importing = change.origin_kind == WatchStateOrigin.IMPORT.value
     capability = _capability_for(change.watched)
     new_play = bool(change.watched and change.watched_at and _is_new_play(change))
+    lost_a_play = _lost_a_play(change)
     created = []
 
     for binding in SyncBinding.objects.filter(user=change.user):
@@ -239,6 +331,14 @@ def enqueue_deliveries(change):
             )
             if was_created:
                 created.append(delivery)
+
+        adapter = (
+            _usable_adapter(binding, CAPABILITY_PLAY_REMOVE, importing=importing)
+            if lost_a_play
+            else None
+        )
+        if adapter is not None:
+            created.extend(_queue_play_removals(binding, adapter, change))
 
     return created
 

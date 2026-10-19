@@ -40,6 +40,7 @@ WeTrakr application key and a consenting test account have confirmed:
 | Switch | Sent | Never sent |
 |---|---|---|
 | Plays | A movie or episode you finish, with the date you watched it | Imported history, undated plays, a whole show as watched |
+| Remove plays | When you delete a play in Floppy, that exact play (off by default; see below) | The latest play, all plays, anything you removed through an import |
 | Statuses | Planning and dropped for movies; planning, paused and dropped for shows | Watching and completed (a play already says so) |
 | Ratings | Movie and show ratings, including clearing one | Episode ratings |
 
@@ -54,8 +55,20 @@ ratings once, only when you press it. Re-running it never sends the same dated
 play twice. Plays without a date are counted on the card and left out, because
 WeTrakr would show them as watched today.
 
+## Removing a play
+
+With **Remove a play from WeTrakr when I delete it here** switched on, deleting a
+play in Floppy removes that one play from WeTrakr. Floppy keeps the `play_id`
+WeTrakr returned for each play it sent and deletes by that id. If WeTrakr did
+not return one, it removes by the exact date the play was sent with. A play
+WeTrakr no longer has counts as removed. A rewatch that is still in Floppy is
+never touched, because each play is matched by its own date. A play that was
+queued but not yet sent is simply not sent. Floppy never calls WeTrakr's
+remove-all or remove-latest routes.
+
 ## Known limits
 
-- Un-tracking in Floppy does not remove anything from WeTrakr yet.
-- Play receipts (`play_id`) are stored on each delivery for the removal work.
-- Floppy never calls WeTrakr's remove-all endpoints.
+- Removal only follows a play you delete. Editing a play's date does not change
+  what WeTrakr holds.
+- A play that is being sent at the very moment you delete it may stay on WeTrakr.
+- Un-watching something Floppy never sent leaves WeTrakr alone.
