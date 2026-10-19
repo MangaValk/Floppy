@@ -12,8 +12,7 @@
     <div class="detail-secondary-layout flex flex-col md:flex-row gap-6 md:gap-10">
     {# Details Column #}
 
-    <div class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"
-         style="display: flex; flex-direction: column;">
+    <div class="detail-secondary-sidebar w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0 flex flex-col">
       {# Your History #}
       <div {% detail_section_attrs user detail_family "sidebar" "history" %}>
       {% if not public_view|default:False and current_instance and user_medias %}

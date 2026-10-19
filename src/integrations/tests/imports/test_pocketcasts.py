@@ -653,15 +653,11 @@ class PocketCastsImportFlowTests(TestCase):
             importer.import_data()
 
         show = PodcastShow.objects.get(podcast_uuid="show-1")
-        moved_episode = PodcastEpisode.objects.get(
-            show=show, episode_uuid="uuid-moved"
-        )
+        moved_episode = PodcastEpisode.objects.get(show=show, episode_uuid="uuid-moved")
         self.assertIsNone(moved_episode.season_number)
         self.assertIsNone(moved_episode.episode_number)
         self.assertTrue(
-            Podcast.objects.filter(
-                user=self.user, item__media_id="uuid-valid"
-            ).exists()
+            Podcast.objects.filter(user=self.user, item__media_id="uuid-valid").exists()
         )
 
     def test_ensure_show_repairs_authenticated_image_url(self):
@@ -1036,10 +1032,14 @@ class PocketCastsIdentityAmbiguityTests(TestCase):
         self.assertEqual(result["episode"].episode_uuid, "uuid-c")
         self.assertEqual(PodcastEpisode.objects.filter(show=self.show).count(), 3)
         self.assertTrue(
-            PodcastEpisode.objects.filter(show=self.show, episode_uuid="uuid-a").exists()
+            PodcastEpisode.objects.filter(
+                show=self.show, episode_uuid="uuid-a"
+            ).exists()
         )
         self.assertTrue(
-            PodcastEpisode.objects.filter(show=self.show, episode_uuid="uuid-b").exists()
+            PodcastEpisode.objects.filter(
+                show=self.show, episode_uuid="uuid-b"
+            ).exists()
         )
 
     def test_sync_catalog_episode_still_matches_unique_title_date(self):
@@ -1277,3 +1277,48 @@ class PocketCastsRefreshTokenApiTests(TestCase):
 
         self.assertNotIsInstance(ctx.exception, pocketcasts_api.PocketCastsAuthError)
         self.assertIn("503", str(ctx.exception))
+
+    @patch("integrations.pocketcasts_api.requests.post")
+    def test_refresh_error_does_not_log_response_body(self, mock_post):
+        response = self._response(401)
+        response._content = b"private@example.test unlabelled-refresh-credential"
+        mock_post.return_value = response
+
+        with self.assertLogs(pocketcasts_api.logger, level="WARNING") as logs:
+            with self.assertRaises(pocketcasts_api.PocketCastsAuthError):
+                pocketcasts_api.refresh_token("stale")
+
+        output = " ".join(logs.output)
+        self.assertIn("401", output)
+        self.assertNotIn("private@example.test", output)
+        self.assertNotIn("unlabelled-refresh-credential", output)
+
+
+class PocketCastsLoginPrivacyTests(TestCase):
+    """Authentication diagnostics must not retain remote account values."""
+
+    @patch("integrations.pocketcasts_api.requests.post")
+    def test_login_logs_structure_without_account_or_credential_values(self, mock_post):
+        credential = "unlabelled-credential-" * 4
+        for data in (
+            {"accessToken": "access", "email": "private@example.test"},
+            {"session": credential},
+            {"message": "private@example.test " + credential, "status": "error"},
+            credential,
+        ):
+            with self.subTest(data_type=type(data).__name__):
+                mock_post.return_value.json.return_value = data
+                with self.assertLogs(pocketcasts_api.logger, level="DEBUG") as logs:
+                    try:
+                        result = pocketcasts_api.login(
+                            "private@example.test", "password"
+                        )
+                    except pocketcasts_api.PocketCastsAuthError as error:
+                        self.assertNotIn(credential, str(error))
+                        self.assertNotIn("private@example.test", str(error))
+                    else:
+                        self.assertIn(result["accessToken"], ("access", credential))
+
+                output = " ".join(logs.output)
+                self.assertNotIn("private@example.test", output)
+                self.assertNotIn(credential, output)

@@ -34,6 +34,7 @@ from app.models import (
     CreditRoleType,
     Episode,
     Game,
+    GameArtwork,
     Item,
     ItemPersonCredit,
     ItemProviderLink,
@@ -743,6 +744,54 @@ class MediaDetailsViewTests(TestCase):
         self.assertNotIn("detail-mobile-meta", content)
 
     @patch("app.providers.services.get_media_metadata")
+    def test_warm_game_gallery_and_logo_render_in_initial_layout(self, metadata):
+        media_id = "987654"
+        metadata.return_value = {
+            "media_id": media_id,
+            "title": "Warm Game",
+            "media_type": "game",
+            "source": "igdb",
+            "image": "https://x/poster.jpg",
+            "synopsis": "",
+            "genres": [],
+            "details": {},
+            "related": {},
+        }
+        cache_key = f"igdb_carousel_v4_{media_id}"
+        cache.set(cache_key, {"video": None, "photos": [], "hero_image_id": None}, 60)
+        self.addCleanup(cache.delete, cache_key)
+        GameArtwork.objects.create(
+            source="igdb",
+            media_id=media_id,
+            logo_url="https://x/logo.png",
+            backdrop_url="https://x/hero.jpg",
+            backdrop_provider="steamgriddb",
+        )
+        url = reverse(
+            "media_details",
+            kwargs={
+                "source": "igdb",
+                "media_type": "game",
+                "media_id": media_id,
+                "title": "warm-game",
+            },
+        )
+        with (
+            patch("lists.models.CustomList._get_igdb_carousel_media") as gallery,
+            patch("app.game_artwork.gallery", return_value=[]),
+        ):
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn("detail-mobile-hero md:hidden", content)
+        self.assertIn("min-h-[12rem] detail-carousel-preview--overview", content)
+        self.assertIn('src="https://x/logo.png"', content)
+        self.assertEqual(content.count('id="detail-carousel-logo-slot"'), 1)
+        self.assertNotIn('hx-trigger="load delay:100ms"', content)
+        self.assertNotIn("detail-hero-pending", content)
+        gallery.assert_not_called()
+
+    @patch("app.providers.services.get_media_metadata")
     def test_comic_volume_issue_rows_render_shared_action_buttons(
         self, mock_get_metadata
     ):
@@ -1023,7 +1072,7 @@ class MediaDetailsViewTests(TestCase):
             "document.body.dataset.mobileGrid === 'comfortable' ? 4 : 6", content
         )
         self.assertIn(
-            'class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"', content
+            'class="detail-secondary-sidebar w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0 flex flex-col"', content
         )
         self.assertIn('class="w-full md:w-3/4"', content)
         # Phones stack in DOM order: the metadata column comes before the content column.
@@ -1031,7 +1080,7 @@ class MediaDetailsViewTests(TestCase):
         # Watch providers stay first on phones, directly under the synopsis.
         self.assertIn('class="md:hidden -order-2"', content)
         self.assertLess(
-            content.index('class="w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0"'),
+            content.index('class="detail-secondary-sidebar w-full md:w-1/4 md:max-w-[250px] mx-auto lg:mx-0 flex flex-col"'),
             content.index('class="w-full md:w-3/4"'),
         )
         self.assertIn(
@@ -4488,12 +4537,12 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, "1h 30min watched")
         self.assertIn('<div class="mb-3 md:mb-1 text-center md:text-start">', content)
         self.assertIn(
-            'class="flex w-full items-center justify-center gap-0.5 whitespace-nowrap text-[13px] tracking-[-0.01em] @max-[26rem]:flex-col md:hidden cursor-pointer"',
+            'class="flex w-full items-center justify-center gap-0.5 whitespace-nowrap text-[13px] tracking-[-0.01em] @max-[26rem]:flex-col md:hidden group cursor-pointer hover:text-[var(--color-text)] hover:underline"',
             content,
         )
         self.assertIn("1h 30min (1/8)", content)
         self.assertIn(
-            'class="hidden w-full flex-wrap items-center justify-center gap-y-1 md:flex md:justify-start cursor-pointer"',
+            'class="hidden w-full flex-wrap items-center justify-center gap-y-1 md:flex md:justify-start group cursor-pointer hover:text-[var(--color-text)] hover:underline"',
             content,
         )
         self.assertNotContains(response, "Your History")
@@ -9194,7 +9243,7 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertEqual(content.count('aria-label="Select season"'), 2)
         history_buttons = re.findall(
-            r'<button[^>]*aria-label="View session history"[^>]*>.*?</button>',
+            r'<button[^>]*aria-label="View play history"[^>]*>.*?</button>',
             content,
             flags=re.DOTALL,
         )

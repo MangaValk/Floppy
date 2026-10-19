@@ -52,6 +52,7 @@ from app.statistics import (
 )
 from events import tasks
 from events.models import Event
+from integrations.state.ratings import rating_edit
 from lists.forms import validate_public_slug
 from lists.models import CustomList, CustomListItem
 from users.models import MediaStatusChoices
@@ -225,7 +226,7 @@ class CalendarUpdateView(drf_views.APIView):
 
     def post(self, request):
         """Trigger calendar events update for the authenticated user."""
-        tasks.reload_calendar.delay(request.user)
+        tasks.reload_calendar.delay(user_id=request.user.pk)
         return Response(
             {"detail": "Task queued"},
             status=HTTP.ACCEPTED,
@@ -887,6 +888,7 @@ class MediaTypeListView(drf_views.APIView):
             500: DetailErrorSerializer,
         },
     )
+    @rating_edit
     def post(self, request, media_type):
         """Create a new consumption for a media item.
 
@@ -1106,7 +1108,9 @@ class MediaTypeListView(drf_views.APIView):
 
         media_form.save()
         apply_image_url(item, media_form.cleaned_data.get("image_url"))
-        episode_count_fields = metadata_utils.apply_provider_episode_count(item, metadata)
+        episode_count_fields = metadata_utils.apply_provider_episode_count(
+            item, metadata
+        )
         if episode_count_fields:
             item.save(update_fields=episode_count_fields)
         BasicMedia.objects.annotate_episode_progress(
@@ -1401,6 +1405,7 @@ class MediaDetailView(drf_views.APIView):
             500: DetailErrorSerializer,
         },
     )
+    @rating_edit
     def patch(self, request, media_type, source, media_id):
         """Update the convenience/default tracked row for a media item.
 
@@ -1800,6 +1805,7 @@ class MediaConsumptionEntryDetailView(drf_views.APIView):
             500: DetailErrorSerializer,
         },
     )
+    @rating_edit
     def patch(self, request, media_type, source, media_id, consumption_id):
         """Update one exact consumption history entry for a media item."""
         if not check_valid_type(media_type):
@@ -3836,6 +3842,7 @@ class MediaEpisodeDetailView(drf_views.APIView):
         parameters=[MEDIA_TYPE_PARAM, LIBRARY_MEDIA_TYPE_PARAM],
         responses={404: DetailErrorSerializer},
     )
+    @rating_edit
     def patch(
         self,
         request,
@@ -4334,6 +4341,7 @@ class MediaEpisodeConsumptionEntryDetailView(drf_views.APIView):
         parameters=[MEDIA_TYPE_PARAM, LIBRARY_MEDIA_TYPE_PARAM],
         responses={404: DetailErrorSerializer},
     )
+    @rating_edit
     def patch(
         self,
         request,

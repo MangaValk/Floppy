@@ -31,7 +31,7 @@ from app.game_artwork import (
     thegamesdb,
 )
 from app.game_artwork.base import BACKDROP, LOGO, Art, GameQuery
-from app.models import GameArtwork, Sources
+from app.models import GameArtwork, Item, MediaTypes, Sources
 from app.providers import credentials
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ COMPLETE_TTL = timedelta(days=30)
 INCOMPLETE_TTL = timedelta(hours=6)
 # After a provider error nothing is stored; this stops every page view retrying.
 ERROR_BACKOFF_SECONDS = 300
+MAX_GALLERY_PHOTOS = 24
 IGDB_PROVIDER = "igdb"
 MAX_URL_LENGTH = GameArtwork._meta.get_field("logo_url").max_length
 
@@ -60,6 +61,23 @@ def query_for(media_id, metadata):
         year=year,
         steam_app_id=(metadata.get("external_ids") or {}).get("steam_app_id", ""),
     )
+
+
+def stored_query(media_id):
+    """Build an artwork search from local metadata when IGDB is unavailable."""
+    item = Item.objects.filter(
+        source=Sources.IGDB.value, media_type=MediaTypes.GAME.value, media_id=str(media_id),
+    ).only("title", "platforms", "release_datetime", "provider_external_ids").first()
+    if item is None:
+        return None
+    return query_for(media_id, {
+        "title": item.title,
+        "details": {
+            "platforms": item.platforms,
+            "release_date": item.release_datetime.isoformat() if item.release_datetime else "",
+        },
+        "external_ids": item.provider_external_ids,
+    })
 
 
 def provider_order(query):
@@ -178,6 +196,17 @@ def _art(row, kind):
     )
 
 
+def peek(media_id):
+    """Read fresh stored artwork without triggering a provider lookup."""
+    row = GameArtwork.objects.filter(
+        source=Sources.IGDB.value,
+        media_id=str(media_id),
+    ).first()
+    if row is None or is_stale(row):
+        return None
+    return {"logo": _art(row, "logo"), "backdrop": _art(row, "backdrop")}
+
+
 def resolve(query, *, fallback_backdrop=None):
     """Return ``{"logo": Art | None, "backdrop": Art | None}`` for a game.
 
@@ -202,6 +231,49 @@ def resolve(query, *, fallback_backdrop=None):
         # IGDB's own artwork is read fresh rather than from the stored copy.
         backdrop = fallback_backdrop or backdrop
     return {LOGO: logo, BACKDROP: backdrop}
+
+
+def gallery(media_id, *, cached_only=False):
+    """Read or resolve a bounded gallery from the available artwork providers."""
+    resolved_at = GameArtwork.objects.filter(
+        source=Sources.IGDB.value, media_id=str(media_id),
+    ).values_list("resolved_at", flat=True).first()
+    # Artwork refreshes and newly saved credentials each reopen the gallery.
+    version = resolved_at.timestamp() if resolved_at else 0
+    key = f"game_gallery_v1_{media_id}_{version}_{_keys_changed_at()}"
+    cached = cache.get(key)
+    if cached is not None or cached_only:
+        return cached
+    query = stored_query(media_id)
+    if query is None:
+        return []
+    photos, seen = [], set()
+    errored = False
+    started = time.monotonic()
+    for provider in provider_order(query):
+        if time.monotonic() - started > RESOLVE_BUDGET_SECONDS:
+            errored = True
+            break
+        try:
+            if hasattr(provider, "gallery"):
+                images = provider.gallery(query)
+            else:
+                backdrop = provider.find(query, [BACKDROP]).get(BACKDROP)
+                images = [{"url": backdrop.url}] if backdrop else []
+            for image in images:
+                url = image["url"]
+                if url not in seen:
+                    seen.add(url)
+                    photos.append({**image, "thumb_url": image.get("thumb_url") or url})
+                if len(photos) >= MAX_GALLERY_PHOTOS:
+                    break
+        except Exception:
+            errored = True
+            logger.warning("Game gallery lookup failed for %s (%s)", media_id, provider.PROVIDER, exc_info=True)
+        if len(photos) >= MAX_GALLERY_PHOTOS:
+            break
+    cache.set(key, photos, ERROR_BACKOFF_SECONDS if errored else int(INCOMPLETE_TTL.total_seconds()))
+    return photos
 
 
 def _store(query, found, fallback_backdrop, *, existing):

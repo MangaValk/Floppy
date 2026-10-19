@@ -721,7 +721,8 @@ class ExpiryTests(TestCase):
 
         self.assertEqual(credentials.instance_value("steamgriddb", "api_key"), "k")
 
-    def test_the_game_page_loads_its_carousel_again_after_a_refresh(self):
+    @patch("app.game_artwork.gallery", return_value=[])
+    def test_the_game_page_loads_its_carousel_again_after_a_refresh(self, _gallery):
         from app import carousel
 
         self.row()
@@ -732,7 +733,8 @@ class ExpiryTests(TestCase):
 
         self.assertFalse(carousel.confirmed_empty("game", "igdb", "7"))
 
-    def test_the_game_page_loads_its_carousel_again_after_a_key_is_saved(self):
+    @patch("app.game_artwork.gallery", return_value=[])
+    def test_the_game_page_loads_its_carousel_again_after_a_key_is_saved(self, _gallery):
         from app import carousel
 
         self.row()
@@ -742,3 +744,39 @@ class ExpiryTests(TestCase):
         game_artwork.keys_saved()
 
         self.assertFalse(carousel.confirmed_empty("game", "igdb", "7"))
+
+
+class GalleryProviderTests(TestCase):
+    @override_settings(STEAMGRIDDB_API_KEY="sgdb-key")
+    def test_steamgriddb_returns_all_heroes_sorted_with_thumbnails(self):
+        images = [
+            {"url": "https://x/low.jpg", "score": 1},
+            {"url": "https://x/high.jpg", "thumb": "https://x/thumb.jpg", "score": 9, "width": 1920, "height": 620},
+        ]
+        with patch.object(steamgriddb, "_game_id", return_value=55), patch(API, return_value={"data": images}) as api:
+            photos = steamgriddb.gallery(query())
+        self.assertEqual([p["url"] for p in photos], ["https://x/high.jpg", "https://x/low.jpg"])
+        self.assertEqual(photos[0]["thumb_url"], "https://x/thumb.jpg")
+        self.assertIn("/heroes/game/55", api.call_args.args[2])
+
+    @override_settings(THEGAMESDB_API_KEY="tgdb-key")
+    def test_thegamesdb_returns_every_fanart(self):
+        payload = {"data": {"base_url": {"original": "https://x/"}, "images": {"55": [
+            {"type": "fanart", "filename": "one.jpg"},
+            {"type": "fanart", "filename": "two.jpg"},
+            {"type": "clearlogo", "filename": "logo.png"},
+        ]}}}
+        with patch.object(thegamesdb, "_game_id", return_value=55), patch(API, return_value=payload):
+            photos = thegamesdb.gallery(query())
+        self.assertEqual([p["url"] for p in photos], ["https://x/one.jpg", "https://x/two.jpg"])
+
+    @override_settings(**DEV)
+    def test_screenscraper_gallery_strips_credentials_and_excludes_logos(self):
+        with patch(API, return_value=RESPONSE):
+            photos = screenscraper.gallery(query(platforms=(SNES,)))
+        self.assertEqual(len(photos), 2)
+        self.assertIn("media=fanart", photos[0]["url"])
+        self.assertEqual(photos[1]["url"], "https://api.screenscraper.fr/ss")
+        for photo in photos:
+            for secret in ("devid", "devpassword", "softname", "ssid", "sspassword"):
+                self.assertNotIn(secret, photo["url"])
