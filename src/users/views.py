@@ -72,7 +72,7 @@ from integrations.models import (
 )
 from integrations.plex_watchlist import WATCHLIST_TASK_NAME
 from users import appearance as appearance_config
-from users import cache_management, helpers
+from users import cache_management, helpers, release_notes
 from users.forms import (
     AuthenticatorSetupForm,
     NotificationSettingsForm,
@@ -2467,6 +2467,27 @@ def export_logs(request):
     response = StreamingHttpResponse(lines(), content_type="text/plain")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+@require_GET
+def whats_new(request):
+    """Render the release notes fragment the About page loads in the background."""
+    installed = release_notes.release_tag(settings.VERSION)
+    releases = release_notes.get_releases()
+    for release in releases or []:
+        release["installed"] = release["tag"] == installed
+        release["newer"] = release_notes.tag_sort_key(
+            release["tag"],
+        ) > release_notes.tag_sort_key(installed)
+    return render(
+        request,
+        "users/components/whats_new.html",
+        {
+            "releases": releases,
+            "installed": installed,
+            "releases_url": release_notes.RELEASES_PAGE_URL,
+        },
+    )
 
 
 @require_GET
