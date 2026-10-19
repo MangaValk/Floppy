@@ -216,6 +216,7 @@ what the user approved, and the settings page names the shortfall as
 | Plex | Existing webhooks and history; manual marks via an opt-in 15-minute history poll (Plex sends no webhook for them) | `/:/scrobble` is undocumented | inbound only |
 | Stremio | Existing bitfield parsing | `datastorePut` is a read-modify-write of an opaque bitfield with no CAS | inbound only |
 | Audiobookshelf | Existing pull | Documented, unverified | inbound only |
+| WeTrakr | No | Batched plays (dated), statuses and ratings with a per-item reply; no unwatch yet | outbound only, see [WeTrakr](../integrations/wetrakr.md) |
 | Last.fm / ListenBrainz / Koito | Listens | Append-only | out of scope — listens have no unwatch |
 
 **Never emulate unwatched by deleting listens.**
