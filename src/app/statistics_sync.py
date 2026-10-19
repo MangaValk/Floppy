@@ -1031,9 +1031,15 @@ def run_sync(
     user = user_model.objects.filter(pk=user_id).first()
     if user is None:
         return {"status": "missing", "published": {}}
-    if _ensure_state(user_id) is None:
-        return {"status": "missing", "published": {}}
-    lease_token = _claim_lease(user_id, takeover=takeover)
+    try:
+        if _ensure_state(user_id) is None:
+            return {"status": "missing", "published": {}}
+        lease_token = _claim_lease(user_id, takeover=takeover)
+    except OperationalError as exc:
+        if not is_lock_error(exc):
+            raise
+        logger.warning("stats_sync_locked user_id=%s error=%s", user_id, exc)
+        return {"status": "locked", "published": {}}
     if lease_token is None:
         return {"status": "busy", "published": {}}
 
@@ -1242,7 +1248,13 @@ def run_sync(
             ).update(last_error=f"{type(exc).__name__}: {exc}"[:1000])
             raise
     finally:
-        _release_lease(user_id, lease_token)
+        try:
+            _release_lease(user_id, lease_token)
+        except OperationalError as exc:
+            if not is_lock_error(exc):
+                raise
+            # The lease lapses on its own, after which the reconciler can claim.
+            logger.warning("stats_sync_release_locked user_id=%s error=%s", user_id, exc)
 
     if status == "locked":
         # Queueing a follow-up now would just meet the same lock.
@@ -1303,7 +1315,7 @@ def sync_task_body(user_id: int) -> dict:
 def refresh_range_inline(user_id: int, range_name: str):
     """Rebuild one range in this process and return its payload."""
     result = run_sync(user_id, only_ranges=[range_name])
-    if result["status"] in ("busy", "lost_lease"):
+    if result["status"] in ("busy", "lost_lease", "locked"):
         # Preserve the running worker's lease and leave durable work for its
         # continuation/reconciler, including same-generation schema upgrades.
         mark_aggregate(user_id, reason="inline_refresh_deferred", full_sweep=True)

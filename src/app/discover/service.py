@@ -12,7 +12,6 @@ from django.core.cache import cache
 from django.db import OperationalError
 from django.utils import timezone
 
-from app.db_retry import run_retryable_db_operation
 from app.discover import cache_repo, tab_cache
 from app.discover.adapters import TMDB_ADAPTER
 from app.discover.artwork import (
@@ -1166,19 +1165,12 @@ def _build_and_cache_row(
     try:
         current_activity_version = tab_cache.get_activity_version(user.id, media_type)
         if current_activity_version == build_activity_version:
-            # update_or_create reads before it writes, so a commit from another
-            # process in between fails at once with "database is locked"
-            # instead of waiting. A retry starts from a fresh snapshot.
-            run_retryable_db_operation(
-                lambda: cache_repo.set_row_cache(
-                    user.id,
-                    media_type,
-                    row_definition.key,
-                    cache_payload,
-                    ttl_seconds=_row_ttl_seconds(row_definition),
-                ),
-                operation_name="Discover row cache write",
-                operation_logger=logger,
+            cache_repo.set_row_cache(
+                user.id,
+                media_type,
+                row_definition.key,
+                cache_payload,
+                ttl_seconds=_row_ttl_seconds(row_definition),
             )
         else:
             logger.info(

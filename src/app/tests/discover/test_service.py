@@ -52,7 +52,6 @@ from app.models import (
     CreditRoleType,
     DiscoverFeedback,
     DiscoverFeedbackType,
-    DiscoverRowCache,
     Episode,
     Item,
     ItemPersonCredit,
@@ -2296,7 +2295,6 @@ class DiscoverServiceTests(TestCase):
         self.assertEqual(row_map["comfort_rewatches"].items, [])
         self.assertEqual(row_map["comfort_rewatches"].source_state, "error")
 
-    @patch("app.db_retry.time.sleep")
     @patch(
         "app.discover.service.cache_repo.set_row_cache",
         side_effect=OperationalError("database is locked"),
@@ -2316,7 +2314,6 @@ class DiscoverServiceTests(TestCase):
         mock_comfort,
         _mock_profile,
         _mock_set_row_cache,
-        _mock_sleep,
     ):
         def candidate(media_id: str, title: str) -> CandidateItem:
             return CandidateItem(
@@ -2366,63 +2363,6 @@ class DiscoverServiceTests(TestCase):
         self.assertEqual(
             [item.title for item in row_map["comfort_rewatches"].items],
             ["Comfort 1", "Comfort 2", "Comfort 3"],
-        )
-
-    @patch("app.db_retry.time.sleep")
-    @patch("app.discover.service._prepare_row_from_candidates")
-    @patch("app.discover.service._build_row_candidates", return_value=[])
-    def test_row_cache_write_retries_a_transient_lock(
-        self,
-        _mock_candidates,
-        mock_prepare,
-        mock_sleep,
-    ):
-        row_definition = RowDefinition(
-            key="trending_right_now",
-            title="Trending Right Now",
-            mission="Cultural Moment",
-            why="What everyone has been watching this week.",
-            source="tmdb",
-        )
-        mock_prepare.return_value = (
-            RowResult(
-                key=row_definition.key,
-                title=row_definition.title,
-                mission=row_definition.mission,
-                why=row_definition.why,
-                source=row_definition.source,
-                items=[],
-            ),
-            False,
-        )
-        real_set_row_cache = cache_repo.set_row_cache
-        calls = []
-
-        def lock_once_then_write(*args, **kwargs):
-            calls.append(args)
-            if len(calls) == 1:
-                raise OperationalError("database is locked")
-            return real_set_row_cache(*args, **kwargs)
-
-        with patch(
-            "app.discover.service.cache_repo.set_row_cache",
-            side_effect=lock_once_then_write,
-        ):
-            _build_and_cache_row(
-                self.user,
-                MediaTypes.TV.value,
-                row_definition,
-                {},
-            )
-
-        self.assertEqual(len(calls), 2)
-        mock_sleep.assert_called_once()
-        self.assertTrue(
-            DiscoverRowCache.objects.filter(
-                user=self.user,
-                media_type=MediaTypes.TV.value,
-                row_key=row_definition.key,
-            ).exists(),
         )
 
     @patch("app.discover.service.get_or_compute_taste_profile", return_value={})
