@@ -241,7 +241,7 @@ def describe_restart(previous, current):
         parts.append(f"after {_duration((ended - began).total_seconds())} up")
     if ended and now:
         down = _duration((now - ended).total_seconds())
-        parts.append(f"{'down' if clean else 'down at least'} {down} before this start")
+        parts.append(f"{'down' if clean else 'down at most'} {down} before this start")
     old_host, new_host = previous.get("hostname"), current.get("hostname")
     if old_host and new_host:
         parts.append(

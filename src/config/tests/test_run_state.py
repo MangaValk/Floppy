@@ -136,7 +136,7 @@ class RestartDescriptionTests(SimpleTestCase):
         )
 
         self.assertIn("ended WITHOUT a clean stop", text)
-        self.assertIn("down at least", text)
+        self.assertIn("down at most", text)
         self.assertIn("new container (d57ad038526c -> abc123)", text)
         self.assertIn("version v1 -> v2", text)
 
