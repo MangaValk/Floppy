@@ -185,8 +185,9 @@ def import_media(
                 )
             statistics_changes["unchanged"] = not has_imported_media(imported_counts)
             if day_scoped:
-                helpers.publish_bulk_rows(user_id, bulk_rows)
-                statistics_changes["scoped"] = True
+                statistics_changes["scoped"] = helpers.publish_bulk_rows(
+                    user_id, bulk_rows
+                )
     except BaseException:
         # BaseException so a soft time limit or worker shutdown still leaves a
         # record. RUNNING only: a cancel has already marked the row CANCELLED.

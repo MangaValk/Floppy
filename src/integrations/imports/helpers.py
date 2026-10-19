@@ -89,12 +89,15 @@ def publish_bulk_rows(user_id, rows):
     touch is a superset of the days any History or Statistics placement uses.
     Undated rows have no day to refresh, but their status and score still feed
     the range totals, so they re-aggregate those.
+
+    Returns whether the refresh stayed scoped; False means it dropped every day
+    (see ``note_full_refresh``), so the sweep the import requested must stand.
     """
     from app import history_cache, statistics_sync
 
     if FULL_REFRESH in rows:
         publish_everything(user_id)
-        return
+        return False
 
     day_keys = set()
     has_undated = False
@@ -113,6 +116,7 @@ def publish_bulk_rows(user_id, rows):
         statistics_sync.mark_days(user_id, day_keys, reason="import_rows")
     if has_undated:
         statistics_sync.mark_aggregate(user_id, reason="import_rows")
+    return True
 
 
 class MediaImportError(Exception):

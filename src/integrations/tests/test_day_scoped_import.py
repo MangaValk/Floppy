@@ -173,3 +173,6 @@ class DayScopedImportTests(TestCase):
 
         history_all.assert_called_once_with(self.user.id, force=True)
         stats_all.assert_called_once_with(self.user.id, reason="media_import")
+        self.assertIsNotNone(
+            StatisticsSyncState.objects.get(user=self.user).full_sweep_requested_at
+        )
