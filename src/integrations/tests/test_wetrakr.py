@@ -1031,7 +1031,7 @@ class ConnectViewTests(TestCase):
         self.assertEqual(decrypt(account.device_code), "dev-1")
         self.assertEqual(account.user_code, "ABCD-1234")
         self.assertTrue(account.is_pending)
-        self.assertContains(self.client.get(reverse("integrations")), "ABCD-1234")
+        self.assertContains(self.client.get(reverse("mal_export")), "ABCD-1234")
 
     def test_polling_while_unapproved_stays_pending(self):
         self._start()
@@ -1187,11 +1187,20 @@ class ConnectViewTests(TestCase):
         self.assertFalse(WeTrakrAccount.objects.exists())
         self.assertContains(response, "could not confirm the logout")
 
+    def test_both_service_cards_are_on_the_sync_page_and_not_on_integrations(self):
+        sync_page = self.client.get(reverse("mal_export"))
+        integrations = self.client.get(reverse("integrations"))
+
+        self.assertContains(sync_page, "TMDb ratings")
+        self.assertContains(sync_page, "WeTrakr")
+        self.assertNotContains(integrations, "TMDb ratings")
+        self.assertNotContains(integrations, "Connect WeTrakr")
+
     def test_a_connected_card_lists_the_switches(self):
         self._connect()
         self.client.post(reverse("wetrakr_settings"), {"plays": "on"})
 
-        page = self.client.get(reverse("integrations"))
+        page = self.client.get(reverse("mal_export"))
 
         self.assertContains(page, "Send existing library")
         self.assertContains(page, 'name="plays"')

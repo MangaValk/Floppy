@@ -1776,9 +1776,7 @@ def convert_tv_library(request):
 def integrations(request):
     """Render the integrations settings page."""
     from integrations.state import settings_view
-    from integrations.tmdb_views import rating_sync_status
     from integrations.webhooks.jellyfin import jellyfin_template_outdated
-    from integrations.wetrakr_views import wetrakr_status
 
     user = request.user
     last_received = user.plex_webhook_last_received_at
@@ -1871,8 +1869,6 @@ def integrations(request):
         {
             "user": user,
             "sync_bindings": settings_view.binding_rows(user),
-            "tmdb_rating_sync": rating_sync_status(user),
-            "wetrakr_sync": wetrakr_status(user),
             "sync_conflicts": settings_view.open_conflicts(user),
             "plex_webhook_needs_update": plex_webhook_needs_update,
             "jellyfin_template_outdated": jellyfin_template_outdated(user.id),
@@ -2314,7 +2310,10 @@ def export_data(request):
 
 @require_GET
 def mal_export(request):
-    """Render the MyAnimeList export (status sync) settings page."""
+    """Render the Sync to Trackers page: MyAnimeList, TMDb and WeTrakr."""
+    from integrations.tmdb_views import rating_sync_status
+    from integrations.wetrakr_views import wetrakr_status
+
     user = request.user
     mal_account = getattr(user, "mal_account", None)
     schedule = None
@@ -2345,6 +2344,8 @@ def mal_export(request):
         "mal_sync_initial": mal_sync.full_sync_report(mal_account) if mal_account else None,
         "mal_ignored_mappings": mal_sync.ignored_mappings(user) if mal_account else [],
         "mal_manual_mappings": mal_sync.manual_episode_mappings(user) if mal_account else [],
+        "tmdb_rating_sync": rating_sync_status(user),
+        "wetrakr_sync": wetrakr_status(user),
     }
     return render(request, "users/mal_export.html", context)
 

@@ -790,6 +790,10 @@
       </div>
     {% endif %}
 
+    {# Services that take Floppy's plays, statuses and ratings: one card each #}
+    {% include "users/components/tmdb_rating_sync.html" %}
+    {% include "users/components/wetrakr_sync.html" %}
+
     </div>
 
     {# Manual MAL episode mapping wizard #}
