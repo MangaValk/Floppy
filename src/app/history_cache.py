@@ -676,7 +676,7 @@ def _build_podcast_entries(user, podcast_history_records, podcasts_lookup):
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": played_at_local,
-                **_entry_dates(history_record),
+                **_entry_dates(history_record, added_from=podcast),
                 "runtime_minutes": runtime_minutes,
                 "runtime_display": helpers.minutes_to_hhmm(runtime_minutes)
                 if runtime_minutes

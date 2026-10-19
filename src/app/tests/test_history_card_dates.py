@@ -12,7 +12,21 @@ from app.history_cache_serialization import (
     _deserialize_history_entry,
     _serialize_history_entry,
 )
-from app.models import Game, Item, MediaTypes, Movie, Sources, Status
+from app.models import (
+    Album,
+    Artist,
+    Game,
+    Item,
+    MediaTypes,
+    Movie,
+    Music,
+    Podcast,
+    PodcastEpisode,
+    PodcastShow,
+    Sources,
+    Status,
+    Track,
+)
 from users.card_metadata import card_lines, parse_card_metadata
 
 
@@ -34,6 +48,8 @@ class HistoryCardDateTests(TestCase):
                 "types": {
                     "movie": {"lines": lines},
                     "game": {"lines": lines},
+                    "music": {"lines": lines},
+                    "podcast": {"lines": lines},
                 }
             }
         )
@@ -69,17 +85,77 @@ class HistoryCardDateTests(TestCase):
             end_date=cls.end,
         )
 
+    def _add_music_and_podcast(self):
+        artist = Artist.objects.create(name="Dated Artist")
+        album = Album.objects.create(title="Dated Album", artist=artist)
+        track = Track.objects.create(
+            album=album, title="Dated Track", track_number=1, duration_ms=180000
+        )
+        music_item = Item.objects.create(
+            media_id="dates-music",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MUSIC.value,
+            title="Dated Track",
+        )
+        self.music = Music.objects.create(
+            item=music_item,
+            user=self.user,
+            album=album,
+            artist=artist,
+            track=track,
+            status=Status.COMPLETED.value,
+            progress=1,
+            start_date=self.start,
+            end_date=self.end,
+        )
+        show = PodcastShow.objects.create(
+            podcast_uuid="dates-show",
+            source=Sources.POCKETCASTS.value,
+            title="Dated Podcast",
+        )
+        episode = PodcastEpisode.objects.create(
+            show=show,
+            episode_uuid="dates-episode",
+            title="Dated Episode",
+            published=self.start,
+            duration=1800,
+        )
+        podcast_item = Item.objects.create(
+            media_id="dates-episode",
+            source=Sources.POCKETCASTS.value,
+            media_type=MediaTypes.PODCAST.value,
+            title="Dated Episode",
+        )
+        self.podcast = Podcast.objects.create(
+            item=podcast_item,
+            user=self.user,
+            show=show,
+            episode=episode,
+            status=Status.COMPLETED.value,
+            progress=30,
+            start_date=self.start,
+            end_date=self.end,
+        )
+
     def setUp(self):
         cache.clear()
 
     def _entries(self, media_type):
+        """Entries from the full build and from the per-day builder."""
         days = history_cache.build_history_days(self.user)
-        return [
+        days.append(
+            history_cache.build_history_day(
+                self.user, history_cache.history_day_key(self.end)
+            )
+        )
+        entries = [
             entry
             for day in days
             for entry in day["entries"]
             if entry["media_type"] == media_type
         ]
+        self.assertGreaterEqual(len(entries), 2)
+        return entries
 
     def _expected(self, record):
         local = timezone.localtime
@@ -97,6 +173,19 @@ class HistoryCardDateTests(TestCase):
             entry = self._entries(media_type)[0]
             lines = card_lines(self.user, media_type, entry["item"], entry)
             self.assertEqual([line["text"] for line in lines], [self._expected(record)])
+
+    def test_music_and_podcast_history_cards_show_the_dates(self):
+        """Grouped music uses its latest play record; podcasts read the history row."""
+        self._add_music_and_podcast()
+        for media_type, record in (
+            (MediaTypes.MUSIC.value, self.music),
+            (MediaTypes.PODCAST.value, self.podcast),
+        ):
+            for entry in self._entries(media_type):
+                lines = card_lines(self.user, media_type, entry["item"], entry)
+                self.assertEqual(
+                    [line["text"] for line in lines], [self._expected(record)]
+                )
 
     def test_dates_survive_the_history_cache(self):
         """The cached copy of an entry keeps its dates as aware datetimes."""

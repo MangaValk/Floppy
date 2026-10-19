@@ -459,6 +459,8 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": latest_time,
+                **_entry_dates(entry_music),
+                "end_date": latest_time,
                 "runtime_minutes": group["total_runtime_minutes"],
                 "runtime_display": helpers.minutes_to_hhmm(
                     group["total_runtime_minutes"]
@@ -483,7 +485,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 end_date__gte=day_start,
                 end_date__lt=day_end,
             )
-            .values_list("id", "end_date", "history_id", named=True)
+            .values_list("id", "start_date", "end_date", "history_id", named=True)
             .iterator(chunk_size=500)
         )
     if podcast_history_records:
@@ -568,7 +570,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                     "episode_label": None,
                     "episode_code": None,
                     "played_at_local": played_at_local,
-                    **_entry_dates(history_record),
+                    **_entry_dates(history_record, added_from=podcast),
                     "runtime_minutes": runtime_minutes,
                     "runtime_display": helpers.minutes_to_hhmm(runtime_minutes)
                     if runtime_minutes
