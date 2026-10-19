@@ -47,11 +47,11 @@ class AboutViewTests(TestCase):
         response = self.client.get(reverse("about"))
 
         soup = BeautifulSoup(response.content, "html.parser")
-        link = soup.find("a", href=lambda h: h and "github.com/sponsors/" in h)
-        self.assertEqual(
-            link["href"],
-            "https://github.com/sponsors/dannyvfilms?metadata_source=app-about",
+        link = soup.find(
+            "a",
+            href=lambda h: h and h.endswith("github.com/sponsors/dannyvfilms?metadata_source=app-about"),
         )
+        self.assertIsNotNone(link)
         self.assertEqual(link["rel"], ["noopener", "noreferrer"])
         self.assertContains(response, "no paid features")
 
@@ -152,7 +152,8 @@ class AboutViewTests(TestCase):
         link = next(
             link
             for link in soup.find_all("a")
-            if link.get("href") == "https://github.com/sponsors/dannyvfilms"
+            if link.get("href")
+            == "https://github.com/sponsors/dannyvfilms?metadata_source=app-about-description"
         )
         self.assertEqual(link.get("rel"), ["noopener", "noreferrer"])
         self.assertIn(
