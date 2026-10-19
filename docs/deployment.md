@@ -19,6 +19,7 @@ services:
     image: ghcr.io/dannyvfilms/floppy:latest
     container_name: floppy
     restart: unless-stopped
+    stop_grace_period: 150s
     depends_on:
       redis:
         condition: service_healthy
@@ -102,6 +103,15 @@ container is down. Settings → Advanced → Download Sanitized Logs bundles all
 four and redacts known credential
 patterns. The download can still contain private activity or unrecognized secrets;
 review it before sharing.
+
+If the container is stopped from outside (`docker stop`, a restart, a NAS
+scheduled task), the next start logs `Previous run was stopped by SIGTERM`.
+Docker kills a container that is still shutting down after 10 seconds by
+default, but celery waits up to 60 seconds for a running task, so the compose
+files set `stop_grace_period: 150s` (`--stop-timeout 150` for `docker run`). A
+stop that is cut short is logged as an unclean shutdown that names the stop
+request. If you wrote your own compose file, add the setting to the `floppy`
+service.
 
 `BACKUP_DIR` defaults to `/floppy/backups` inside the container. The
 Settings → Export page shows this path, but it is a container path, not a
@@ -221,6 +231,7 @@ services:
     image: ghcr.io/dannyvfilms/floppy:latest
     container_name: floppy
     restart: unless-stopped
+    stop_grace_period: 150s
     depends_on:
       - db
       - redis
@@ -304,6 +315,7 @@ docker run -d \
   --name floppy \
   --network floppy-net \
   --restart unless-stopped \
+  --stop-timeout 150 \
   -e ALLOWED_HOSTS=floppy.yourdomain.com,your.lan.ip.address \
   -e DEBUG=False \
   -e DEMO_ACCOUNT_ENABLED=False \

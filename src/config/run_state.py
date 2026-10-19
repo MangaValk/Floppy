@@ -8,6 +8,9 @@ every process at once. This module leaves evidence on the log volume instead:
 * On the next start, a state that was never marked clean is reported in
   ``floppy.log`` with the last heartbeat and how close memory was to its limit.
 * ``faulthandler.log`` receives the Python traceback of a segfault or abort.
+* The signal that asked gunicorn to stop is recorded, so the next start can say
+  "stopped by SIGTERM" (``docker stop``, a restart, a NAS task) rather than
+  leave a crash to be inferred.
 * A memory line is logged every few minutes, so the log shows the trend that
   led up to a crash. It splits memory into program (anon) and file cache, and
   counts how often the container hit its limit, because the OOM counter is
@@ -41,6 +44,14 @@ HISTORY_MAX_LINES = 200
 HEARTBEAT_SECONDS = 60
 MEMORY_LINE_EVERY = 5  # heartbeats between memory lines in floppy.log
 NEAR_LIMIT_RATIO = 0.9
+# Sized in docker-compose.yml: celery waits up to 60 s per worker for a running
+# task (supervisord.conf), the web server up to 30 s, and supervisord stops them
+# one after another.
+STOP_GRACE_HINT = (
+    "Docker kills a container that is still shutting down when its stop timeout "
+    "(10 s by default) runs out, so set stop_grace_period: 150s on the floppy "
+    "service."
+)
 # cgroup v1 reports "no limit" as a number close to 2**63.
 _UNLIMITED_BYTES = 1 << 60
 _CGROUP_V2 = "/sys/fs/cgroup"
@@ -209,6 +220,17 @@ def describe_unclean_exit(previous):
             "To check for an OOM kill, run: docker inspect <container> "
             "--format '{{.State.OOMKilled}}' (or dmesg | grep -i oom on the host)."
         )
+    if previous.get("stop_signal"):
+        parts.append(
+            f"A stop was requested ({previous['stop_signal']} at "
+            f"{previous.get('stop_requested_at')}) but shutdown did not finish, "
+            f"so it was killed part way. {STOP_GRACE_HINT}"
+        )
+    else:
+        parts.append(
+            "If a stop was requested from outside (docker stop, a restart, a "
+            f"NAS task) and cut short, the stop signal never reached Floppy. {STOP_GRACE_HINT}"
+        )
     return " ".join(parts)
 
 
@@ -237,6 +259,8 @@ def describe_restart(previous, current):
     parts = [
         f"previous run {'stopped cleanly' if clean else 'ended WITHOUT a clean stop'}"
     ]
+    if previous.get("stop_signal"):
+        parts[0] += f" after {previous['stop_signal']}"
     if ended and began:
         parts.append(f"after {_duration((ended - began).total_seconds())} up")
     if ended and now:
@@ -279,6 +303,17 @@ def _append_history(line):
         logger.debug("Could not write %s", path, exc_info=True)
 
 
+def describe_requested_stop(previous):
+    """Return the log line for a previous run that was asked to stop."""
+    return (
+        f"Previous run was stopped by {previous['stop_signal']} at "
+        f"{previous.get('stop_requested_at')} and shut down cleanly. "
+        "That signal comes from outside Floppy (docker stop, docker restart, "
+        "docker compose, a NAS scheduled task or updater), so this was not a "
+        "crash."
+    )
+
+
 def start():
     """Report how the previous run ended, then begin the heartbeat."""
     previous = read_state()
@@ -286,6 +321,8 @@ def start():
     if previous and not previous.get("clean", True):
         logger.warning("[run-state] %s", describe_unclean_exit(previous))
         last_unclean = previous.get("last_heartbeat")
+    elif previous and previous.get("stop_signal"):
+        logger.info("[run-state] %s", describe_requested_stop(previous))
     elif previous:
         logger.info(
             "[run-state] Previous run shut down cleanly at %s.",
@@ -338,6 +375,18 @@ def _heartbeat_loop():
         _beat(clean=False)
         if ticks % MEMORY_LINE_EVERY == 0:
             logger.info("[run-state] %s", _memory_summary(_state))
+
+
+def note_stop_signal(name):
+    """Record the signal that asked gunicorn to stop, before it shuts down.
+
+    Written immediately, still marked unclean: if the container is killed
+    before shutdown finishes, the next start reports a stop that was cut short
+    instead of an unexplained crash.
+    """
+    if _state:
+        _state.update(stop_signal=name, stop_requested_at=_now().isoformat())
+        _beat(clean=False)
 
 
 def stop():
