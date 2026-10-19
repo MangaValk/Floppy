@@ -390,6 +390,23 @@ class DeliveryTests(OutboundTestCase):
         self.assertEqual(self.adapter.writes, [])
 
 
+class ReconcileTaskTests(OutboundTestCase):
+    def test_reconcile_runs_for_a_binding_that_reads_state(self):
+        """A pass takes its lock and records itself instead of raising."""
+        from integrations.tasks import reconcile_watched_state
+
+        activate_binding(
+            self.binding,
+            capabilities=[CAPABILITY_WATCHED_READ],
+            directions=[SyncDirection.INBOUND.value],
+        )
+
+        reconcile_watched_state(binding_id=self.binding.pk)
+
+        self.binding.refresh_from_db()
+        self.assertIsNotNone(self.binding.last_reconciled_at)
+
+
 class SweepScheduleTests(TestCase):
     def test_the_sweep_is_scheduled(self):
         """Retries and lost kicks only recover if something runs the sweep."""

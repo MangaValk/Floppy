@@ -92,9 +92,9 @@ def reconcile_watched_state(binding_id=None):
         # once against one provider wastes its rate limit for no benefit.
         if not acquire_lock(
             lock_key,
-            str(binding.pk),
-            RECONCILE_LOCK_TIMEOUT,
+            timeout=RECONCILE_LOCK_TIMEOUT,
             on_error=ON_ERROR_SKIP,
+            value=str(binding.pk),
         ):
             continue
 
