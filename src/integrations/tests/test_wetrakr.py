@@ -839,10 +839,6 @@ class EndToEndTests(WeTrakrTestCase):
             ],
             directions=[SyncDirection.OUTBOUND.value],
         )
-        WatchStateSequence.objects.update_or_create(
-            user=self.user,
-            defaults={"emit_changes": True},
-        )
 
     def _watch(self):
         return Movie.objects.create(
@@ -1074,6 +1070,18 @@ class ConnectViewTests(TestCase):
         binding = SyncBinding.objects.get(user=self.user, client_kind="wetrakr")
         for capability in (CAPABILITY_PLAY_PUSH, CAPABILITY_RATING_PUSH):
             self.assertFalse(binding.allows(SyncDirection.OUTBOUND.value, capability))
+
+    def test_switching_plays_on_starts_recording_changes_to_send(self):
+        self._connect()
+        self.assertFalse(
+            WatchStateSequence.objects.filter(
+                user=self.user, emit_changes=True
+            ).exists(),
+        )
+
+        self.client.post(reverse("wetrakr_settings"), {"plays": "on"})
+
+        self.assertTrue(WatchStateSequence.objects.get(user=self.user).emit_changes)
 
     def test_switching_back_on_resumes_sending(self):
         self._connect()
