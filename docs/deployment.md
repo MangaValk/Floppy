@@ -91,10 +91,15 @@ volume as the database and survive the container being recreated.
 
 If the container keeps crashing, that folder holds `floppy.log` (application
 log, with a memory line every 5 minutes and a note on the next start when the
-previous run did not shut down cleanly), `supervisord.log` (which process
-exited and how) and `faulthandler.log` (Python traceback after a segfault). It
-can be read from the host even while the container is down. Settings →
-Advanced → Download Sanitized Logs bundles all three and redacts known credential
+previous run did not shut down cleanly), `restart-history.log` (one line per
+start: whether the last run stopped cleanly, how long it was up and down,
+whether the container or version changed, and how long startup took),
+`supervisord.log` (which process exited and how) and `faulthandler.log`
+(Python traceback after a segfault). A run that "restarts daily" but always
+reads "stopped cleanly" was stopped from outside Floppy (a scheduler, backup
+job or updater), not crashed. It can be read from the host even while the
+container is down. Settings → Advanced → Download Sanitized Logs bundles all
+four and redacts known credential
 patterns. The download can still contain private activity or unrecognized secrets;
 review it before sharing.
 
