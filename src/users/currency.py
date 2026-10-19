@@ -95,15 +95,30 @@ def choices():
     ]
 
 
+def _region_subtag(tag):
+    """Return the known region of a language tag, or None.
+
+    The region is not always last: "de-CH-1996" has a variant after it and
+    "en-GB-u-ca-gregory" an extension. A single-letter subtag starts an
+    extension or private use section, so the search stops there.
+    """
+    for part in tag.replace("_", "-").upper().split("-")[1:]:
+        if len(part) == 1:
+            return None
+        if part.isalpha() and part in REGION_CURRENCY:
+            return part
+    return None
+
+
 def regional_currency(request):
     """Guess a currency from the browser's languages, then the UI language."""
     if request is None:
         return DEFAULT_CURRENCY
     header = request.META.get("HTTP_ACCEPT_LANGUAGE", "")
     for tag, _quality in trans_real.parse_accept_lang_header(header):
-        region = tag.replace("_", "-").upper().split("-")[1:]
-        if region and region[-1] in REGION_CURRENCY:
-            return REGION_CURRENCY[region[-1]]
+        region = _region_subtag(tag)
+        if region in REGION_CURRENCY:
+            return REGION_CURRENCY[region]
     language = get_language_from_request(request).split("-")[0]
     return LANGUAGE_CURRENCY.get(language, DEFAULT_CURRENCY)
 

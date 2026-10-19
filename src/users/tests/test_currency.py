@@ -30,6 +30,18 @@ class CurrencyResolutionTests(SimpleTestCase):
             with self.subTest(header=header):
                 self.assertEqual(currency.regional_currency(_request(header)), expected)
 
+    def test_region_is_found_before_variants_scripts_and_extensions(self):
+        for header, expected in (
+            ("de-CH-1996", "CHF"),
+            ("en-GB-oxendict", "GBP"),
+            ("zh-Hans-CN", "CNY"),
+            ("en-GB-u-ca-gregory", "GBP"),
+            ("en-u-ca-gregory", "USD"),
+            ("en-x-gb", "USD"),
+        ):
+            with self.subTest(header=header):
+                self.assertEqual(currency.regional_currency(_request(header)), expected)
+
     def test_language_without_region_falls_back_to_language_default(self):
         self.assertEqual(currency.regional_currency(_request("de")), "EUR")
         self.assertEqual(currency.regional_currency(_request("en")), "USD")
