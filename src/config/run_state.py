@@ -12,7 +12,13 @@ every process at once. This module leaves evidence on the log volume instead:
   "stopped by SIGTERM" (``docker stop``, a restart, a NAS task) rather than
   leave a crash to be inferred.
 * A memory line is logged every few minutes, so the log shows the trend that
-  led up to a crash.
+  led up to a crash. It splits memory into program (anon) and file cache, and
+  counts how often the container hit its limit, because the OOM counter is
+  missing on some kernels (Synology).
+* Every start appends a "Restart:" line to ``restart-history.log`` saying how
+  the previous run ended, how long it was down, and whether the container or
+  the version changed. A daily stop from outside the container (a scheduler,
+  an updater) then shows up as a pattern instead of a bare timestamp.
 
 Everything here is best effort: a failure to write must never stop Floppy.
 """
@@ -21,7 +27,9 @@ import faulthandler
 import json
 import logging
 import os
+import socket
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 STATE_NAME = "run-state.json"
 FAULT_NAME = "faulthandler.log"
+HISTORY_NAME = "restart-history.log"
+HISTORY_MAX_LINES = 200
 HEARTBEAT_SECONDS = 60
 MEMORY_LINE_EVERY = 5  # heartbeats between memory lines in floppy.log
 NEAR_LIMIT_RATIO = 0.9
@@ -83,13 +93,81 @@ def _oom_kills():
     return None
 
 
+def _cgroup_split():
+    """Return (program, file cache) bytes from the cgroup, either version."""
+    for path, anon_key, file_key in (
+        (f"{_CGROUP_V2}/memory.stat", "anon", "file"),
+        (f"{_CGROUP_V1}/memory.stat", "total_rss", "total_cache"),
+    ):
+        stat = {}
+        for line in (_read(path) or "").splitlines():
+            key, _, value = line.partition(" ")
+            if value.isdigit():
+                stat[key] = int(value)
+        if anon_key in stat:
+            return stat[anon_key], stat.get(file_key)
+    return None, None
+
+
+def _limit_hits():
+    """Return how often the container hit its memory limit, or None.
+
+    Counted even when the kernel has no ``oom_kill`` counter (cgroup v1 on
+    Synology), so memory pressure is visible without one.
+    """
+    failcnt = _read(f"{_CGROUP_V1}/memory.failcnt")
+    if failcnt and failcnt.isdigit():
+        return int(failcnt)
+    for line in (_read(f"{_CGROUP_V2}/memory.events") or "").splitlines():
+        key, _, value = line.partition(" ")
+        if key == "max" and value.isdigit():
+            return int(value)
+    return None
+
+
+def _host_available():
+    """Return the host's available memory in bytes (MemAvailable), or None."""
+    for line in (_read("/proc/meminfo") or "").splitlines():
+        parts = line.split()
+        if parts[:1] == ["MemAvailable:"] and len(parts) > 1 and parts[1].isdigit():
+            return int(parts[1]) * 1024
+    return None
+
+
 def _sample():
+    anon, file_cache = _cgroup_split()
     return {
         "memory": _cgroup_bytes("memory.current", "memory.usage_in_bytes"),
         "memory_peak": _cgroup_bytes("memory.peak", "memory.max_usage_in_bytes"),
         "memory_limit": _cgroup_bytes("memory.max", "memory.limit_in_bytes"),
         "oom_kills": _oom_kills(),
+        "anon": anon,
+        "file_cache": file_cache,
+        "limit_hits": _limit_hits(),
+        "host_available": _host_available(),
     }
+
+
+def _container_started_at():
+    """Return when the container's first process started, or None.
+
+    PID 1 is supervisord in the image, so its start time is when Docker started
+    the container. The gap to Floppy's own start is the entrypoint's work
+    (database check, migrations).
+    """
+    try:
+        stat = Path("/proc/1/stat").read_text()
+        # The command name can contain spaces; fields after ")" start at state.
+        ticks = int(stat.rsplit(")", 1)[1].split()[19])
+        boot = next(
+            int(line.split()[1])
+            for line in Path("/proc/stat").read_text().splitlines()
+            if line.startswith("btime ")
+        )
+        started = boot + ticks / os.sysconf("SC_CLK_TCK")
+        return datetime.fromtimestamp(started, UTC).replace(microsecond=0).isoformat()
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
 
 
 def _mib(value):
@@ -156,6 +234,75 @@ def describe_unclean_exit(previous):
     return " ".join(parts)
 
 
+def _parse_time(value):
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _duration(seconds):
+    seconds = max(int(seconds), 0)
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m"
+    return f"{minutes}m{secs:02d}s" if minutes else f"{secs}s"
+
+
+def describe_restart(previous, current):
+    """Return one line saying how the previous run ended and what changed."""
+    ended = _parse_time(previous.get("last_heartbeat"))
+    began = _parse_time(previous.get("started_at"))
+    now = _parse_time(current.get("started_at"))
+    clean = previous.get("clean", True)
+    parts = [
+        f"previous run {'stopped cleanly' if clean else 'ended WITHOUT a clean stop'}"
+    ]
+    if previous.get("stop_signal"):
+        parts[0] += f" after {previous['stop_signal']}"
+    if ended and began:
+        parts.append(f"after {_duration((ended - began).total_seconds())} up")
+    if ended and now:
+        down = _duration((now - ended).total_seconds())
+        parts.append(f"{'down' if clean else 'down at most'} {down} before this start")
+    old_host, new_host = previous.get("hostname"), current.get("hostname")
+    if old_host and new_host:
+        parts.append(
+            f"same container ({new_host})"
+            if old_host == new_host
+            else f"new container ({old_host} -> {new_host})"
+        )
+    old_version, new_version = previous.get("version"), current.get("version")
+    if old_version and new_version:
+        parts.append(
+            f"version unchanged ({new_version})"
+            if old_version == new_version
+            else f"version {old_version} -> {new_version}"
+        )
+    booted, started = _parse_time(current.get("container_started_at")), now
+    if booted and started and started >= booted:
+        parts.append(
+            f"container process started {booted.isoformat()}, "
+            f"Floppy {_duration((started - booted).total_seconds())} later"
+        )
+    return "Restart: " + "; ".join(parts) + "."
+
+
+def _append_history(line):
+    """Keep the last restart lines on the log volume, past floppy.log rotation."""
+    path = Path(settings.LOG_DIR) / HISTORY_NAME
+    try:
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            lines = []
+        lines = [*lines, f"{_now().isoformat()} {line}"][-HISTORY_MAX_LINES:]
+        path.write_text("\n".join(lines) + "\n")
+    except OSError:
+        logger.debug("Could not write %s", path, exc_info=True)
+
+
 def describe_requested_stop(previous):
     """Return the log line for a previous run that was asked to stop."""
     return (
@@ -186,8 +333,14 @@ def start():
     _state.update(
         started_at=_now().isoformat(),
         version=settings.VERSION,
+        hostname=socket.gethostname(),
+        container_started_at=_container_started_at(),
         last_unclean_at=last_unclean,
     )
+    if previous:
+        restart = describe_restart(previous, _state)
+        logger.info("[run-state] %s", restart)
+        _append_history(restart)
     _stopped.clear()
     _beat(clean=False)
     logger.info("[run-state] Started; %s", _memory_summary(_state))
@@ -209,7 +362,9 @@ def _memory_summary(sample):
     return (
         f"memory={_mib(sample['memory'])} peak={_mib(sample['memory_peak'])} "
         f"limit={_mib(sample['memory_limit'])} oom_kills={sample['oom_kills']} "
-        f"load={load}"
+        f"limit_hits={sample['limit_hits']} anon={_mib(sample['anon'])} "
+        f"file_cache={_mib(sample['file_cache'])} "
+        f"host_available={_mib(sample['host_available'])} load={load}"
     )
 
 
@@ -249,3 +404,25 @@ def enable_fault_log():
         faulthandler.enable(file=_fault_file, all_threads=True)
     except OSError:
         logger.warning("Could not open %s for crash tracebacks", FAULT_NAME)
+
+
+def log_worker_shutdown(sig, how):
+    """Say what a Celery worker was running when it was told to stop.
+
+    A stop that arrives mid-task is why a slow shutdown gets killed by Docker's
+    ten second timeout, so the log needs the task names and how long they ran.
+    """
+    from celery.worker.state import active_requests
+
+    now = time.time()
+    running = sorted(
+        f"{request.name} ({_duration(now - request.time_start)})"
+        for request in list(active_requests)
+        if request.time_start
+    )
+    logger.info(
+        "[run-state] Celery worker shutting down (signal=%s how=%s); running tasks: %s",
+        sig,
+        how,
+        ", ".join(running) or "none",
+    )
