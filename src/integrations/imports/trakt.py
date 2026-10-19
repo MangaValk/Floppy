@@ -1224,6 +1224,9 @@ class TraktImporter(TraktMetadataResolverMixin):
             tmdb_id,
             self.mode,
             deleted_media=self.deleted_media,
+            # Like episodes, each movie watch is judged by the play dedupe
+            # below, so an older Trakt watch of a tracked movie is kept (#1423).
+            skip_existing=False,
         ):
             return
 
