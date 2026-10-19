@@ -1163,6 +1163,11 @@ class Season(Media):
         return stats["max_episode_number"]
 
     @property
+    def completed_episode_numbers(self):
+        """Return the episode numbers with a completed play in the current pass."""
+        return set(self._get_episode_stats()["completed_episode_numbers"])
+
+    @property
     def completed_episode_count(self):
         """Return the number of unique episodes with a completed play."""
         stats = self._get_episode_stats()

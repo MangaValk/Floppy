@@ -1,6 +1,6 @@
 from django.urls import path, register_converter
 
-from app import checkin_views, converters, episode_order_views, views
+from app import checkin_views, converters, episode_order_views, progress_views, views
 from app.discover import feeds as discover_feeds
 
 register_converter(converters.MediaTypeChecker, "media_type")
@@ -12,6 +12,16 @@ urlpatterns = [
         "tv/<int:tv_id>/episode-ordering/",
         episode_order_views.episode_ordering_settings,
         name="episode_ordering_settings",
+    ),
+    path(
+        "progress/tv/<int:tv_id>/",
+        progress_views.tv_progress_breakdown,
+        name="tv_progress_breakdown",
+    ),
+    path(
+        "progress/season/<int:season_id>/",
+        progress_views.season_progress_breakdown,
+        name="season_progress_breakdown",
     ),
     path(
         "image-cache/<str:token>",
