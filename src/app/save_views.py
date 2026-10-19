@@ -1070,6 +1070,8 @@ def _write_episode_save_oob(
             "detail-progress-updated": {
                 "id": related_season.id,
                 "completed": related_season.completed_episode_count,
+                "watched_once": len(related_season.watched_once_numbers),
+                "rewatching": related_season.is_rewatching,
             },
         },
     )
@@ -1408,6 +1410,8 @@ def episode_history_poll(request, season_id):
             "detail-progress-updated": {
                 "id": related_season.id,
                 "completed": related_season.completed_episode_count,
+                "watched_once": len(related_season.watched_once_numbers),
+                "rewatching": related_season.is_rewatching,
             },
         },
     )

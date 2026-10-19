@@ -3,10 +3,12 @@
 The result is plain data so the same component can render one show in a modal
 today and a row per show on a library progress page later.
 
-Watched state comes from the tracked seasons (the same pass-aware numbers the
-progress card uses); the episode list comes from the provider catalogue. An
-episode only counts toward a total once it has aired, and specials and dropped
-seasons stay out of the overall figures, matching the card's percentage.
+Watched means finished at least once, in any pass. While a rewatch is open the
+breakdown also reports how much of the current pass is done, using the same
+pass-aware numbers as the progress card. The episode list comes from the
+provider catalogue. An episode only counts toward a total once it has aired,
+and specials and dropped seasons stay out of the overall figures, matching the
+card's percentage.
 """
 
 import json
@@ -35,6 +37,7 @@ class SeasonProgress:
     title: str
     url: str
     dropped: bool = False
+    rewatching: bool = False
     catalogue_missing: bool = False
     episodes: list = field(default_factory=list)
 
@@ -59,6 +62,18 @@ class SeasonProgress:
         if self.catalogue_missing or not self.total:
             return None
         return round(self.watched / self.total * 100)
+
+    @property
+    def rewatch_watched(self):
+        """Return how many watched episodes are also done in the current pass."""
+        return sum(ep["state"] == WATCHED and ep["rewatched"] for ep in self.episodes)
+
+    @property
+    def rewatch_percent(self):
+        """Return the current pass's percentage while rewatching, else None."""
+        if self.percent is None or not self.rewatching:
+            return None
+        return round(self.rewatch_watched / self.total * 100)
 
     @property
     def is_specials(self):
@@ -104,6 +119,25 @@ class ProgressBreakdown:
     def watched(self):
         """Return the overall watched count."""
         return sum(season.watched for season in self.overall)
+
+    @property
+    def rewatching(self):
+        """Return whether any season feeding the overall figures is in a rewatch."""
+        return any(season.rewatching for season in self.overall)
+
+    @property
+    def rewatch_watched(self):
+        """Return the overall count finished in an open pass, over rewatching seasons only."""
+        return sum(
+            season.rewatch_watched for season in self.overall if season.rewatching
+        )
+
+    @property
+    def rewatch_percent(self):
+        """Return the overall current-pass percentage while rewatching, else None."""
+        if not self.rewatching or not self.total:
+            return None
+        return round(self.rewatch_watched / self.total * 100)
 
     @property
     def left(self):
@@ -197,7 +231,7 @@ def _season_payloads(media_id, source, season_numbers):
     return payloads
 
 
-def _episode_rows(payload, watched_numbers, link, now):
+def _episode_rows(payload, watched_numbers, pass_numbers, link, now):
     """Merge a catalogue season with the watched numbers into episode rows."""
     rows = {}
     for episode in (payload or {}).get("episodes") or []:
@@ -219,6 +253,7 @@ def _episode_rows(payload, watched_numbers, link, now):
                 episode.get("runtime_minutes") or episode.get("runtime"),
             ),
             "state": state,
+            "rewatched": number in pass_numbers,
         }
     # A play of an episode the catalogue no longer lists still counts for the
     # card, so it has to count here or the two would disagree.
@@ -229,6 +264,7 @@ def _episode_rows(payload, watched_numbers, link, now):
             "air_date": None,
             "runtime": 0,
             "state": WATCHED,
+            "rewatched": number in pass_numbers,
         }
     ordered = [rows[number] for number in sorted(rows)]
     for row in ordered:
@@ -281,6 +317,9 @@ def build_progress_breakdown(*, tv=None, season=None):
         tracked_season = by_number.get(number)
         payload = payloads.get(number)
         watched_numbers = (
+            tracked_season.watched_once_numbers if tracked_season else set()
+        )
+        pass_numbers = (
             tracked_season.completed_episode_numbers if tracked_season else set()
         )
         default_title = "Specials" if number == 0 else f"Season {number}"
@@ -300,8 +339,15 @@ def build_progress_breakdown(*, tv=None, season=None):
                 dropped=bool(
                     tracked_season and tracked_season.status == Status.DROPPED.value,
                 ),
+                rewatching=bool(tracked_season and tracked_season.is_rewatching),
                 catalogue_missing=payload is None,
-                episodes=_episode_rows(payload, watched_numbers, link_for(number), now),
+                episodes=_episode_rows(
+                    payload,
+                    watched_numbers,
+                    pass_numbers,
+                    link_for(number),
+                    now,
+                ),
             ),
         )
 

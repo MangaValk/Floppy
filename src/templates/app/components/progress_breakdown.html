@@ -31,7 +31,7 @@
         </p>
         <span class="text-lg font-semibold text-[var(--color-text)]">{{ breakdown.percent }}%</span>
       </div>
-      <div class="mt-1 h-2 overflow-hidden rounded-full bg-[var(--color-surface-muted)]"
+      <div class="relative mt-1 h-2 rounded-full bg-[var(--color-surface-muted)]"
            role="progressbar"
            aria-label="{% translate 'Your progress' %}"
            aria-valuemin="0"
@@ -39,7 +39,17 @@
            aria-valuenow="{{ breakdown.percent }}">
         <span class="block h-full rounded-full bg-emerald-500"
               style="width: {{ breakdown.percent }}%"></span>
+        {% if breakdown.rewatch_percent is not None %}
+          <span class="progress-glow" style="width: {{ breakdown.rewatch_percent }}%"></span>
+        {% endif %}
       </div>
+      {% if breakdown.rewatch_percent is not None %}
+        <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+          {% blocktranslate trimmed with watched=breakdown.rewatch_watched total=breakdown.total percent=breakdown.rewatch_percent %}
+            Rewatching &middot; {{ watched }} of {{ total }} episodes &middot; {{ percent }}%
+          {% endblocktranslate %}
+        </p>
+      {% endif %}
     </div>
   {% endif %}
 
@@ -91,9 +101,12 @@
           {% endif %}
         </div>
         {% if season.percent is not None %}
-          <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-muted)]">
+          <div class="relative mt-1 h-1.5 rounded-full bg-[var(--color-surface-muted)]">
             <span class="block h-full rounded-full bg-emerald-500"
                   style="width: {{ season.percent }}%"></span>
+            {% if season.rewatch_percent is not None %}
+              <span class="progress-glow" style="width: {{ season.rewatch_percent }}%"></span>
+            {% endif %}
           </div>
         {% endif %}
         <ul x-show="open.s{{ season.number }}"
@@ -103,10 +116,16 @@
             <li>
               <a href="{{ episode.url }}"
                  title="{{ episode.title }}{% if episode.air_date %} &middot; {{ episode.air_date|date:'N j, Y' }}{% endif %}"
-                 class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs hover:bg-[var(--color-surface-hover)] {% if episode.state == 'watched' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-500 {% elif episode.state == 'unwatched' %}border-[var(--color-surface-border)] text-[var(--color-text-secondary)] {% else %}border-dashed border-[var(--color-surface-border)] text-[var(--color-text-muted)] opacity-70{% endif %}">
+                 class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs hover:bg-[var(--color-surface-hover)] {% if episode.state == 'watched' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-500 {% if season.rewatching and episode.rewatched %}progress-glow-chip{% endif %}{% elif episode.state == 'unwatched' %}border-[var(--color-surface-border)] text-[var(--color-text-secondary)] {% else %}border-dashed border-[var(--color-surface-border)] text-[var(--color-text-muted)] opacity-70{% endif %}">
                 {% if episode.state == 'watched' %}
                   {% include "app/icons/checkmark.svg" with classes="h-3 w-3" %}
-                  <span class="sr-only">{% translate "Watched" %}</span>
+                  <span class="sr-only">
+                    {% if season.rewatching and episode.rewatched %}
+                      {% translate "Watched again" %}
+                    {% else %}
+                      {% translate "Watched" %}
+                    {% endif %}
+                  </span>
                 {% elif episode.state == 'unwatched' %}
                   {% include "app/icons/x.svg" with classes="h-3 w-3" %}
                   <span class="sr-only">{% translate "Not watched" %}</span>

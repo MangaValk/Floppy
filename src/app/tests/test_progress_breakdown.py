@@ -92,13 +92,13 @@ class BreakdownTestCase(TestCase):
     def watch(self, season, *numbers, when=None):
         """Complete the given episode numbers of a tracked season."""
         for number in numbers:
-            item = Item.objects.create(
+            item, _ = Item.objects.get_or_create(
                 media_id="1396",
                 source=Sources.TMDB.value,
                 media_type=MediaTypes.EPISODE.value,
                 season_number=season.item.season_number,
                 episode_number=number,
-                title=f"Episode {number} title",
+                defaults={"title": f"Episode {number} title"},
             )
             Episode.objects.create(
                 item=item,
@@ -132,7 +132,7 @@ class BuildProgressBreakdownTests(BreakdownTestCase):
 
         self.assertEqual((result.watched, result.total, result.left), (3, 5, 2))
         self.assertEqual(result.percent, 60)
-        self.assertEqual(result.watched, self.tv.completed_episode_count)
+        self.assertEqual(result.watched, self.tv.watched_once_count)
         self.assertEqual([season.number for season in result.seasons], [0, 1, 2])
         self.assertEqual(result.seasons[2].total, 2)
         self.assertEqual(
@@ -166,20 +166,109 @@ class BuildProgressBreakdownTests(BreakdownTestCase):
         self.assertTrue(result.seasons[1].dropped)
         self.assertEqual(result.total, 2)
 
-    def test_plays_before_a_rewatch_do_not_count(self):
-        """Only the current rewatch pass counts, like the progress card."""
+    def test_plays_before_a_rewatch_still_count_as_watched(self):
+        """Watched means finished once in any pass; the rewatch is reported on top."""
         started = timezone.now() - timedelta(days=1)
         season = self.season(1, rewatch_started_at=started)
         self.watch(season, 1, when=started - timedelta(days=30))
         self.watch(season, 2)
+        self.tv.max_progress = 2
 
         result = self.breakdown(_catalogue(s1=[_episode(1), _episode(2)]))
 
         self.assertEqual(
             [episode["state"] for episode in result.seasons[0].episodes],
-            [UNWATCHED, WATCHED],
+            [WATCHED, WATCHED],
         )
-        self.assertEqual(result.watched, self.tv.completed_episode_count)
+        self.assertEqual(
+            [episode["rewatched"] for episode in result.seasons[0].episodes],
+            [False, True],
+        )
+        self.assertEqual((result.watched, result.total, result.percent), (2, 2, 100))
+        self.assertEqual(result.watched, self.tv.watched_once_count)
+        self.assertTrue(result.rewatching)
+        self.assertEqual((result.rewatch_watched, result.rewatch_percent), (1, 50))
+        self.assertEqual(result.seasons[0].rewatch_percent, 50)
+        self.assertEqual(result.rewatch_percent, self.tv.rewatch_percentage)
+
+    def test_rewatch_just_started_glows_at_zero(self):
+        """A fresh pass reports 0% on top of a complete first watch."""
+        started = timezone.now() - timedelta(days=1)
+        season = self.season(1, rewatch_started_at=started)
+        self.watch(season, 1, 2, when=started - timedelta(days=30))
+
+        result = self.breakdown(_catalogue(s1=[_episode(1), _episode(2)]))
+
+        self.assertEqual(result.percent, 100)
+        self.assertEqual(result.rewatch_percent, 0)
+
+    def test_finished_rewatch_goes_back_to_a_plain_completed_line(self):
+        """Once the pass is closed there is no rewatch line, only completion."""
+        started = timezone.now() - timedelta(days=1)
+        season = self.season(1, rewatch_started_at=started)
+        self.watch(season, 1, 2)
+        season.stop_rewatch()
+
+        result = self.breakdown(_catalogue(s1=[_episode(1), _episode(2)]))
+
+        self.assertFalse(result.rewatching)
+        self.assertIsNone(result.rewatch_percent)
+        self.assertEqual(result.percent, 100)
+
+    def test_no_rewatch_line_without_a_pass(self):
+        """A show never rewatched has no rewatch figures."""
+        self.watch(self.season(1), 1)
+
+        result = self.breakdown(_catalogue(s1=[_episode(1), _episode(2)]))
+
+        self.assertFalse(result.rewatching)
+        self.assertIsNone(result.rewatch_percent)
+        self.assertIsNone(result.seasons[0].rewatch_percent)
+
+    def test_rewatch_in_one_season_leaves_the_others_plain(self):
+        """Only the season being rewatched carries a rewatch percentage."""
+        started = timezone.now() - timedelta(days=1)
+        season_one = self.season(1, rewatch_started_at=started)
+        season_two = self.season(2)
+        self.watch(season_one, 1, 2, when=started - timedelta(days=30))
+        self.watch(season_one, 1)
+        self.watch(season_two, 1, 2)
+        self.tv.max_progress = 4
+
+        result = self.breakdown(_catalogue(s1=[_episode(1), _episode(2)], s2=[_episode(1), _episode(2)]))
+
+        self.assertEqual(result.percent, 100)
+        self.assertEqual(result.seasons[0].rewatch_percent, 50)
+        self.assertIsNone(result.seasons[1].rewatch_percent)
+        # The other season's plays are not part of the open pass.
+        self.assertEqual(result.rewatch_percent, 25)
+        self.assertEqual(self.tv.rewatch_percentage, 25)
+
+    def test_dropped_season_rewatch_is_left_out_of_overall(self):
+        """A dropped season being rewatched does not move the show's rewatch line."""
+        started = timezone.now() - timedelta(days=1)
+        season_one = self.season(1)
+        season_two = self.season(2, status=Status.DROPPED.value, rewatch_started_at=started)
+        self.watch(season_one, 1)
+        self.watch(season_two, 1)
+
+        result = self.breakdown(_catalogue(s1=[_episode(1)], s2=[_episode(1)]))
+
+        self.assertFalse(result.rewatching)
+        self.assertIsNone(result.rewatch_percent)
+
+    def test_unfinished_first_watch_shows_while_rewatching_another_season(self):
+        """Season one still has an unwatched episode, so the show is not complete."""
+        started = timezone.now() - timedelta(days=1)
+        season_one = self.season(1)
+        season_two = self.season(2, rewatch_started_at=started)
+        self.watch(season_one, 1)
+        self.watch(season_two, 1, when=started - timedelta(days=30))
+
+        result = self.breakdown(_catalogue(s1=[_episode(1), _episode(2)], s2=[_episode(1)]))
+
+        self.assertEqual((result.watched, result.total, result.percent), (2, 3, 67))
+        self.assertEqual(result.rewatch_percent, 0)
 
     def test_watched_episode_missing_from_catalogue_still_counts(self):
         """The card counts every completed play, so the breakdown must too."""
@@ -355,6 +444,24 @@ class ProgressBreakdownViewTests(BreakdownTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "1/2")
 
+    def test_modal_glows_only_for_an_open_rewatch(self):
+        """The rewatch line and glow appear while a pass is open, and vanish after."""
+        url = reverse("tv_progress_breakdown", args=[self.tv.id])
+        self.assertNotContains(self.get(url), "progress-glow")
+
+        self.season_one.rewatch_started_at = timezone.now() - timedelta(hours=1)
+        self.season_one.save()
+        self.watch(self.season_one, 2)
+        response = self.get(url)
+
+        self.assertContains(response, "Rewatching")
+        self.assertContains(response, "progress-glow")
+        self.assertContains(response, "Watched again")
+
+        self.season_one.rewatch_started_at = None
+        self.season_one.save()
+        self.assertNotContains(self.get(url), "progress-glow")
+
     def test_provider_failure_still_renders(self):
         """A provider outage shows the notice instead of an error page."""
         self.fake = ProviderAPIError("tmdb", "boom")
@@ -402,6 +509,34 @@ class ProgressBreakdownViewTests(BreakdownTestCase):
             )
 
             self.assertIn(f'hx-get="{reverse(url_name, args=[instance.id])}"', html)
+
+    def test_progress_card_shows_completion_and_the_rewatch_subtitle(self):
+        """The card reads watched-once; an open pass adds a subtitle and glow."""
+        self.watch(self.season_one, 2)
+        self.season_one.max_progress = 2
+
+        def card():
+            return render_to_string(
+                "app/components/detail_progress_card_slot.html",
+                {
+                    "media": self.season_one.item,
+                    "media_type": "season",
+                    "current_instance": self.season_one,
+                    "public_view": False,
+                },
+            )
+
+        self.assertIn("percent: 100,", card())
+        self.assertIn("rewatch: null", card())
+
+        self.season_one.rewatch_started_at = timezone.now() + timedelta(minutes=1)
+        self.season_one._invalidate_episode_stats()
+        html = card()
+
+        self.assertIn("percent: 100,", html)
+        self.assertIn("rewatch: 0,", html)
+        self.assertIn("detail-progress-card__sub", html)
+        self.assertIn("progress-glow", html)
 
     def test_progress_card_is_not_clickable_in_public_view(self):
         """Public viewers get no card, so no way to load a private fragment."""

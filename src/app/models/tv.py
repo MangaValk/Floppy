@@ -131,6 +131,17 @@ def _runtime_minutes(value):
     return minutes if minutes > 0 else None
 
 
+def _percent_of_max(count, max_progress):
+    """Return count as a 0-100 percent of max_progress, or None when it is unknown."""
+    try:
+        max_progress = int(max_progress)
+    except (TypeError, ValueError):
+        return None
+    if max_progress <= 0:
+        return None
+    return max(0, min(round(count / max_progress * 100), 100))
+
+
 class TV(Media):
     """Model for TV shows."""
 
@@ -220,6 +231,39 @@ class TV(Media):
             for season in self.seasons.all()
             if season.item.season_number != 0 and season.status != Status.DROPPED.value
         )
+
+    @cached_property
+    def watched_once_count(self):
+        """Return the episodes finished at least once, excluding specials and dropped seasons."""
+        return sum(
+            len(season.watched_once_numbers)
+            for season in self.seasons.all()
+            if season.item.season_number != 0 and season.status != Status.DROPPED.value
+        )
+
+    @property
+    def watched_once_percentage(self):
+        """Return percent of the show watched at least once (0-100), or None."""
+        return _percent_of_max(
+            self.watched_once_count,
+            getattr(self, "max_progress", None),
+        )
+
+    @property
+    def rewatch_percentage(self):
+        """Return percent of the open rewatch pass completed, or None outside one."""
+        if not self.is_rewatching:
+            return None
+        # Only seasons with an open pass count, so rewatching one season of a
+        # show reads as that season's share of the whole show.
+        done = sum(
+            len(season.completed_episode_numbers)
+            for season in self.seasons.all()
+            if season.item.season_number != 0
+            and season.status != Status.DROPPED.value
+            and season.is_rewatching
+        )
+        return _percent_of_max(done, getattr(self, "max_progress", None))
 
     @cached_property
     def completed_episode_count(self):
@@ -1168,6 +1212,29 @@ class Season(Media):
         return set(self._get_episode_stats()["completed_episode_numbers"])
 
     @property
+    def watched_once_numbers(self):
+        """Return the episode numbers completed in any pass, rewatches or not."""
+        return set(self._get_episode_stats()["watched_once_numbers"])
+
+    @property
+    def watched_once_percentage(self):
+        """Return percent of the season watched at least once (0-100), or None."""
+        return _percent_of_max(
+            len(self._get_episode_stats()["watched_once_numbers"]),
+            getattr(self, "max_progress", None),
+        )
+
+    @property
+    def rewatch_percentage(self):
+        """Return percent of the open rewatch pass completed, or None outside one."""
+        if not self.is_rewatching:
+            return None
+        return _percent_of_max(
+            self.completed_episode_count,
+            getattr(self, "max_progress", None),
+        )
+
+    @property
     def completed_episode_count(self):
         """Return the number of unique episodes with a completed play."""
         stats = self._get_episode_stats()
@@ -1441,9 +1508,21 @@ class Season(Media):
         # Filter in Python: season querysets prefetch `episodes`, and a
         # queryset filter here would bypass that cache and turn every list
         # page into an N+1.
-        episodes = [ep for ep in self.episodes.all() if self.play_counts_for_pass(ep)]
+        all_episodes = list(self.episodes.all())
+        episodes = [ep for ep in all_episodes if self.play_counts_for_pass(ep)]
         completed_episode_numbers = set()
         max_episode_number = 0
+
+        # Every episode ever finished, in any pass: "have I watched it all once".
+        watched_once_numbers = {
+            ep.item.episode_number
+            for ep in all_episodes
+            if (
+                ep._card_completed_count
+                if getattr(ep, "_card_is_summary", False)
+                else ep.status == Status.COMPLETED.value
+            )
+        }
 
         for ep in episodes:
             ep_num = ep.item.episode_number
@@ -1467,6 +1546,7 @@ class Season(Media):
 
         cached = {
             "completed_episode_numbers": completed_episode_numbers,
+            "watched_once_numbers": watched_once_numbers,
             "max_episode_number": max_episode_number,
         }
         self._episode_stats_cache = cached
