@@ -58,23 +58,23 @@ def _evict_cached_metadata(tv_item, season_numbers=(), *, show=True):
     can miss a season the provider added, or dated, since (#1531). Only shows
     selected for a check come through here, and each is about to be fetched.
     """
-    keys = (
-        metadata_utils.provider_metadata_cache_keys(
-            tv_item.source,
-            MediaTypes.TV.value,
-            tv_item.media_id,
-        )
-        if show
-        else []
+    show_keys = metadata_utils.provider_metadata_cache_keys(
+        tv_item.source,
+        MediaTypes.TV.value,
+        tv_item.media_id,
     )
+    keys = list(show_keys) if show else []
     for season_number in season_numbers:
+        # TVDB's season keys include the series payload; keep the one just fetched.
         keys.extend(
-            metadata_utils.provider_metadata_cache_keys(
+            key
+            for key in metadata_utils.provider_metadata_cache_keys(
                 tv_item.source,
                 MediaTypes.SEASON.value,
                 tv_item.media_id,
                 season_number=season_number,
-            ),
+            )
+            if show or key not in show_keys
         )
     try:
         cache.delete_many(keys)

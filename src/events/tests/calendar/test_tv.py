@@ -541,6 +541,40 @@ class CalendarTVTests(CalendarFixturesMixin, TestCase):
 
         self.assertIsNotNone(cache.get(show_key))
 
+    def test_season_eviction_keeps_the_show_payload_just_fetched(self):
+        """TVDB's season keys include the series payload; a season-only eviction spares it."""
+        from types import SimpleNamespace
+
+        from app.metadata_utils import provider_metadata_cache_keys
+        from events.calendar.tv import _evict_cached_metadata
+
+        tvdb_item = SimpleNamespace(source=Sources.TVDB.value, media_id="81189")
+        show_keys = provider_metadata_cache_keys(
+            tvdb_item.source,
+            MediaTypes.TV.value,
+            tvdb_item.media_id,
+        )
+        season_keys = [
+            key
+            for key in provider_metadata_cache_keys(
+                tvdb_item.source,
+                MediaTypes.SEASON.value,
+                tvdb_item.media_id,
+                season_number=1,
+            )
+            if key not in show_keys
+        ]
+        self.assertTrue(season_keys)
+        for key in show_keys + season_keys:
+            cache.set(key, {"cached": True})
+
+        _evict_cached_metadata(tvdb_item, [1], show=False)
+
+        for key in show_keys:
+            self.assertIsNotNone(cache.get(key))
+        for key in season_keys:
+            self.assertIsNone(cache.get(key))
+
     def test_process_season_episodes_logs_how_many_episodes_have_no_date(self):
         """The log shows whether the provider dated the season, for bug reports."""
         events_bulk = []
