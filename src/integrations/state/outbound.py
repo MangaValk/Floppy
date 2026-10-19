@@ -69,6 +69,8 @@ MAX_ATTEMPTS = len(RETRY_BACKOFF_SECONDS) + 1
 # leaves as one request instead of one per episode.
 LIVE_BATCH_WINDOW_SECONDS = 10
 FLUSH_LOCK_TIMEOUT = 900
+# An attempt still in flight after this long belongs to a worker that died.
+STALE_IN_FLIGHT_SECONDS = 1800
 MAX_FLUSH_ROUNDS = 20
 
 # Operations where only the latest intent matters. A play is the opposite: each
@@ -338,6 +340,7 @@ def claim(delivery_id):
                 .update(
                     status=OutboundDeliveryStatus.IN_FLIGHT.value,
                     attempts=F("attempts") + 1,
+                    claimed_at=timezone.now(),
                 )
             )
     except IntegrityError:
@@ -729,8 +732,21 @@ def due_deliveries(limit=100):
     )
 
 
+def release_stale_deliveries():
+    """Put attempts abandoned by a dead worker back in the queue.
+
+    Safe by design: the next attempt of a delivery reads first, or for a batch
+    is sent under the same idempotency key, so one that did apply is recognised.
+    """
+    return OutboundStateDelivery.objects.filter(
+        status=OutboundDeliveryStatus.IN_FLIGHT.value,
+        claimed_at__lt=timezone.now() - timedelta(seconds=STALE_IN_FLIGHT_SECONDS),
+    ).update(status=OutboundDeliveryStatus.PENDING.value, next_attempt_at=None)
+
+
 def sweep_due_deliveries(limit=100):
     """Attempt everything that is due: singly, or by flushing batch bindings."""
+    release_stale_deliveries()
     attempted = 0
     flushed = set()
     for delivery in due_deliveries(limit=limit):

@@ -2581,6 +2581,9 @@ class OutboundStateDelivery(models.Model):
     )
     attempts = models.PositiveIntegerField(default=0)
     next_attempt_at = models.DateTimeField(null=True, blank=True)
+    # When the current attempt started. A row still in flight long after this
+    # belongs to a worker that died, and is put back in the queue.
+    claimed_at = models.DateTimeField(null=True, blank=True)
     last_error_message = models.TextField(blank=True, default="")
 
     client_event_id = models.CharField(max_length=255, blank=True, default="")

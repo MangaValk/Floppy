@@ -41,6 +41,11 @@ class Migration(migrations.Migration):
     operations = [
         AddFieldIfNotExists(
             model_name="outboundstatedelivery",
+            name="claimed_at",
+            field=models.DateTimeField(blank=True, null=True),
+        ),
+        AddFieldIfNotExists(
+            model_name="outboundstatedelivery",
             name="payload",
             field=models.JSONField(blank=True, default=dict),
         ),

@@ -197,6 +197,9 @@ the engine holds its deliveries instead of sending each at once:
 
 The sweeper (`sweep_watched_state_deliveries`) is on the Celery beat schedule
 every minute. It flushes batch bindings and runs the single-write deliveries.
+It also puts any delivery still `in_flight` thirty minutes after its claim
+(`claimed_at`) back in the queue: its worker died, and the next attempt is safe
+because it reads first, or is sent under the same idempotency key.
 
 ## Provider capability matrix
 

@@ -549,6 +549,37 @@ class StatusAndRatingTests(BatchTestCase):
 
 
 class SweepTests(BatchTestCase):
+    def test_an_attempt_abandoned_by_a_dead_worker_is_sent_again(self):
+        self._play()
+        delivery = self._deliveries().get()
+        OutboundStateDelivery.objects.filter(pk=delivery.pk).update(
+            status=OutboundDeliveryStatus.IN_FLIGHT.value,
+            attempts=1,
+            claimed_at=timezone.now() - datetime.timedelta(hours=1),
+            next_attempt_at=None,
+        )
+
+        outbound.sweep_due_deliveries()
+
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, OutboundDeliveryStatus.DELIVERED.value)
+        self.assertEqual(delivery.attempts, 2)
+
+    def test_an_attempt_still_running_is_left_alone(self):
+        self._play()
+        delivery = self._deliveries().get()
+        OutboundStateDelivery.objects.filter(pk=delivery.pk).update(
+            status=OutboundDeliveryStatus.IN_FLIGHT.value,
+            attempts=1,
+            claimed_at=timezone.now(),
+        )
+
+        outbound.sweep_due_deliveries()
+
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, OutboundDeliveryStatus.IN_FLIGHT.value)
+
+
     def test_the_sweep_flushes_a_batch_binding_once(self):
         self._play(item=self._movie_item("3001"))
         self._play(item=self._movie_item("3002"))
