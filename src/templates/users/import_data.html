@@ -2898,6 +2898,29 @@
                     {% include "app/icons/chevron-down.svg" with classes="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)] pointer-events-none" %}
                   </div>
                 </div>
+                <div class="mb-3">
+                  <label for="clz_wishlist_status"
+                         class="block text-sm text-[var(--color-text-secondary)] mb-2">{% translate "Wishlist items" %}</label>
+                  <div class="relative">
+                    <select id="clz_wishlist_status"
+                            name="clz_wishlist_status"
+                            class="w-full py-2 px-3 bg-[var(--color-surface)] rounded-md text-[var(--color-text)] text-sm border border-gray-600 focus:border-indigo-500 focus:outline-none focus:ring focus:ring-indigo-200 focus:ring-opacity-50 appearance-none">
+                      <option value="">{% translate "Add to the CLZ Wishlist list only" %}</option>
+                      <option value="Planning">{% translate "Also track as Planning" %}</option>
+                      <option value="In progress">{% translate "Also track as In Progress" %}</option>
+                      <option value="Paused">{% translate "Also track as Paused" %}</option>
+                      <option value="Dropped">{% translate "Also track as Dropped" %}</option>
+                      <option value="Completed">{% translate "Also track as Completed" %}</option>
+                    </select>
+                    {% include "app/icons/chevron-down.svg" with classes="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)] pointer-events-none" %}
+                  </div>
+                  <input name="clz_wishlist_tag"
+                         type="text"
+                         maxlength="50"
+                         placeholder="{% translate "Tag for wishlist items (optional)" %}"
+                         aria-label="{% translate "Tag for wishlist items" %}"
+                         class="mt-2 w-full py-2 px-3 bg-[var(--color-surface)] rounded-md text-[var(--color-text)] text-sm border border-gray-600 focus:border-indigo-500 focus:outline-none focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                </div>
                 <label class="flex items-center justify-center w-full px-4 py-2 text-sm rounded-md transition-colors"
                        :class="!standardImportsDisabled() ? 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer' : 'bg-gray-600 text-gray-400 cursor-not-allowed'"
                        :disabled="standardImportsDisabled()">

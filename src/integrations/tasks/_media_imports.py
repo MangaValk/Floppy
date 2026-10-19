@@ -353,7 +353,14 @@ def import_yamtrack(file, user_id, mode):
 
 
 @shared_task(name="Import from CLZ")
-def import_clz(file, user_id, mode, media_type=None):
+def import_clz(
+    file,
+    user_id,
+    mode,
+    media_type=None,
+    wishlist_status=None,
+    wishlist_tag=None,
+):
     """Celery task for importing a CLZ (Collectorz) CSV or XML export."""
     return _run_file_import(
         clz.importer,
@@ -361,6 +368,8 @@ def import_clz(file, user_id, mode, media_type=None):
         user_id,
         mode,
         media_type=media_type,
+        wishlist_status=wishlist_status,
+        wishlist_tag=wishlist_tag,
     )
 
 
