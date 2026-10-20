@@ -529,6 +529,16 @@ class ProgressBreakdownViewTests(BreakdownTestCase):
         self.assertIn("percent: 100,", card())
         self.assertIn("rewatch: null", card())
 
+        # The info tip explains the card and sits beside the clickable card,
+        # not inside it (a button cannot hold a button).
+        html = card()
+        self.assertIn('aria-label="About your progress"', html)
+        self.assertIn("watched at least once", html)
+        self.assertGreater(
+            html.index('aria-label="About your progress"'),
+            html.index("</button>"),
+        )
+
         self.season_one.rewatch_started_at = timezone.now() + timedelta(minutes=1)
         self.season_one._invalidate_episode_stats()
         html = card()
