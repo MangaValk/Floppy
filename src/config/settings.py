@@ -1278,6 +1278,17 @@ MAL_API_SECRET = config(
     ),
 )
 
+# The application key a WeTrakr account is connected with. WeTrakr issues these
+# on request, so each user or instance brings their own (Settings > Metadata);
+# nothing ships with the image.
+WETRAKR_CLIENT_ID = config(
+    "WETRAKR_CLIENT_ID",
+    default=secret(
+        "WETRAKR_CLIENT_ID_FILE",
+        "",
+    ),
+)
+
 MU_NSFW = config("MU_NSFW", default=False, cast=bool)
 
 MANGABAKA_NSFW = config("MANGABAKA_NSFW", default=False, cast=bool)
@@ -1954,6 +1965,13 @@ CELERY_BEAT_SCHEDULE = {
     # an upgrade or a cache flush) and queues a sync.
     "reconcile_statistics_sync": {
         "task": "Reconcile statistics sync",
+        "schedule": 60,
+    },
+    # Outbound deliveries (watched state, ratings) retry through their own
+    # next_attempt_at and recover from a lost broker message only if something
+    # sweeps them. Without this entry a transient failure was never retried.
+    "sweep_watched_state_deliveries": {
+        "task": "Sweep pending watched state deliveries",
         "schedule": 60,
     },
     "repair_celery_broker_bindings": {

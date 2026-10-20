@@ -340,6 +340,15 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
             ),
         ),
         ProviderCredentialSpec(
+            slug="wetrakr",
+            group=GROUP_ACCOUNTS,
+            user_scope=True,
+            label="WeTrakr",
+            description="Sending your plays, statuses and ratings to WeTrakr.",
+            docs_url="https://api.wetrakr.com/",
+            fields=(CredentialField("client_id", "App key", "WETRAKR_CLIENT_ID"),),
+        ),
+        ProviderCredentialSpec(
             slug="igdb",
             user_scope=True,
             label="IGDB",
