@@ -1,5 +1,6 @@
 # FORK: tests for fork-only API surface (media-type overlay, progress,
 # collection). Mirrors the fixture/request style of the upstream api tests.
+from datetime import UTC, datetime
 from http import HTTPStatus as HTTP  # noqa: N814
 from unittest.mock import patch
 
@@ -263,6 +264,43 @@ class ForkCollectionEndpointTests(FloppyApiTestCase):
             **self.auth_headers,
         )
         self.assertEqual(response.status_code, HTTP.BAD_REQUEST)
+
+    def test_collection_add_and_update_store_collected_at(self):
+        """POST and PATCH keep the collected date they are sent."""
+        item = self._movie_item()
+        response = self.client.post(
+            "/api/v1/collection",
+            {
+                "item_id": item.id,
+                "media_type": "bluray",
+                "collected_at": "2024-05-01T10:30:00+02:00",
+            },
+            format="json",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, HTTP.CREATED)
+        entry = CollectionEntry.objects.get(id=response.json()["id"])
+        self.assertEqual(entry.collected_at, datetime(2024, 5, 1, 8, 30, tzinfo=UTC))
+
+        response = self.client.patch(
+            f"/api/v1/collection/{entry.id}",
+            {"collected_at": "2023-01-02T03:04:05Z"},
+            format="json",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, HTTP.OK)
+        entry.refresh_from_db()
+        self.assertEqual(entry.collected_at, datetime(2023, 1, 2, 3, 4, 5, tzinfo=UTC))
+
+        response = self.client.patch(
+            f"/api/v1/collection/{entry.id}",
+            {"resolution": "4k"},
+            format="json",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, HTTP.OK)
+        entry.refresh_from_db()
+        self.assertEqual(entry.collected_at, datetime(2023, 1, 2, 3, 4, 5, tzinfo=UTC))
 
 
 class ForkBackdropFieldTests(FloppyApiTestCase):
