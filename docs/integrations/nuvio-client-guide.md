@@ -250,13 +250,19 @@ user enters their server address and the app token; NuvioTV checks it with
 `GET /api/v1/sync/connections/` and sends playback to `POST /api/v1/scrobble/`.
 
 NuvioTV only knows how far through a title it is, as a percentage, never in
-seconds. So it sends an explicit `completed` flag and no position:
+seconds. So every event carries `progress_percent` (0 to 100), and a stop also
+sends an explicit `completed` flag. Floppy multiplies the percentage by the
+title's length (the event's `duration_seconds` if sent, else the runtime it
+holds) to get the position, so a seek shows on the Now Playing card at the next
+event and a stop leaves a resume point. If it does not know the length, the card
+shows the percentage itself. `position_seconds`, when a client has it, always
+wins over `progress_percent`.
 
 | NuvioTV event | Sent to Floppy | Result in Floppy |
 |---|---|---|
-| Playback starts or pauses | `start` / `pause` | Now Playing card only |
-| Stop at 80% or more | `stop`, `completed: true` | Completed, one play |
-| Stop from 1% to 80% | `stop`, `completed: false` | In Progress, never Completed |
+| Playback starts or pauses | `start` / `pause`, `progress_percent` | Now Playing card at that position |
+| Stop at 80% or more | `stop`, `progress_percent`, `completed: true` | Completed, one play, resume point stored |
+| Stop from 1% to 80% | `stop`, `progress_percent`, `completed: false` | In Progress, never Completed, resume point stored |
 | Stop under 1% | Not sent | Nothing (a skim) |
 
 It identifies a title by `imdb`, `tmdb` or `tvdb` as strings, plus `anidb` for
@@ -264,8 +270,7 @@ anime. An event with none of them, an episode with no season and episode number,
 or an episode numbered by TVDB order is not sent, because Floppy never matches by
 title.
 
-What it does not do: send a resume position (it has no seconds to send),
-read history or lists back, or send ratings. The Nuvio and Floppy sides of those
+What it does not do: send seconds (it has none), read history or lists back, or send ratings. The Nuvio and Floppy sides of those
 are separate changes.
 
 The exact bodies it sends are the fixtures in

@@ -110,6 +110,37 @@ def _extract_offset_seconds(payload: dict) -> int | None:
     return max(0, offset_ms // 1000)
 
 
+def position_from_percent(percent, duration_seconds) -> int | None:
+    """Turn "how far through" into seconds, or None when the length is unknown."""
+    duration = _coerce_int(duration_seconds, 0) or 0
+    if percent is None or duration <= 0:
+        return None
+    return round(duration * min(max(float(percent), 0.0), 100.0) / 100)
+
+
+def runtime_seconds(item) -> int:
+    """Return the provider runtime of a tracked item in seconds, 0 if unknown."""
+    minutes = usable_runtime_minutes(item.runtime_minutes if item else None)
+    return minutes * 60 if minutes else 0
+
+
+def _offset_from_percent(percent, *, duration_seconds, ref) -> int | None:
+    """Seconds for a client that reports only a percentage.
+
+    The event's own duration wins; otherwise the runtime Floppy holds for the
+    title. `ref` is any dict `_resolve_state_item` can read.
+    """
+    if percent is None:
+        return None
+    duration = _coerce_int(duration_seconds, 0) or 0
+    if duration <= 0 and ref.get("media_type") in (
+        MediaTypes.MOVIE.value,
+        MediaTypes.EPISODE.value,
+    ):
+        duration = runtime_seconds(_resolve_state_item(ref))
+    return position_from_percent(percent, duration)
+
+
 def _extract_episode_numbers(payload: dict) -> tuple[int | None, int | None]:
     metadata = payload.get("Metadata", {}) or {}
     season_number = _coerce_int(metadata.get("parentIndex"))
@@ -379,6 +410,7 @@ def apply_playback_event(
     episode_number: int | None = None,
     view_offset_seconds: int | None = None,
     duration_seconds: int | None = None,
+    progress_percent: float | None = None,
     store_progress: bool = False,
     provider_completed: bool | None = None,
     image: str | None = None,
@@ -391,6 +423,9 @@ def apply_playback_event(
     processor) so this function is source-agnostic.  Event types
     use the normalised ``media.*`` naming regardless of origin.
 
+    ``progress_percent`` is for clients that cannot report seconds: it is
+    turned into a position with the event's duration, else the title's runtime,
+    and only used when the event carries no offset of its own.
     ``store_progress`` mirrors webhook positions into the durable store.
     ``provider_completed`` is an explicit completion value when the source
     provides one; ``None`` leaves completion inference source-agnostic.
@@ -431,13 +466,21 @@ def apply_playback_event(
             _release_checkin_card(user_id, existing_state)
             # Grace period instead of immediate deletion — keeps the
             # card visible across auto-play transitions and brief gaps.
-            if view_offset_seconds is not None:
-                existing_state["view_offset_seconds"] = max(
-                    0,
-                    view_offset_seconds,
+            stop_offset = view_offset_seconds
+            if stop_offset is None:
+                stop_offset = _offset_from_percent(
+                    progress_percent,
+                    duration_seconds=duration_seconds
+                    or existing_state.get("duration_seconds"),
+                    ref=existing_state,
                 )
+            if stop_offset is not None:
+                existing_state["view_offset_seconds"] = max(0, stop_offset)
             if duration_seconds is not None:
                 existing_state["duration_seconds"] = max(0, duration_seconds)
+            existing_state["progress_percent"] = (
+                progress_percent if stop_offset is None else None
+            )
             existing_state["updated_at_ts"] = now_ts
             existing_state["pause_expires_at_ts"] = None
             existing_state["scrobble_expires_at_ts"] = None
@@ -474,6 +517,29 @@ def apply_playback_event(
 
     offset_seconds = view_offset_seconds
     dur_seconds = duration_seconds
+    percent_unplaced = None
+
+    if offset_seconds is None and progress_percent is not None:
+        matches_existing = _state_matches(
+            existing_state,
+            rating_key=rating_key,
+            media_id=media_id,
+            playback_media_type=playback_media_type,
+        )
+        offset_seconds = _offset_from_percent(
+            progress_percent,
+            duration_seconds=duration_seconds
+            or (existing_state.get("duration_seconds") if matches_existing else None),
+            ref={
+                "media_type": playback_media_type,
+                "media_id": media_id,
+                "source": source,
+                "season_number": season_number,
+                "episode_number": episode_number,
+            },
+        )
+        if offset_seconds is None:
+            percent_unplaced = progress_percent
 
     if _state_matches(
         existing_state,
@@ -535,6 +601,7 @@ def apply_playback_event(
         "episode_number": episode_number,
         "view_offset_seconds": max(0, offset_seconds or 0),
         "duration_seconds": max(0, dur_seconds or 0),
+        "progress_percent": percent_unplaced,
         "started_at_ts": started_at_ts,
         "status": status,
         "updated_at_ts": now_ts,
@@ -924,8 +991,15 @@ def _resolve_progress(state, state_item):
         display = f"{_format_clock(progress)} / {_format_clock(duration)}"
         percent = round((progress / duration) * 100, 2)
     else:
-        display = _format_clock(progress)
-        percent = 0
+        reported = state.get("progress_percent")
+        if reported is None:
+            display = _format_clock(progress)
+            percent = 0
+        else:
+            # A client that reports only a percentage, for a title whose
+            # length Floppy does not know: show what it told us.
+            percent = round(float(reported), 2)
+            display = f"{round(percent)}%"
     return duration, progress, display, percent
 
 
