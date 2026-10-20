@@ -110,7 +110,7 @@
       {% endif %}
       {% if collection_entry.purchase_price or collection_entry.purchase_location %}
         <p class="mt-1 text-sm text-[var(--color-text-muted)] leading-tight">
-          {% if collection_entry.purchase_price %}${{ collection_entry.purchase_price|floatformat:2 }}{% endif %}
+          {% if collection_entry.purchase_price %}{% user_price collection_entry.purchase_price %}{% endif %}
           {% if collection_entry.purchase_location %}{% if collection_entry.purchase_price %} • {% endif %}{{ collection_entry.purchase_location }}{% endif %}
         </p>
       {% endif %}
