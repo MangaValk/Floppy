@@ -33,6 +33,7 @@ from django.db.models import F, Max, Q
 from django.utils import timezone
 
 from app.cache_safety import ON_ERROR_SKIP, acquire_lock, release_lock
+from app.models import TV, MediaTypes, Movie
 from app.models.watch_state import WatchStateChange, WatchStateOrigin
 from app.services.watch_state import is_importing_watch_state
 from integrations.models import (
@@ -313,9 +314,13 @@ def set_delivery_schedule(binding, schedule):
     """Change how soon a binding's deliveries are sent, including those waiting."""
     binding.delivery_schedule = schedule
     binding.save(update_fields=["delivery_schedule", "updated_at"])
+    # Only rows still on their first attempt are held by the schedule. A later
+    # attempt is waiting on a backoff the provider asked for, and a schedule
+    # change must not shorten it.
     OutboundStateDelivery.objects.filter(
         binding=binding,
         status=OutboundDeliveryStatus.PENDING.value,
+        attempts=0,
         next_attempt_at__gt=timezone.now(),
     ).update(next_attempt_at=release_time(schedule))
 
@@ -580,6 +585,10 @@ def _batch_item(binding, adapter, delivery):
         _reschedule(delivery, error, retry_after=error.retry_after)
         return None
 
+    if delivery.operation == "status" and not _status_still_current(delivery):
+        _finish(delivery, OutboundDeliveryStatus.SUPERSEDED.value)
+        return None
+
     payload = dict(delivery.payload)
     if delivery.operation == "watched":
         payload["watched"] = delivery.intent
@@ -593,11 +602,40 @@ def _batch_item(binding, adapter, delivery):
     )
 
 
-def _post_batch(adapter, items, deliveries):
-    """Send one request and record what the provider did with each item."""
-    key = batch_idempotency_key(
-        deliveries[i.delivery_id].client_event_id for i in items
+def _status_still_current(delivery):
+    """Return whether the tracked entry still has the status this delivery carries.
+
+    A status is queued just before it is written, so a write that never landed,
+    or was replaced, must not be sent.
+    """
+    model = {MediaTypes.MOVIE.value: Movie, MediaTypes.TV.value: TV}.get(
+        delivery.item.media_type,
     )
+    if model is None:
+        return False
+    current = (
+        model.objects.filter(user_id=delivery.user_id, item=delivery.item)
+        .values_list("status", flat=True)
+        .first()
+    )
+    return current == delivery.payload.get("status")
+
+
+def _post_batch(adapter, items, deliveries, key=None):
+    """Send one request and record what the provider did with each item.
+
+    ``key`` is the key the group was first sent under. A group that has not
+    been sent yet gets its key here and keeps it on its rows, so a retry goes
+    out under the same key however the group's members have changed since.
+    """
+    if key is None:
+        key = batch_idempotency_key(
+            deliveries[i.delivery_id].client_event_id for i in items
+        )
+        rows = [deliveries[i.delivery_id] for i in items]
+        for row in rows:
+            row.payload = {**row.payload, "batch_key": key}
+        OutboundStateDelivery.objects.bulk_update(rows, ["payload"])
     try:
         results = adapter.write_batch(items, idempotency_key=key)
     except TerminalAdapterError as error:
@@ -650,13 +688,21 @@ def _send_batch(binding, adapter, claimed):
         if item is not None:
             items.append(item)
             by_id[delivery.pk] = delivery
-    # A retry goes out apart from fresh work, so the same set is sent again
-    # under the same key and the provider can recognise it.
-    retries = [i for i in items if by_id[i.delivery_id].attempts > 1]
-    fresh = [i for i in items if by_id[i.delivery_id].attempts <= 1]
-    for group in (retries, fresh):
-        if group:
-            _post_batch(adapter, group, by_id)
+    # A retry goes out apart from fresh work, grouped as it was first sent and
+    # under that request's key, so the provider can recognise a repeat even if
+    # other retries are due now or one member has since dropped out.
+    sent_before = {}
+    fresh = []
+    for item in items:
+        key = by_id[item.delivery_id].payload.get("batch_key")
+        if key:
+            sent_before.setdefault(key, []).append(item)
+        else:
+            fresh.append(item)
+    for key, group in sent_before.items():
+        _post_batch(adapter, group, by_id, key=key)
+    if fresh:
+        _post_batch(adapter, fresh, by_id)
 
 
 def _claim_due(binding, size):
@@ -738,9 +784,12 @@ def release_stale_deliveries():
     Safe by design: the next attempt of a delivery reads first, or for a batch
     is sent under the same idempotency key, so one that did apply is recognised.
     """
+    cutoff = timezone.now() - timedelta(seconds=STALE_IN_FLIGHT_SECONDS)
+    # A row that was already in flight when ``claimed_at`` was added has no
+    # claim time; its last change is the best the database knows.
     return OutboundStateDelivery.objects.filter(
+        Q(claimed_at__lt=cutoff) | Q(claimed_at__isnull=True, updated_at__lt=cutoff),
         status=OutboundDeliveryStatus.IN_FLIGHT.value,
-        claimed_at__lt=timezone.now() - timedelta(seconds=STALE_IN_FLIGHT_SECONDS),
     ).update(status=OutboundDeliveryStatus.PENDING.value, next_attempt_at=None)
 
 
