@@ -1821,6 +1821,12 @@
       border-color: color-mix(in oklab, var(--color-emerald-500) 30%, transparent);
     }
   }
+  .border-emerald-500\/40 {
+    border-color: color-mix(in srgb, oklch(69.6% 0.17 162.48) 40%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-emerald-500) 40%, transparent);
+    }
+  }
   .border-emerald-500\/50 {
     border-color: color-mix(in srgb, oklch(69.6% 0.17 162.48) 50%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -2327,6 +2333,9 @@
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-emerald-400) 10%, transparent);
     }
+  }
+  .bg-emerald-500 {
+    background-color: var(--color-emerald-500);
   }
   .bg-emerald-500\/10 {
     background-color: color-mix(in srgb, oklch(69.6% 0.17 162.48) 10%, transparent);
@@ -2979,6 +2988,9 @@
   .pr-12 {
     padding-right: calc(var(--spacing) * 12);
   }
+  .pr-24 {
+    padding-right: calc(var(--spacing) * 24);
+  }
   .pr-\[max\(1rem\,var\(--safe-right\)\)\] {
     padding-right: max(1rem, var(--safe-right));
   }
@@ -3101,6 +3113,9 @@
   .text-xs {
     font-size: var(--text-xs);
     line-height: var(--tw-leading, var(--text-xs--line-height));
+  }
+  .text-\[0\.65rem\] {
+    font-size: 0.65rem;
   }
   .text-\[0\.68rem\] {
     font-size: 0.68rem;
@@ -8410,17 +8425,44 @@ html.light .theme-toggle-icon-moon {
   font-weight: 600;
   color: var(--color-text);
 }
+.detail-progress-card__sub {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
 .detail-progress-card__bar {
+  position: relative;
   height: 0.5rem;
-  overflow: hidden;
   border-radius: 9999px;
   background: var(--color-surface-muted);
 }
-.detail-progress-card__bar > span {
+.detail-progress-card__bar > span:not(.progress-glow) {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: #10b981;
+}
+.progress-glow {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 9999px;
+  background: #a7f3d0;
+  box-shadow: 0 0 6px 1px rgb(110 231 183 / 85%), 0 0 14px 3px rgb(16 185 129 / 55%);
+  animation: progress-glow 2.4s ease-in-out infinite;
+}
+.progress-glow-chip {
+  box-shadow: 0 0 6px 1px rgb(110 231 183 / 70%);
+}
+@keyframes progress-glow {
+  50% {
+    box-shadow: 0 0 9px 2px rgb(110 231 183 / 100%), 0 0 20px 5px rgb(16 185 129 / 70%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-glow {
+    animation: none;
+  }
 }
 .detail-progress-card__value {
   font-size: 1.125rem;

@@ -116,19 +116,19 @@ def wetrakr_connect(request):
             request,
             "Add your WeTrakr app key in Settings > Metadata before connecting.",
         )
-        return redirect("integrations")
+        return redirect("mal_export")
     existing = WeTrakrAccount.objects.filter(user=request.user).first()
     if existing is not None and existing.is_connected:
         messages.error(request, "WeTrakr is already connected.")
-        return redirect("integrations")
+        return redirect("mal_export")
     try:
         flow = wetrakr_api.start_device_flow(client_id)
     except wetrakr_api.DeviceFlowError as error:
         messages.error(request, str(error))
-        return redirect("integrations")
+        return redirect("mal_export")
     except AdapterError as error:
         messages.error(request, str(error))
-        return redirect("integrations")
+        return redirect("mal_export")
     WeTrakrAccount.objects.update_or_create(
         user=request.user,
         defaults={
@@ -141,7 +141,7 @@ def wetrakr_connect(request):
             "device_expires_at": timezone.now() + timedelta(seconds=flow["expires_in"]),
         },
     )
-    return redirect("integrations")
+    return redirect("mal_export")
 
 
 def _clear_device_flow(account):
@@ -231,7 +231,7 @@ def wetrakr_cancel(request):
     account = WeTrakrAccount.objects.filter(user=request.user).first()
     if account is not None and account.is_pending:
         _clear_device_flow(account)
-    return redirect("integrations")
+    return redirect("mal_export")
 
 
 @login_required
@@ -244,7 +244,7 @@ def wetrakr_settings(request):
         binding = _binding_for(account) if account and account.is_connected else None
         if binding is None:
             messages.error(request, "Connect your WeTrakr account first.")
-            return redirect("integrations")
+            return redirect("mal_export")
         capabilities = [
             capability
             for name, capability in SENDABLE
@@ -262,7 +262,7 @@ def wetrakr_settings(request):
         if schedule in SyncDeliverySchedule.values:
             outbound.set_delivery_schedule(binding, schedule)
     messages.success(request, "Updated WeTrakr sync.")
-    return redirect("integrations")
+    return redirect("mal_export")
 
 
 @login_required
@@ -293,7 +293,7 @@ def wetrakr_disconnect(request):
                 "Disconnected locally. WeTrakr could not confirm the logout.",
             )
     messages.success(request, "WeTrakr disconnected.")
-    return redirect("integrations")
+    return redirect("mal_export")
 
 
 @login_required
@@ -309,10 +309,10 @@ def wetrakr_export(request):
         kill_switch=False,
     ).exists():
         messages.error(request, "Switch on WeTrakr sync before sending your library.")
-        return redirect("integrations")
+        return redirect("mal_export")
     export_wetrakr_library.delay(request.user.pk)
     messages.success(
         request,
         "Sending queued. Results will appear under WeTrakr.",
     )
-    return redirect("integrations")
+    return redirect("mal_export")
