@@ -72,6 +72,9 @@ class GenericScrobbleProcessor(BaseWebhookProcessor):
     def _is_played(self, payload):
         return is_played(payload)
 
+    def _is_manual_mark(self, payload):
+        return payload.get("manual") is True
+
     def _get_media_type(self, payload):
         return _MEDIA_TYPE_MAPPING.get(payload.get("media_type"))
 

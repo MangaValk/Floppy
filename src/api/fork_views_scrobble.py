@@ -81,6 +81,12 @@ def _scrobble_request_error(data):
                 status=HTTP.BAD_REQUEST,
             )
 
+    if data.get("manual") is not None and not isinstance(data.get("manual"), bool):
+        return Response(
+            {"detail": "'manual' must be a boolean."},
+            status=HTTP.BAD_REQUEST,
+        )
+
     if "score" in data:
         _, score_error = validate_episode_score(data.get("score"))
         if score_error:
@@ -200,6 +206,15 @@ class ScrobbleView(drf_views.APIView):
                         "description": "Only used by 'stop'. Overrides the "
                         "position/duration completion heuristic when given.",
                     },
+                    "manual": {
+                        "type": "boolean",
+                        "nullable": True,
+                        "description": "Only used by 'stop'. True when the "
+                        "user marked the title watched by hand instead of "
+                        "playing it. Something already watched is left as "
+                        "it is rather than recorded again as a rewatch, so "
+                        "the call is safe to repeat.",
+                    },
                     "played_at": {
                         "type": "string",
                         "format": "date-time",
@@ -267,6 +282,7 @@ class ScrobbleView(drf_views.APIView):
                 "position_seconds": request.data.get("position_seconds"),
                 "duration_seconds": request.data.get("duration_seconds"),
                 "completed": request.data.get("completed"),
+                "manual": request.data.get("manual"),
                 "played_at": try_parse_datetime_input(raw_played_at)
                 if raw_played_at
                 else None,
