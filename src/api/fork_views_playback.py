@@ -237,7 +237,7 @@ def upsert_playback_progress(
     return progress
 
 
-def _show_item_map(items):
+def show_item_map(items):
     """Return {(source, media_id): Item} of the shows backing episode items."""
     episode_media_ids = {
         (item.source, item.media_id)
@@ -254,17 +254,34 @@ def _show_item_map(items):
     return {(show.source, show.media_id): show for show in shows}
 
 
+def _backing_show(item, show_map):
+    """Return the show row behind an episode item, or None for anything else."""
+    if item.media_type != MediaTypes.EPISODE.value:
+        return None
+    return show_map.get((item.source, item.media_id))
+
+
+def item_reference(item, show_map):
+    """Return what a client needs to tell one item from another.
+
+    An episode shares its show's media_id, so without the season and episode
+    numbers a change to one episode cannot be told from a change to any other.
+    Episode Items are created without provider links, so their show-level ids
+    (which is what clients match on) come from the show row.
+    """
+    show = _backing_show(item, show_map)
+    return {
+        "season_number": item.season_number,
+        "episode_number": item.episode_number,
+        "ids": build_provider_ids(item) or (build_provider_ids(show) if show else {}),
+    }
+
+
 def _serialize_progress(progress, show_map):
     """Serialize a PlaybackProgress row into the API entry shape."""
     item = progress.item
-    show = (
-        show_map.get((item.source, item.media_id))
-        if item.media_type == MediaTypes.EPISODE.value
-        else None
-    )
-    # Episode Items are created without provider links, so their show-level
-    # ids/image/url (which is what clients match on) come from the show row.
-    ids = build_provider_ids(item) or (build_provider_ids(show) if show else {})
+    show = _backing_show(item, show_map)
+    reference = item_reference(item, show_map)
     image = item.image or (show.image if show else None)
     url = _detail_url(item) or (_detail_url(show) if show else None)
 
@@ -272,9 +289,7 @@ def _serialize_progress(progress, show_map):
         "media_type": item.media_type,
         "source": item.source,
         "media_id": item.media_id,
-        "season_number": item.season_number,
-        "episode_number": item.episode_number,
-        "ids": ids,
+        **reference,
         "title": item.title,
         "series_title": show.title if show else None,
         "image": image,
@@ -570,7 +585,7 @@ class PlaybackProgressView(drf_views.APIView):
             queryset = queryset.filter(completed=filters["completed"])
 
         rows = list(queryset)
-        show_map = _show_item_map([row.item for row in rows])
+        show_map = show_item_map([row.item for row in rows])
         return [_serialize_progress(row, show_map) for row in rows]
 
     def _podcast_entries(self, user, filters):
@@ -670,7 +685,7 @@ class PlaybackProgressView(drf_views.APIView):
             completed=bool(data.get("completed")),
         )
         progress.item = item
-        show_map = _show_item_map([item])
+        show_map = show_item_map([item])
         return Response(_serialize_progress(progress, show_map), status=HTTP.OK)
 
     def _put_podcast(self, request):

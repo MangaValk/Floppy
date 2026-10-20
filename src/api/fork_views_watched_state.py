@@ -32,6 +32,7 @@ from integrations.state.checkpoints import (
     record_applied_position,
 )
 
+from .fork_views_playback import item_reference, show_item_map
 from .helpers import check_source_type, check_valid_type, resolve_item_queryset
 
 logger = logging.getLogger(__name__)
@@ -265,6 +266,7 @@ class WatchedStateChangeFeedView(drf_views.APIView):
             record_applied_position(binding, cursor)
 
         changes = changes_since(request.user, cursor, limit=limit)
+        show_map = show_item_map([change.item for change in changes if change.item])
         results = [
             {
                 "sequence": change.sequence,
@@ -277,6 +279,7 @@ class WatchedStateChangeFeedView(drf_views.APIView):
                 "media_id": change.item.media_id if change.item else None,
                 "source": change.item.source if change.item else None,
                 "media_type": change.item.media_type if change.item else None,
+                **(item_reference(change.item, show_map) if change.item else {}),
                 "origin_kind": change.origin_kind,
                 "correlation_id": str(change.correlation_id),
             }

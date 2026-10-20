@@ -151,6 +151,40 @@ Start from `cursor=0`, which is always valid. Read `oldest_sequence` and
 Progress does not create history. Completion applies to the identified movie or
 episode only, and a retry never becomes a rewatch.
 
+### When the user marks something watched by hand
+
+Send the same `stop` you send for a finished title, with `"manual": true`
+and no position:
+
+```http
+POST /api/v1/scrobble/
+
+{"action": "stop", "media_type": "movie", "ids": {"imdb": "tt0133093", "tmdb": "603"},
+ "title": "The Matrix", "completed": true, "manual": true,
+ "client_event_id": "mark-1b6e..."}
+```
+
+| Situation | Result |
+|---|---|
+| Title Floppy has never seen | Created and Completed, one watch |
+| Title planned or in progress | That entry becomes Completed, no second row |
+| Title already watched | Nothing changes. It is agreement, not a rewatch |
+| Same `client_event_id` again | The first result, no second mutation |
+| `stop` without `manual` | A play. A second viewing is a rewatch |
+
+An episode is marked the same way, with `season_number` and `episode_number`.
+`manual` must be a boolean (`400` otherwise) and is ignored on `start` and
+`pause`. Add `played_at` when the client knows when the user watched it;
+otherwise Floppy uses the time of the request.
+
+**Unmark is not sent.** There is no call that reverses a mark without deciding
+what to do with the user's history, so a client should leave Floppy as it is
+when the user unmarks. Floppy's own unmark keeps past plays.
+
+**Do not use `PUT .../watched-state/` for this.** It records the watched
+state in Floppy's sync ledger only. It adds no library entry and does not turn
+a Planning entry into Completed, so the title would not look watched in Floppy.
+
 ## 4. Offline retries
 
 Send `client_event_id` (or the `Idempotency-Key` header) on every mutation.
@@ -192,6 +226,33 @@ past a page you failed to apply.
 
 Deletes arrive as entries with `kind: "delete"`. Absence from a page is never a
 delete.
+
+### Reading Floppy state into a client
+
+A client that shows Floppy's resume positions and watched flags (for example a
+"Continue Watching" row) needs three things from each feed row.
+
+| Field | Why a client needs it |
+|---|---|
+| `media_type`, `media_id`, `source` | Which title. For an episode, `media_id` is the **show's** id |
+| `season_number`, `episode_number` | Which episode. `null` for a movie. Without these, two episodes of one show are indistinguishable |
+| `ids` | Provider ids (`tmdb`, `imdb`, `tvdb`) to match against the client's own catalogue. An episode carries its show's ids |
+| `position_seconds`, `duration_seconds`, `completed` | Progress feed only. Absolute seconds, so a client does not have to guess from a percentage |
+| `watched`, `play_count`, `watched_at` | Watched-state feed only |
+| `origin_key` | Progress feed only. Skip rows whose `origin_key` is your own connection's: they are your echo |
+
+Rules for applying them:
+
+- A progress row with `completed: true` is not a resume position. Show the item
+  as watched (or advance to the next episode), never as resumable.
+- A progress row with `kind: "delete"` clears the resume position. It does not
+  mean the item is unwatched.
+- Progress and watched state are separate feeds. Applying a position never
+  creates a play, and a watched flag never invents a position.
+- On a first connection, read `newest_sequence` from the feed (`0` if it is null), then page the
+  snapshot at `GET /api/v1/playback/progress/` (`?completed=false` for resume
+  candidates), then pull the feed from the sequence you read first. Rows may
+  repeat across the two reads; applying the same row twice is harmless.
 
 ## 6. Resets and expired cursors
 
@@ -269,6 +330,11 @@ It identifies a title by `imdb`, `tmdb` or `tvdb` as strings, plus `anidb` for
 anime. An event with none of them, an episode with no season and episode number,
 or an episode numbered by TVDB order is not sent, because Floppy never matches by
 title.
+
+The proposed tracker does not send a manual **Mark Watched** yet. It is not
+playback, so the table above does not cover it. A client that adds it sends the
+manual stop described in step 3; the exact bodies are in
+`src/api/tests/test_nuviotv_manual_mark.py`.
 
 What it does not do: send seconds (it has none), read history or lists back, or send ratings. The Nuvio and Floppy sides of those
 are separate changes.
