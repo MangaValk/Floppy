@@ -151,6 +151,40 @@ Start from `cursor=0`, which is always valid. Read `oldest_sequence` and
 Progress does not create history. Completion applies to the identified movie or
 episode only, and a retry never becomes a rewatch.
 
+### When the user marks something watched by hand
+
+Send the same `stop` you send for a finished title, with `"manual": true`
+and no position:
+
+```http
+POST /api/v1/scrobble/
+
+{"action": "stop", "media_type": "movie", "ids": {"imdb": "tt0133093", "tmdb": "603"},
+ "title": "The Matrix", "completed": true, "manual": true,
+ "client_event_id": "mark-1b6e..."}
+```
+
+| Situation | Result |
+|---|---|
+| Title Floppy has never seen | Created and Completed, one watch |
+| Title planned or in progress | That entry becomes Completed, no second row |
+| Title already watched | Nothing changes. It is agreement, not a rewatch |
+| Same `client_event_id` again | The first result, no second mutation |
+| `stop` without `manual` | A play. A second viewing is a rewatch |
+
+An episode is marked the same way, with `season_number` and `episode_number`.
+`manual` must be a boolean (`400` otherwise) and is ignored on `start` and
+`pause`. Add `played_at` when the client knows when the user watched it;
+otherwise Floppy uses the time of the request.
+
+**Unmark is not sent.** There is no call that reverses a mark without deciding
+what to do with the user's history, so a client should leave Floppy as it is
+when the user unmarks. Floppy's own unmark keeps past plays.
+
+**Do not use `PUT .../watched-state/` for this.** It records the watched
+state in Floppy's sync ledger only. It adds no library entry and does not turn
+a Planning entry into Completed, so the title would not look watched in Floppy.
+
 ## 4. Offline retries
 
 Send `client_event_id` (or the `Idempotency-Key` header) on every mutation.
@@ -269,6 +303,11 @@ It identifies a title by `imdb`, `tmdb` or `tvdb` as strings, plus `anidb` for
 anime. An event with none of them, an episode with no season and episode number,
 or an episode numbered by TVDB order is not sent, because Floppy never matches by
 title.
+
+The proposed tracker does not send a manual **Mark Watched** yet. It is not
+playback, so the table above does not cover it. A client that adds it sends the
+manual stop described in step 3; the exact bodies are in
+`src/api/tests/test_nuviotv_manual_mark.py`.
 
 What it does not do: send seconds (it has none), read history or lists back, or send ratings. The Nuvio and Floppy sides of those
 are separate changes.
