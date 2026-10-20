@@ -1,4 +1,5 @@
 import logging
+import re
 
 from django.conf import settings
 from django.contrib import messages
@@ -20,6 +21,8 @@ from app.models import (
     AlbumTracker,
     ArtistTracker,
     BasicMedia,
+    CollectionEntry,
+    CollectionField,
     Item,
     ItemTag,
     MediaTypes,
@@ -160,6 +163,41 @@ def _tagged_untracked_items(user, media_type, query, library_ids):
         .exclude(id__in=library_ids)
         .order_by("title", "id")
     )
+
+
+_BARCODE_RE = re.compile(r"\d{8,18}|\d{9}[\dX]")
+
+
+def _barcode_owned_items(user, media_type, query):
+    """Return the user's ``media_type`` items whose Barcode field matches *query*.
+
+    A scan reads the 12 or 13 digit code, while a CLZ export may carry a 2 or
+    5 digit supplement after it, so a stored barcode matches on its start.
+    """
+    code = re.sub(r"[\s-]", "", query).upper()
+    if not _BARCODE_RE.fullmatch(code):
+        return []
+    field_ids = [
+        str(field_id)
+        for field_id in CollectionField.objects.filter(
+            group__user=user,
+            label__iexact="Barcode",
+        ).values_list("id", flat=True)
+    ]
+    if not field_ids:
+        return []
+
+    item_ids = {}
+    entries = CollectionEntry.objects.filter(
+        user=user,
+        item__media_type=media_type,
+    ).values_list("item_id", "custom_field_values")
+    for item_id, values in entries:
+        for field_id in field_ids:
+            stored = re.sub(r"[\s-]", "", str((values or {}).get(field_id) or ""))
+            if stored.upper().startswith(code):
+                item_ids[item_id] = None
+    return list(Item.objects.filter(id__in=item_ids).order_by("title", "id"))
 
 
 def _merge_by_title(entries, extra_items, limit):
@@ -438,6 +476,23 @@ def media_search(request):
                 )
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Local search failed: %s", exception_summary(exc))
+
+    if (
+        request.user.is_authenticated
+        and page == 1
+        and local_results_kind == "media"
+        and media_type != MediaTypes.PODCAST.value
+    ):
+        shown = {result["item"].id for result in local_results}
+        owned = [
+            item
+            for item in _barcode_owned_items(request.user, media_type, query)
+            if item.id not in shown
+        ]
+        local_results = [
+            {"item": item, "media": None, "matched_title": None} for item in owned
+        ] + local_results
+        local_results_total += len(owned)
 
     source_options = metadata_resolution.available_metadata_sources(
         media_type,

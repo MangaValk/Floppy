@@ -144,6 +144,17 @@ These read `custom_field_values` in Python, not with a JSON key lookup: keys
 are `str(field.id)`, and Django compiles a numeric key as an array index
 (`$[2]`) on SQLite, so a database lookup silently matches nothing.
 
+## Scanning a barcode
+
+The search bar's camera button shows for Books, Manga, Comics and Comic Issues.
+For the last three, `services.search` turns a checksum-valid ISBN into a series
+title through Open Library (Google Books if enabled) and searches that, since no
+manga or comic provider answers an ISBN. The search page also lists the user's
+own items whose **Barcode** custom field starts with the scanned digits
+(`search_views._barcode_owned_items`, in Python for the reason above), so a CLZ
+barcode with a price supplement still matches a 12 or 13 digit scan. A scan does
+not yet fill the Barcode field of a newly added item.
+
 ## Native export/import
 
 The CSV backup carries the whole picture:
