@@ -1065,7 +1065,7 @@ class ConnectViewTests(TestCase):
         self.assertEqual(decrypt(account.device_code), "dev-1")
         self.assertEqual(account.user_code, "ABCD-1234")
         self.assertTrue(account.is_pending)
-        self.assertContains(self.client.get(reverse("integrations")), "ABCD-1234")
+        self.assertContains(self.client.get(reverse("mal_export")), "ABCD-1234")
 
     def test_polling_while_unapproved_stays_pending(self):
         self._start()
@@ -1233,11 +1233,57 @@ class ConnectViewTests(TestCase):
         self.assertFalse(WeTrakrAccount.objects.exists())
         self.assertContains(response, "could not confirm the logout")
 
+    def test_both_service_cards_are_on_the_sync_page_and_not_on_integrations(self):
+        sync_page = self.client.get(reverse("mal_export"))
+        integrations = self.client.get(reverse("integrations"))
+
+        self.assertContains(sync_page, "Send to Services")
+        self.assertContains(sync_page, "send-tmdb")
+        self.assertContains(sync_page, "send-wetrakr")
+        self.assertNotContains(integrations, "send-tmdb")
+        self.assertNotContains(integrations, "Connect WeTrakr")
+
+    def test_each_service_is_one_row_with_its_own_modal(self):
+        page = self.client.get(reverse("mal_export"))
+
+        slugs = [service["slug"] for service in page.context["outbound_services"]]
+        self.assertEqual(slugs, ["tmdb", "wetrakr"])
+        for slug in slugs:
+            self.assertContains(page, f"activeModal = 'send-{slug}'", count=1)
+            self.assertContains(page, f"activeModal === 'send-{slug}'", count=1)
+
+    def test_the_row_badge_follows_the_connection(self):
+        states = lambda: {  # noqa: E731
+            service["slug"]: service["state"]
+            for service in self.client.get(reverse("mal_export")).context[
+                "outbound_services"
+            ]
+        }
+        self.assertEqual(states()["wetrakr"], "off")
+
+        self._connect()
+        self.assertEqual(states()["wetrakr"], "connected")
+
+        WeTrakrAccount.objects.filter(user=self.user).update(connection_broken=True)
+        self.assertEqual(states()["wetrakr"], "attention")
+
+    def test_the_modal_opens_by_itself_while_waiting_for_approval(self):
+        self.assertNotContains(
+            self.client.get(reverse("mal_export")),
+            "x-init=\"activeModal = 'send-wetrakr'\"",
+        )
+
+        self._start()
+
+        page = self.client.get(reverse("mal_export"))
+        self.assertContains(page, "x-init=\"activeModal = 'send-wetrakr'\"")
+        self.assertContains(page, "ABCD-1234")
+
     def test_a_connected_card_lists_the_switches(self):
         self._connect()
         self.client.post(reverse("wetrakr_settings"), {"plays": "on"})
 
-        page = self.client.get(reverse("integrations"))
+        page = self.client.get(reverse("mal_export"))
 
         self.assertContains(page, "Send existing library")
         self.assertContains(page, 'name="plays"')
@@ -1432,6 +1478,25 @@ class ExportTests(WeTrakrTestCase):
 
         self.assertEqual(preview["plays"], 1)
         self.assertEqual(preview["statuses"], 1)
+
+    def test_the_preview_counts_without_reading_the_history(self):
+        when = datetime.datetime(2026, 10, 1, 19, 0, tzinfo=datetime.UTC)
+        self._movie(self.film, Status.COMPLETED.value, when)
+        self._movie(self.other, Status.PLANNING.value)
+
+        with (
+            patch(
+                "integrations.tasks._wetrakr_export._movie_plays",
+                side_effect=AssertionError("preview read every play"),
+            ),
+            patch(
+                "integrations.tasks._wetrakr_export._statuses",
+                side_effect=AssertionError("preview read every status"),
+            ),
+        ):
+            preview = library_preview(self.user)
+
+        self.assertEqual((preview["plays"], preview["statuses"]), (1, 1))
 
     def test_a_user_without_a_binding_exports_nothing(self):
         self.binding.delete()
