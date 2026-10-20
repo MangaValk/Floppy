@@ -24,6 +24,7 @@ from app.models import (
     Item,
     MediaTypes,
     Movie,
+    MoviePlay,
     Sources,
     Status,
     WatchStateOrigin,
@@ -57,7 +58,11 @@ from integrations.state.adapters.base import (
     TransientAdapterError,
 )
 from integrations.state.adapters.wetrakr import WeTrakrAdapter, build_adapter
-from integrations.state.identity import activate_binding, get_or_create_binding
+from integrations.state.identity import (
+    activate_binding,
+    deactivate_binding,
+    get_or_create_binding,
+)
 from integrations.tasks._wetrakr_export import export_wetrakr_library, library_preview
 
 
@@ -418,6 +423,17 @@ class ClientTests(WeTrakrTestCase):
 
         call.assert_not_called()
 
+    def test_a_refresh_does_not_run_when_the_lock_cannot_be_checked(self):
+        with (
+            patch("app.cache_safety.cache.add", side_effect=ConnectionError("down")),
+            patch.object(wetrakr_api, "REFRESH_WAIT_SECONDS", 0),
+            patch("integrations.wetrakr_api.requests.request") as call,
+            self.assertRaises(TransientAdapterError),
+        ):
+            self._client().refresh(force=True)
+
+        call.assert_not_called()
+
     def test_a_refresh_wetrakr_rejects_marks_the_connection_broken(self):
         self.account.access_expires_at = timezone.now() - datetime.timedelta(minutes=1)
         self.account.save()
@@ -749,6 +765,24 @@ class AdapterReplyTests(WeTrakrTestCase):
 
         self.assertEqual(results[0].receipt, "9001")
 
+    def test_two_plays_at_the_same_moment_each_keep_their_own_receipt(self):
+        when = "2026-10-18T20:15:00+00:00"
+        reply = {
+            "added": {
+                "plays": [
+                    {"play_id": 9001, "ids": {"tmdb": 155}, "tracked_at": when},
+                    {"play_id": 9002, "ids": {"tmdb": 155}, "tracked_at": when},
+                ],
+            },
+        }
+
+        results = self._send(
+            [_play_item(1, "movie:155", when), _play_item(2, "movie:155", when)],
+            reply,
+        )
+
+        self.assertEqual([r.receipt for r in results], ["9001", "9002"])
+
     def test_a_receipt_without_a_date_is_used_when_only_one_play_was_sent(self):
         reply = {"added": {"plays": [{"play_id": 9001, "ids": {"tmdb": 155}}]}}
 
@@ -1057,6 +1091,18 @@ class ConnectViewTests(TestCase):
 
         self.assertEqual(call.call_count, 1)
 
+    def test_a_long_wait_from_wetrakr_is_not_shortened(self):
+        self._start()
+
+        with patch(
+            "integrations.wetrakr_views.wetrakr_api.poll_device_flow",
+            return_value=("pending", {"interval": 7200}),
+        ):
+            response = self.client.post(reverse("wetrakr_poll"))
+
+        self.assertEqual(response.json()["interval"], 7200)
+        self.assertEqual(WeTrakrAccount.objects.get(user=self.user).device_interval, 7200)
+
     def test_approval_connects_with_everything_still_switched_off(self):
         account = self._connect()
 
@@ -1320,6 +1366,65 @@ class ExportTests(WeTrakrTestCase):
         delivery = OutboundStateDelivery.objects.get(operation="play")
         self.assertEqual(delivery.payload["watched_at"], when.isoformat())
         self.assertEqual(delivery.item_id, self.film.pk)
+
+    def test_every_recorded_watch_of_a_movie_is_queued(self):
+        first = datetime.datetime(2025, 3, 1, 19, 0, tzinfo=datetime.UTC)
+        second = datetime.datetime(2026, 10, 1, 19, 0, tzinfo=datetime.UTC)
+        movie = self._movie(self.film, Status.COMPLETED.value, second)
+        MoviePlay.objects.create(movie=movie, end_date=first)
+        MoviePlay.objects.create(movie=movie, end_date=second)
+
+        self.assertEqual(library_preview(self.user)["plays"], 2)
+        # The newest play was already queued live when it was recorded, so the
+        # export adds only the one WeTrakr has not been given.
+        self.assertEqual(self._export(), 1)
+
+        sent = set(
+            OutboundStateDelivery.objects.filter(operation="play").values_list(
+                "payload__watched_at", flat=True
+            )
+        )
+        self.assertEqual(sent, {first.isoformat(), second.isoformat()})
+
+    def test_a_completed_movie_with_no_plays_still_counts_once(self):
+        when = datetime.datetime(2026, 10, 1, 19, 0, tzinfo=datetime.UTC)
+        self._movie(self.film, Status.COMPLETED.value, when)
+        self._movie(self.film, Status.COMPLETED.value, when + datetime.timedelta(days=1))
+
+        self.assertEqual(self._export(), 2)
+
+    def test_a_movie_with_a_dated_play_is_not_counted_as_undated(self):
+        movie = self._movie(self.film, Status.COMPLETED.value)
+        MoviePlay.objects.create(
+            movie=movie,
+            end_date=datetime.datetime(2026, 10, 1, 19, 0, tzinfo=datetime.UTC),
+        )
+
+        self.assertEqual(library_preview(self.user)["undated"], 0)
+
+    def test_the_export_uses_the_binding_of_the_current_connection(self):
+        deactivate_binding(self.binding)
+        self.account.profile_key = "profile-2"
+        self.account.save(update_fields=["profile_key"])
+        current, _ = get_or_create_binding(
+            self.user,
+            SyncClientKind.WETRAKR.value,
+            instance_key="wetrakr.com",
+            profile_key="profile-2",
+        )
+        activate_binding(
+            current,
+            capabilities=[CAPABILITY_PLAY_PUSH],
+            directions=[SyncDirection.OUTBOUND.value],
+        )
+        when = datetime.datetime(2026, 10, 1, 19, 0, tzinfo=datetime.UTC)
+        self._movie(self.film, Status.COMPLETED.value, when)
+
+        self.assertEqual(self._export(), 1)
+        self.assertEqual(
+            OutboundStateDelivery.objects.get(operation="play").binding_id,
+            current.pk,
+        )
 
     def test_a_completed_movie_without_a_date_is_left_out(self):
         self._movie(self.film, Status.COMPLETED.value)
