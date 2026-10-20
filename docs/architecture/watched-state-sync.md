@@ -159,6 +159,48 @@ history only through an explicit export.
 Adapters are found through `integrations.state.registry.ADAPTER_MODULES`: one
 line per `SyncClientKind`, plus an adapter module with `build_adapter(binding)`.
 
+## Plays, statuses and batching
+
+Three more delivery operations sit beside `watched` and `rating`:
+
+- `play` is one dated watch (`payload.watched_at`). It is queued only when a
+  change adds a play (the play count rose), never for a date edit, and never
+  coalesced: a rewatch is a second play. An unwatch queues no play. Removing a
+  sent play is a separate, explicit operation (`play_remove`) that nothing queues
+  yet.
+- `status` is the tracking status of a movie or show (`payload.status`), queued
+  from the `Movie`/`TV` save signal when the status changed. The latest waiting
+  one wins. Mapping Floppy's statuses to a service's is the adapter's job.
+- Both need their own approved capability (`play.push`, `status.push`), so a
+  service can be given one without the other.
+
+An adapter that declares `BATCH_SIZE` takes writes in groups (`write_batch`) and
+the engine holds its deliveries instead of sending each at once:
+
+- Each new delivery gets `next_attempt_at` from the binding's `delivery_schedule`:
+  *Live* waits a ten-second window so a burst (a season marked watched) leaves as
+  one request, *Hourly* and *Daily* wait for the next UTC hour or midnight.
+  Because the release time is the normal `next_attempt_at`, the sweeper needs no
+  second idea of "due". `set_delivery_schedule` moves waiting deliveries too.
+- `flush_binding` claims what is due, at most one delivery per item and operation
+  (the in-flight index allows no more), sends up to `BATCH_SIZE` per request and
+  repeats until nothing is due. A per-binding cache lock keeps two flushes from
+  spending the provider's rate limit twice.
+- The adapter answers per item (delivered with the provider's receipt, skipped,
+  failed, or retry). A whole-request failure raises: transient errors reschedule
+  every item and honour `retry_after`, terminal errors fail them.
+- A retry goes out apart from new work, so the same set is sent again under the
+  same `Idempotency-Key` (a UUID derived from the deliveries' `client_event_id`s).
+  The receipt is stored on the delivery (`payload.receipt`).
+- Adapters that take one write at a time (Jellyfin, Emby, Kodi, TMDb) are not
+  affected: no hold, no batching, and the schedule does not apply to them.
+
+The sweeper (`sweep_watched_state_deliveries`) is on the Celery beat schedule
+every minute. It flushes batch bindings and runs the single-write deliveries.
+It also puts any delivery still `in_flight` thirty minutes after its claim
+(`claimed_at`) back in the queue: its worker died, and the next attempt is safe
+because it reads first, or is sent under the same idempotency key.
+
 ## Provider capability matrix
 
 A direction ships enabled only after its adapter has been shown to hold the

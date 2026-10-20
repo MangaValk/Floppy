@@ -1955,6 +1955,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "Reconcile statistics sync",
         "schedule": 60,
     },
+    # Outbound deliveries (watched state, ratings) retry through their own
+    # next_attempt_at and recover from a lost broker message only if something
+    # sweeps them. Without this entry a transient failure was never retried.
+    "sweep_watched_state_deliveries": {
+        "task": "Sweep pending watched state deliveries",
+        "schedule": 60,
+    },
     "repair_celery_broker_bindings": {
         "task": "Repair Celery broker bindings",
         "schedule": 60 * 15,
