@@ -14,14 +14,19 @@ What this adapter will never send:
   an episode play carries only its own season and episode;
 - ``watched`` or ``watching`` as a status (a play is what makes something
   watched, and WeTrakr works out ``watching`` itself);
-- anything for imported history (``ACCEPTS_IMPORTED_CHANGES``).
+- anything for imported history (``ACCEPTS_IMPORTED_CHANGES``);
+- a remove-all or remove-last call: a removal names one play, by its receipt
+  or its exact date.
 """
 
+from collections import Counter
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.models import MediaTypes, Sources, Status
 from integrations.models import (
     CAPABILITY_PLAY_PUSH,
+    CAPABILITY_PLAY_REMOVE,
     CAPABILITY_RATING_PUSH,
     CAPABILITY_STATUS_PUSH,
     WeTrakrAccount,
@@ -90,6 +95,14 @@ def _walk_refs(section):
                     )
 
 
+def _instant(value):
+    """Return a moment for an ISO timestamp, or None when it is absent or odd."""
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
 def _is_entry(entry):
     ids = entry.get("ids") if isinstance(entry, dict) else None
     return isinstance(ids, dict) and str(ids.get("tmdb", "")).isdigit()
@@ -115,7 +128,12 @@ class WeTrakrAdapter:
     """Send plays, statuses and ratings to one connected WeTrakr account."""
 
     CAPABILITIES = frozenset(
-        {CAPABILITY_PLAY_PUSH, CAPABILITY_STATUS_PUSH, CAPABILITY_RATING_PUSH},
+        {
+            CAPABILITY_PLAY_PUSH,
+            CAPABILITY_PLAY_REMOVE,
+            CAPABILITY_STATUS_PUSH,
+            CAPABILITY_RATING_PUSH,
+        },
     )
     # Well under WeTrakr's 5,000 items / 1 MB per request.
     BATCH_SIZE = 1000
@@ -224,7 +242,7 @@ class WeTrakrAdapter:
                     entry["rating"] = float(item.rating)
                 target["movies" if kind == "movie" else "shows"].append(entry)
                 groups["rated" if item.rating is not None else "cleared"].append(index)
-            else:
+            elif item.operation != "play_remove":  # sent one by one in write_batch
                 results[index] = BatchResult(
                     BATCH_SKIPPED,
                     error="This kind of change is not sent to WeTrakr.",
@@ -283,6 +301,21 @@ class WeTrakrAdapter:
                 continue
             self._read_reply(path, reply, items, indexes, results)
 
+        for index, item in enumerate(items):
+            if item.operation != "play_remove":
+                continue
+            sent += 1
+            try:
+                results[index] = self._remove_play(item)
+            except AdapterError as error:
+                errors.append(error)
+                outcome = (
+                    BATCH_FAILED
+                    if isinstance(error, TerminalAdapterError)
+                    else BATCH_RETRY
+                )
+                results[index] = BatchResult(outcome, error=str(error))
+
         if errors and len(errors) == sent:
             # Nothing was applied, so let the engine retry the whole request.
             raise errors[0]
@@ -290,6 +323,54 @@ class WeTrakrAdapter:
             results.get(index) or BatchResult(BATCH_RETRY, error="No result")
             for index in range(len(items))
         ]
+
+    def _remove_play(self, item):
+        """Remove exactly one play: by its receipt, else by its exact date.
+
+        Never the latest play and never all of them, whatever is left on the
+        account. A play WeTrakr no longer has counts as removed.
+        """
+        receipt = item.payload.get("receipt")
+        if receipt:
+            self.client.request(
+                "DELETE",
+                f"/sync/tracklogs/{receipt}",
+                missing_ok=True,
+            )
+            return BatchResult(BATCH_DELIVERED)
+
+        kind, tmdb, season, episode = _ref(item.external_id)
+        watched_at = item.payload.get("watched_at")
+        if not watched_at or kind not in {"movie", "episode"}:
+            return BatchResult(BATCH_FAILED, error="The play cannot be identified.")
+        entry = {"status": "watched", "tracked_at": watched_at}
+        if kind == "movie":
+            body = {"movies": [{"ids": {"tmdb": tmdb}, **entry}]}
+        else:
+            body = {
+                "shows": [
+                    {
+                        "ids": {"tmdb": tmdb},
+                        "seasons": [
+                            {
+                                "number": season,
+                                "episodes": [{"number": episode, **entry}],
+                            },
+                        ],
+                    },
+                ],
+            }
+        reply = self.client.request(
+            "POST",
+            "/sync/tracking/remove",
+            json=body,
+            idempotency_key=f"remove-{item.delivery_id}",
+        )
+        if any(_walk_refs(reply.get("notFound"))):
+            return BatchResult(BATCH_SKIPPED, error="WeTrakr had no such play.")
+        if any(_walk_refs(reply.get("errored"))):
+            return BatchResult(BATCH_FAILED, error="WeTrakr rejected the removal.")
+        return BatchResult(BATCH_DELIVERED)
 
     def _read_reply(self, path, reply, items, indexes, results):
         """Turn one reply into per-item results for the items it covered."""
@@ -323,7 +404,12 @@ class WeTrakrAdapter:
                 for index in indexes:
                     rejected.setdefault(index, BatchResult(BATCH_RETRY, error=message))
 
-        receipts = self._receipts(reply.get("added"))
+        dated, undated = self._receipts(reply.get("added"))
+        asked = Counter(
+            _ref(items[i].external_id)
+            for i in indexes
+            if items[i].operation == "play" and i not in rejected
+        )
         for index in indexes:
             item = items[index]
             if index in rejected:
@@ -331,17 +417,26 @@ class WeTrakrAdapter:
                 continue
             receipt = ""
             if item.operation == "play":
-                kind, tmdb, season, episode = _ref(item.external_id)
-                receipt = receipts.get(
-                    (kind, tmdb, season, episode, item.payload.get("watched_at")),
-                    "",
+                ref = _ref(item.external_id)
+                # Two plays of one title at one instant each take their own id.
+                same_time = dated.get(
+                    (ref, _instant(item.payload.get("watched_at"))),
+                    [],
                 )
+                receipt = same_time.pop(0) if same_time else ""
+                if not receipt and asked[ref] == 1 and len(undated.get(ref, [])) == 1:
+                    # The reply named the play but not its date, and only one
+                    # play of this title was sent, so there is no mix-up.
+                    receipt = undated[ref][0]
             results[index] = BatchResult(BATCH_DELIVERED, receipt=receipt)
 
     @staticmethod
     def _receipts(added):
-        """Map each new play to the id WeTrakr gave it, where the reply says."""
-        receipts = {}
+        """Return the ids WeTrakr gave new plays, by title and date.
+
+        The second map holds plays the reply named without a date.
+        """
+        dated, undated = {}, {}
         plays = added.get("plays") if isinstance(added, dict) else None
         for play in plays or []:
             if not isinstance(play, dict) or not play.get("play_id"):
@@ -351,15 +446,13 @@ class WeTrakrAdapter:
             if not str(tmdb or "").isdigit():
                 continue
             kind = "episode" if play.get("episode") is not None else "movie"
-            key = (
-                kind,
-                int(tmdb),
-                play.get("season"),
-                play.get("episode"),
-                play.get("tracked_at"),
-            )
-            receipts[key] = str(play["play_id"])
-        return receipts
+            ref = (kind, int(tmdb), play.get("season"), play.get("episode"))
+            when = _instant(play.get("tracked_at"))
+            if when is None:
+                undated.setdefault(ref, []).append(str(play["play_id"]))
+            else:
+                dated.setdefault((ref, when), []).append(str(play["play_id"]))
+        return dated, undated
 
 
 def build_adapter(binding):

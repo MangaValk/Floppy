@@ -47,6 +47,10 @@
           <input type="checkbox" name="plays" {% if wetrakr_sync.enabled.plays %}checked{% endif %}>
           {% translate "Send movies and episodes I watch" %}
         </label>
+        <label class="flex items-center gap-2 text-sm text-[var(--color-text)] pl-6">
+          <input type="checkbox" name="removals" {% if wetrakr_sync.enabled.removals %}checked{% endif %}>
+          {% translate "Remove a play from WeTrakr when I delete it here" %}
+        </label>
         <label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
           <input type="checkbox" name="statuses" {% if wetrakr_sync.enabled.statuses %}checked{% endif %}>
           {% translate "Send Planning, Paused and Dropped" %}
