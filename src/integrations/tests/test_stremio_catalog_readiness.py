@@ -117,6 +117,9 @@ class CatalogStatusLoadingTests(TestCase):
         self.assertContains(response, reverse("stremio_catalog_status"))
 
     def test_settings_page_queries_do_not_grow_with_the_library(self):
+        # The first visit fills the provider credential cache; that is a one-off
+        # cost, not growth with the library.
+        self.client.get(reverse("integrations"))
         with CaptureQueriesContext(connection) as small:
             self.client.get(reverse("integrations"))
         for media_id in range(60):

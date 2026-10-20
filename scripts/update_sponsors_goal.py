@@ -3,9 +3,12 @@
 
 import json
 import os
+import re
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+# The goal figures as the card prints them; this is what decides whether the card changed.
+LABEL = re.compile(r"(\d+)% of \$([\d,]+) per month")
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "docs/brand/sponsors-goal.svg"
 QUERY = """
@@ -50,9 +53,25 @@ def fetch_goal() -> dict:
     return goal
 
 
+def figures(goal: dict) -> tuple[int, int]:
+    return max(0, min(100, int(goal["percentComplete"]))), int(goal["targetValue"])
+
+
+def card_is_current(goal: dict) -> bool:
+    """True when the committed card already shows this goal's percent and target.
+
+    Wording or layout edits to the SVG must not open an update PR; only a change
+    in the goal figures (a new sponsor, a new target) should.
+    """
+    if not OUTPUT.exists():
+        return False
+    match = LABEL.search(OUTPUT.read_text(encoding="utf-8"))
+    percent, target = figures(goal)
+    return bool(match) and (int(match[1]), int(match[2].replace(",", ""))) == (percent, target)
+
+
 def render(goal: dict) -> str:
-    target = int(goal["targetValue"])
-    percent = max(0, min(100, int(goal["percentComplete"])))
+    percent, target = figures(goal)
     goal_label = f"{percent}% of ${target:,} per month"
     # The SVG dimensions match its half-width column in the README table.
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="500" height="340" viewBox="0 0 500 340" role="img" aria-labelledby="title desc">
@@ -74,4 +93,6 @@ def render(goal: dict) -> str:
 
 
 if __name__ == "__main__":
-    OUTPUT.write_text(render(fetch_goal()), encoding="utf-8")
+    goal = fetch_goal()
+    if not card_is_current(goal):
+        OUTPUT.write_text(render(goal), encoding="utf-8")
