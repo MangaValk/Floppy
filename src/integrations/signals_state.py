@@ -10,7 +10,7 @@ to deliver it commit together or not at all.
 import logging
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from app.models import TV, Movie, Season, WatchState, WatchStateChange
@@ -61,14 +61,23 @@ def enqueue_on_state_change(sender, instance, created, **kwargs):
         schedule_delivery(delivery)
 
 
-@receiver(post_save, sender=Movie)
-@receiver(post_save, sender=TV)
-def enqueue_on_status_change(sender, instance, created, **kwargs):
-    """Queue a tracking-status change for destinations that mirror statuses."""
+@receiver(pre_save, sender=Movie)
+@receiver(pre_save, sender=TV)
+def enqueue_on_status_change(sender, instance, update_fields=None, **kwargs):
+    """Queue a tracking-status change for destinations that mirror statuses.
+
+    Saving a Movie or TV is not wrapped in a transaction, so the intent is
+    recorded just before the write rather than after it: a crash in between
+    leaves an intent to send, never a status change nobody will send. Delivery
+    checks the entry still has that status, so an intent whose save never
+    landed is dropped.
+    """
     from app.signals import media_change_side_effects_suppressed
 
     if kwargs.get("raw") or media_change_side_effects_suppressed():
         return
-    if not created and not instance.tracker.has_changed("status"):
+    if update_fields is not None and "status" not in update_fields:
+        return
+    if not instance._state.adding and not instance.tracker.has_changed("status"):
         return
     enqueue_status_change(instance.user, instance.item, instance.status)

@@ -2598,6 +2598,7 @@ def episode(media_id, season_number, episode_number, language=None):
             "season_title": season_metadata.get("season_title")
             or f"Season {season_number}",
             "episode_title": response.get("name") or f"Episode {episode_number}",
+            "synopsis": get_synopsis(response.get("overview")),
             "score": round(vote_average, 1) if vote_average else None,
             "score_count": vote_count or None,
             "cast": get_cast_credits({"cast": cast_rows}),
