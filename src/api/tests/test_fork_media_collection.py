@@ -1,4 +1,5 @@
 """Tests for the provider-id collection endpoints (fork-only)."""
+from datetime import UTC, datetime
 from http import HTTPStatus as HTTP  # noqa: N814
 from unittest.mock import Mock, patch
 
@@ -48,6 +49,75 @@ class MediaCollectionTests(FloppyApiTestCase):
 
         entry = CollectionEntry.objects.get(user=self.user1, item=item)
         self.assertEqual(entry.resolution, "1080p")
+
+    def test_put_stores_media_info_and_collected_at(self):
+        """A new entry keeps every sent field, including the collected date."""
+        item = self.items_by_type[MediaTypes.MOVIE.value][0]
+
+        response = self._put(
+            item.media_id,
+            {
+                "media_type": "bluray",
+                "resolution": "4k",
+                "hdr": "Dolby Vision",
+                "is_3d": True,
+                "audio_codec": "TrueHD Atmos",
+                "audio_channels": "7.1",
+                "bitrate": 4608,
+                "collected_at": "2014-05-01T12:30:00.000Z",
+            },
+        )
+
+        self.assertEqual(response.status_code, HTTP.CREATED)
+        entry = CollectionEntry.objects.get(user=self.user1, item=item)
+        self.assertEqual(entry.media_type, "bluray")
+        self.assertEqual(entry.resolution, "4k")
+        self.assertEqual(entry.hdr, "Dolby Vision")
+        self.assertTrue(entry.is_3d)
+        self.assertEqual(entry.audio_codec, "TrueHD Atmos")
+        self.assertEqual(entry.audio_channels, "7.1")
+        self.assertEqual(entry.bitrate, 4608)
+        self.assertEqual(entry.collected_at, datetime(2014, 5, 1, 12, 30, tzinfo=UTC))
+
+    def test_put_repeat_updates_sent_fields_and_keeps_the_rest(self):
+        """A repeat PUT changes only what it sends."""
+        item = self.items_by_type[MediaTypes.MOVIE.value][0]
+        self._put(
+            item.media_id,
+            {"resolution": "1080p", "hdr": "HDR10", "is_3d": True},
+        )
+
+        response = self._put(
+            item.media_id,
+            {"audio_codec": "DTS-HD MA", "is_3d": False},
+        )
+
+        self.assertEqual(response.status_code, HTTP.OK)
+        entry = CollectionEntry.objects.get(user=self.user1, item=item)
+        self.assertEqual(entry.resolution, "1080p")
+        self.assertEqual(entry.hdr, "HDR10")
+        self.assertFalse(entry.is_3d)
+        self.assertEqual(entry.audio_codec, "DTS-HD MA")
+
+    def test_put_invalid_field_rejected(self):
+        """A wrongly typed or too long field is a 400 and creates nothing."""
+        item = self.items_by_type[MediaTypes.MOVIE.value][0]
+
+        for payload in (
+            {"hdr": "x" * 31},
+            {"is_3d": "yes"},
+            {"bitrate": "320"},
+            {"bitrate": -1},
+            {"collected_at": "yesterday"},
+            {"collected_at": "2014-13-01T00:00:00Z"},
+        ):
+            with self.subTest(payload=payload):
+                response = self._put(item.media_id, payload)
+
+                self.assertEqual(response.status_code, HTTP.BAD_REQUEST)
+                self.assertFalse(
+                    CollectionEntry.objects.filter(user=self.user1, item=item).exists(),
+                )
 
     @patch(METADATA_PATH)
     def test_put_creates_unknown_item_from_provider(self, mock_metadata):
@@ -223,8 +293,8 @@ class MediaCollectionTests(FloppyApiTestCase):
         item = self.items_by_type[MediaTypes.MOVIE.value][0]
         view = MediaCollectionView()
 
-        winner, won = view._create_entry(self.user1, item, "1080p")
-        loser, lost = view._create_entry(self.user1, item, "720p")
+        winner, won = view._create_entry(self.user1, item, {"resolution": "1080p"})
+        loser, lost = view._create_entry(self.user1, item, {"resolution": "720p"})
 
         self.assertTrue(won)
         self.assertFalse(lost)
