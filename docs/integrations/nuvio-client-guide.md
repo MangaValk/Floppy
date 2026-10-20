@@ -314,6 +314,44 @@ The exact bodies it sends are the fixtures in
 SECRET=test-only scripts/test.sh api.tests.test_nuviotv_scrobble_contract
 ```
 
+## Library source (reading saved titles)
+
+NuvioTV lists a provider under Sources, Library Source only if its client can
+read the user's saved titles. The server side of that already exists: Floppy's
+saved titles are the entries with status Planning, and a client reads them with
+the credential it was given.
+
+```
+GET /api/v1/media/?status=planning&limit=50&offset=0
+GET /api/v1/media/movie/?status=planning
+GET /api/v1/media/tv/?status=planning
+```
+
+The default tracking token carries `watchlist:read`, so no extra scope is
+needed. Each row's `item` has `source`, `media_id` and `media_type`; `item.ids`
+adds `imdb` and `tvdb` when Floppy has resolved them. For `source: "tmdb"`,
+`media_id` is the TMDB id. Follow `pagination.next` until it is `null`.
+
+What a client should do with what it gets:
+
+- Place only titles whose `source` it can map (`tmdb` for movies and TV).
+  Anything else (games, books, music, MAL anime) is a title it cannot place;
+  skip it and say so rather than guessing by title.
+- Treat it as a full read. There is no change feed for saved titles (the
+  `sync/changes` feed carries watched state only), so re-read the list rather
+  than expecting deltas.
+- Do not merge it with Floppy custom lists or Discover rows. They are separate
+  endpoints and separate capabilities.
+
+The read is pinned by `api.tests.test_nuvio_library_source`:
+
+```bash
+SECRET=test-only scripts/test.sh api.tests.test_nuvio_library_source
+```
+
+The NuvioTV side (binding a library provider so Floppy appears in the Library
+Source list) is client work and is not part of this server contract.
+
 ## Errors
 
 | Status | Meaning | What to do |
@@ -340,7 +378,7 @@ call needed a scope the token does not carry.
 |---|---|---|
 | Browsing Floppy lists and Discover rows | Yes | No |
 | Catalog metadata | Yes | No |
-| Saved-item sync | No | Yes |
+| Saved-item sync | No | Yes (read: see Library source) |
 | Watched state sync | No | Yes |
 | Resume progress sync | No | Yes |
 | Reconciliation | No | Yes |
