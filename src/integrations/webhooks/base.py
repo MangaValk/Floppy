@@ -2583,6 +2583,13 @@ class BaseWebhookProcessor:
         anime_instances = app.models.Anime.objects.filter(item=anime_item, user=user)
         current_instance = select_preferred_activity_entry(anime_instances)
 
+        if self._is_manual_mark(payload) and current_instance is not None:
+            # A tap on something already watched is agreement: it adds no
+            # rewatch row, and it never winds the saved progress back.
+            if current_instance.status == Status.COMPLETED.value:
+                return True
+            episode_number = max(episode_number, current_instance.progress or 0)
+
         now = timezone.now().replace(second=0, microsecond=0)
         is_completed = episode_number == anime_metadata["max_progress"]
         status = Status.COMPLETED.value if is_completed else Status.IN_PROGRESS.value
