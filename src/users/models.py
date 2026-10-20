@@ -17,7 +17,7 @@ from django_celery_results.models import TaskResult
 
 from app.models import Item, MediaTypes, Sources, Status
 from integrations import import_progress
-from users import helpers
+from users import currency, helpers
 
 # Longest playback webhook secret accepted on input. The column itself is
 # unbounded because it holds ciphertext, so the cap has to be enforced where
@@ -1114,6 +1114,13 @@ class User(AbstractUser):
         default=False,
         help_text="Process Jellyfin MarkUnplayed webhook events",
     )
+    group_scrobbled_anime = models.BooleanField(
+        default=False,
+        help_text=(
+            "Convert a flat MAL anime entry to per-episode tracking when a "
+            "media server reports one of its episodes"
+        ),
+    )
 
     jellyseerr_enabled = models.BooleanField(
         default=False,
@@ -1251,6 +1258,13 @@ class User(AbstractUser):
         max_length=20,
         default=TimeFormatChoices.SYSTEM_DEFAULT,
         choices=TimeFormatChoices.choices,
+    )
+
+    currency = models.CharField(
+        max_length=4,
+        default=currency.AUTO,
+        choices=[(currency.AUTO, _("Auto (browser region)")), *currency.choices()],
+        help_text="Currency shown next to collection prices; auto follows the browser",
     )
 
     week_start_day = models.CharField(

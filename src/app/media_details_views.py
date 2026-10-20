@@ -355,15 +355,11 @@ def media_details(
 
     # A list can hold an album, saved under the album page's id. That id is not
     # a recording, so the album page is the only place that can describe it.
-    if (
-        not is_anonymous
-        and media_type == MediaTypes.MUSIC.value
-        and source == Sources.MUSICBRAINZ.value
-    ):
+    if media_type == MediaTypes.MUSIC.value and source == Sources.MUSICBRAINZ.value:
         from app.services.music import album_for_media_id
         from app.templatetags.app_tags import music_album_url
 
-        album = album_for_media_id(media_id)
+        album = album_for_media_id(media_id, user=request.user)
         if album:
             return redirect(music_album_url(album))
 

@@ -769,7 +769,16 @@ def flush_media_change_side_effects(
         normalized_items.append(item)
 
     if normalized_items:
+        from integrations.mal_sync import queue_grouped_sync
         from lists.tasks import sync_smart_lists_for_items_task
+
+        # One trigger per show: its seasons and episodes share the show's
+        # provider id, and the show item itself resolves most directly.
+        per_show = {}
+        for item in sorted(normalized_items, key=lambda item: item.media_type != "tv"):
+            per_show.setdefault((item.source, item.media_id), item)
+        for item in per_show.values():
+            queue_grouped_sync(owner.id, item)
 
         sync_smart_lists_for_items_task.delay(owner.id, list(seen_item_ids))
         DiscoverFeedback.objects.filter(
@@ -1003,7 +1012,11 @@ def capture_statistics_previous_dates(sender, instance, **kwargs):
         sender.objects.filter(pk=instance.pk).values_list("start_date", "end_date").first()
     )
     instance._statistics_previous_dates = previous
-    instance._history_had_dates = previous is None or any(previous)
+    # History places podcasts and music by end date alone, so a start date
+    # does not make a row "dated": a progress save on an unfinished podcast
+    # left no day behind, yet dropped every cached day.
+    placed_by = previous[1:] if previous and sender in (Podcast, Music) else previous
+    instance._history_had_dates = previous is None or any(placed_by)
 
 
 @receiver(post_save, sender=Movie)
@@ -1026,6 +1039,14 @@ def mark_statistics_previous_dates(sender, instance, **kwargs):
         instance.start_date, instance.end_date
     )
     if old_days:
+        # History day keys are the same days, and the receivers that follow
+        # only see the new dates: the day a row moved away from kept showing it.
+        history_cache.invalidate_history_days(
+            instance.user_id,
+            day_keys=sorted(old_days),
+            reason="media_date_moved",
+            force=True,
+        )
         statistics_cache.invalidate_statistics_days(
             instance.user_id, old_days, reason="media_date_moved"
         )

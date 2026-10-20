@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from allauth.account.views import SignupView
+from allauth.core import ratelimit
 from allauth.socialaccount.views import SignupView as SocialSignupView
 from celery import states
 from django.apps import apps
@@ -53,7 +54,7 @@ from app.models import (
 from app.providers import credentials, tmdb
 from app.templatetags import app_tags
 from config import run_state
-from integrations import exports, plex, seerr_api, stremio_catalog, tasks
+from integrations import exports, mal_sync, plex, seerr_api, stremio_catalog, tasks
 from integrations.imports import plex as plex_import
 from integrations.imports import psn as psn_import
 from integrations.imports import trakt as trakt_imports
@@ -71,7 +72,7 @@ from integrations.models import (
 )
 from integrations.plex_watchlist import WATCHLIST_TASK_NAME
 from users import appearance as appearance_config
-from users import cache_management
+from users import cache_management, helpers, release_notes
 from users.forms import (
     AuthenticatorSetupForm,
     NotificationSettingsForm,
@@ -268,6 +269,7 @@ def _get_import_data_user(user):
             "pocketcasts_account",
             "lastfm_account",
             "koito_account",
+            "mal_account",
         )
         .prefetch_related(
             "radarr_instances",
@@ -346,6 +348,31 @@ def account(request):
 
     if request.method == "POST":
         action = request.POST.get("action", "")
+
+        if action in {
+            "enable_authenticator",
+            "start_authenticator_setup",
+            "disable_authenticator",
+            "regenerate_recovery_codes",
+        }:
+            # The demo password is public: an authenticator attached to it
+            # would let one visitor reset the password for everyone else.
+            if request.user.is_demo:
+                messages.error(request, "This section is view-only for demo accounts.")
+                return redirect("account")
+            limited = ratelimit.consume_or_429(request, action="reauthenticate")
+            if limited is not None:
+                return limited
+            if action != "regenerate_recovery_codes":
+                confirmation = RegenerateRecoveryCodesForm(
+                    request.POST, user=request.user
+                )
+                if not confirmation.is_valid():
+                    messages.error(
+                        request,
+                        "Enter your current password to change authenticator recovery.",
+                    )
+                    return redirect("account")
 
         if "username" in request.POST:
             user_form = UserUpdateForm(request.POST, instance=request.user)
@@ -479,6 +506,15 @@ def password_recover(request):
     form = PasswordRecoveryForm()
 
     if request.method == "POST":
+        # This custom flow does not pass through allauth's reset view. Apply
+        # its per-IP and per-account limits before checking short TOTP codes.
+        limited = ratelimit.consume_or_429(
+            request,
+            action="reset_password",
+            key=request.POST.get("username", "").strip().casefold(),
+        )
+        if limited is not None:
+            return limited
         form = PasswordRecoveryForm(request.POST)
         if form.is_valid():
             user = form.save()
@@ -969,7 +1005,11 @@ def toggle_obfuscate_episodes(request):
         user.obfuscate_episodes = not user.obfuscate_episodes
         user.save(update_fields=["obfuscate_episodes"])
     return redirect(
-        request.POST.get("next") or request.META.get("HTTP_REFERER") or "home"
+        app_helpers.safe_return_url(
+            request,
+            request.POST.get("next") or request.META.get("HTTP_REFERER"),
+            reverse("home"),
+        )
     )
 
 
@@ -1083,7 +1123,9 @@ def cards(request, media_type=None):
         )
         fields = ["card_metadata"]
         if "clickable_media_cards" in request.POST:
-            request.user.clickable_media_cards = request.POST.get("clickable_media_cards") == "on"
+            request.user.clickable_media_cards = (
+                request.POST.get("clickable_media_cards") == "on"
+            )
             fields.append("clickable_media_cards")
         request.user.save(update_fields=fields)
         messages.success(request, "Media cards updated")
@@ -1208,7 +1250,9 @@ def _card_preview_stand_in(media_type):
         aggregated_status="In progress",
         last_played_at=timezone.now(),
         is_statusless=False,
-        end_date=None,
+        created_at=timezone.now() - timedelta(days=30),
+        start_date=timezone.now() - timedelta(days=14),
+        end_date=timezone.now() - timedelta(days=2),
         aggregated_end_date=None,
         next_event=None,
         card_tile_url="",
@@ -1482,6 +1526,15 @@ def preferences(request):
             request.user.time_format = time_format
             fields_to_update.append("time_format")
 
+        currency = request.POST.get("currency")
+        if (
+            currency
+            and currency in [choice[0] for choice in User._meta.get_field("currency").choices]
+            and request.user.currency != currency
+        ):
+            request.user.currency = currency
+            fields_to_update.append("currency")
+
         week_start_day = request.POST.get("week_start_day")
         if (
             week_start_day and week_start_day in WeekStartDayChoices.values
@@ -1689,6 +1742,7 @@ def preferences(request):
         "ui_language_choices": UiLanguageChoices.choices,
         "session_duration_choices": SessionDurationChoices.choices,
         "week_start_day_choices": WeekStartDayChoices.choices,
+        "currency_choices": User._meta.get_field("currency").choices,
     }
 
     return render(request, "users/preferences.html", context)
@@ -1952,6 +2006,9 @@ def import_data(request):
     # Get Last.fm account
     lastfm_account = getattr(user, "lastfm_account", None)
 
+    # Get MyAnimeList sync account
+    mal_account = getattr(user, "mal_account", None)
+
     # Get Koito account
     koito_account = getattr(user, "koito_account", None)
     koito_history_status_label = "Not started"
@@ -2048,6 +2105,8 @@ def import_data(request):
         "pocketcasts_account": pocketcasts_account,
         "gpodder_account": gpodder_account,
         "lastfm_account": lastfm_account,
+        "mal_account": mal_account,
+        "mal_sync_configured": mal_sync.is_sync_configured(user),
         "koito_account": koito_account,
         "radarr_instances": radarr_instances,
         "sonarr_instances": sonarr_instances,
@@ -2195,8 +2254,7 @@ def _backup_dir_status(user):
     Creates the directory if missing so it's browsable even before any export
     has run.
     """
-    backup_dir = Path(settings.BACKUP_DIR) / str(user.username)
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = exports.backup_directory(user)
     file_count = sum(1 for entry in backup_dir.iterdir() if entry.is_file())
     return {
         "path": str(backup_dir),
@@ -2225,10 +2283,17 @@ def _db_snapshot_status():
     written by app.tasks_db_backup.write_database_snapshot, so the same page
     that explains CSV export can show whether a real database backup exists.
     """
+    if not settings.USING_SQLITE_DATABASE:
+        return {"supported": False}
     snapshot_dir = Path(settings.BACKUP_DIR) / "database"
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    file_count = sum(1 for entry in snapshot_dir.iterdir() if entry.is_file())
+    snapshot_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    file_count = sum(
+        1
+        for entry in snapshot_dir.glob("*.sqlite3")
+        if entry.is_file() and not entry.is_symlink() and not entry.name.startswith(".")
+    )
     return {
+        "supported": True,
         "path": str(snapshot_dir),
         "file_count": file_count,
         "host_reachable": _mount_is_host_reachable(snapshot_dir),
@@ -2253,6 +2318,43 @@ def export_data(request):
         "db_snapshot_status": _db_snapshot_status(),
     }
     return render(request, "users/export_data.html", context)
+
+
+@require_GET
+def mal_export(request):
+    """Render the MyAnimeList export (status sync) settings page."""
+    user = request.user
+    mal_account = getattr(user, "mal_account", None)
+    schedule = None
+    periodic_task = (
+        PeriodicTask.objects.filter(
+            Q(kwargs__contains=f'"user_id": {user.id},')
+            | Q(kwargs__contains=f'"user_id": {user.id}' + "}"),
+            task=tasks.MAL_FULL_SYNC_TASK_NAME,
+        )
+        .select_related("crontab")
+        .first()
+    )
+    if periodic_task:
+        schedule_info = helpers.get_export_next_run_info(periodic_task)
+        if schedule_info:
+            schedule = {
+                "task": periodic_task,
+                "last_run": periodic_task.last_run_at,
+                "next_run": schedule_info["next_run"],
+                "frequency": schedule_info["frequency"],
+            }
+
+    context = {
+        "user": user,
+        "mal_account": mal_account,
+        "mal_sync_configured": mal_sync.is_sync_configured(user),
+        "mal_export_schedule": schedule,
+        "mal_sync_initial": mal_sync.full_sync_report(mal_account) if mal_account else None,
+        "mal_ignored_mappings": mal_sync.ignored_mappings(user) if mal_account else [],
+        "mal_manual_mappings": mal_sync.manual_episode_mappings(user) if mal_account else [],
+    }
+    return render(request, "users/mal_export.html", context)
 
 
 @require_GET
@@ -2340,11 +2442,14 @@ def export_logs(request):
     container this runs in may already be short of memory. After floppy.log come
     the process manager's log and any crash tracebacks (see config.run_state).
     """
+    if not request.user.is_superuser:
+        return HttpResponse(status=403)
+
     from app.log_safety import redact_secrets
 
     log_name = Path(settings.LOG_FILE).name
     sections = [(log_name, _log_files(log_name))]
-    sections += [(n, _log_files(n)) for n in ("supervisord.log", "faulthandler.log")]
+    sections += [(n, _log_files(n)) for n in ("restart-history.log", "supervisord.log", "faulthandler.log")]
 
     def lines():
         for title, found in sections:
@@ -2362,6 +2467,27 @@ def export_logs(request):
     response = StreamingHttpResponse(lines(), content_type="text/plain")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+@require_GET
+def whats_new(request):
+    """Render the release notes fragment the About page loads in the background."""
+    installed = release_notes.release_tag(settings.VERSION)
+    releases = release_notes.get_releases()
+    for release in releases or []:
+        release["installed"] = release["tag"] == installed
+        release["newer"] = release_notes.tag_sort_key(
+            release["tag"],
+        ) > release_notes.tag_sort_key(installed)
+    return render(
+        request,
+        "users/components/whats_new.html",
+        {
+            "releases": releases,
+            "installed": installed,
+            "releases_url": release_notes.RELEASES_PAGE_URL,
+        },
+    )
 
 
 @require_GET
@@ -3238,7 +3364,11 @@ def regenerate_token(request):
 def update_plex_usernames(request):
     """Update the Plex usernames for the user."""
     usernames = request.POST.get("plex_usernames", "")
-    redirect_target = request.POST.get("next") or "integrations"
+    redirect_target = app_helpers.safe_return_url(
+        request,
+        request.POST.get("next"),
+        reverse("integrations"),
+    )
 
     username_list = [u.strip() for u in usernames.split(",") if u.strip()]
 
@@ -3292,6 +3422,14 @@ def update_jellyfin_webhook_events(request):
     messages.success(request, "Jellyfin webhook settings updated successfully")
 
     return redirect("integrations")
+
+
+@require_POST
+def update_group_scrobbled_anime(request):
+    """Toggle converting flat MAL anime to per-episode tracking on scrobble."""
+    request.user.group_scrobbled_anime = request.POST.get("enabled") == "true"
+    request.user.save(update_fields=["group_scrobbled_anime"])
+    return redirect("mal_export")
 
 
 def _plex_library_values(account):
@@ -3443,7 +3581,11 @@ def delete_plex_webhook_share(request):
 @require_POST
 def update_plex_webhook_libraries(request):
     """Update selected Plex libraries allowed for webhook events."""
-    redirect_target = request.POST.get("next") or "integrations"
+    redirect_target = app_helpers.safe_return_url(
+        request,
+        request.POST.get("next"),
+        reverse("integrations"),
+    )
     selected_libraries = request.POST.getlist("plex_webhook_libraries")
 
     deduplicated_libraries: list[str] = []
@@ -3525,7 +3667,13 @@ def update_jellyseerr_settings(request):
                 + ". Valid: "
                 + ", ".join(sorted(valid_seerr_statuses)),
             )
-            return redirect(request.META.get("HTTP_REFERER", "/settings/integrations"))
+            return redirect(
+                app_helpers.safe_return_url(
+                    request,
+                    request.META.get("HTTP_REFERER"),
+                    reverse("import_data"),
+                ),
+            )
         trigger_statuses = ",".join(tokens)
     else:
         # Blank means "default behaviour" (processor skips UNKNOWN)
@@ -3609,7 +3757,13 @@ def update_jellyseerr_settings(request):
     )
 
     messages.success(request, "Seerr settings saved.")
-    return redirect(request.META.get("HTTP_REFERER", "/settings/integrations"))
+    return redirect(
+        app_helpers.safe_return_url(
+            request,
+            request.META.get("HTTP_REFERER"),
+            reverse("import_data"),
+        ),
+    )
 
 
 @require_POST

@@ -38,6 +38,7 @@ from app.models import (
 from app.providers import services
 from app.request_timing import boundary
 from app.services import metadata_resolution
+from app.services.completion import select_preferred_activity_entry
 from app.services.episode_coordinates import (
     InvalidEpisodeCoordinateError,
     cleanup_episode_history_for_route,
@@ -568,14 +569,32 @@ def media_save(request):
                 return_url=return_url,
                 track_action_update=True,
             )
+            # A failed create has no saved row of its own; a movie or game
+            # button belongs to the entry the page already shows.
+            shown_instance = media
+            if media.pk is None and media_type in (
+                MediaTypes.MOVIE.value,
+                MediaTypes.GAME.value,
+            ):
+                shown_instance = (
+                    select_preferred_activity_entry(
+                        BasicMedia.objects.filter_media_prefetch(
+                            request.user,
+                            media_id,
+                            media_type,
+                            source,
+                        ),
+                    )
+                    or media
+                )
             response = render(
                 request,
                 "app/components/detail_track_action.html",
                 {
                     "media": media.item,
-                    "current_instance": media,
+                    "current_instance": shown_instance,
                     "return_url": return_url,
-                    "track_open": True,
+                    "track_open": "edit" if instance_id else "create",
                     "track_modal_content": modal_response.content.decode(),
                     "track_action_update": True,
                     "swap_oob": True,
@@ -1434,7 +1453,7 @@ def episode_bulk_save(request):
             )
             return response
         messages.error(request, gettext("Start and end dates are required."))
-        return redirect(request.POST.get("return_url") or "/")
+        return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))
 
     try:
         first_season_number = int(request.POST["first_season_number"])
@@ -1454,7 +1473,7 @@ def episode_bulk_save(request):
             )
             return response
         messages.error(request, gettext("Invalid episode range."))
-        return redirect(request.POST.get("return_url") or "/")
+        return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))
 
     episode_count = max(int(request.POST.get("episode_count") or 0), 0)
     write_mode = request.POST.get("write_mode", "add")
@@ -1506,4 +1525,4 @@ def episode_bulk_save(request):
         request,
         gettext("Adding plays to %(value_1)s episodes.") % {"value_1": episode_count},
     )
-    return redirect(request.POST.get("return_url") or "/")
+    return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))

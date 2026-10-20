@@ -406,7 +406,7 @@ def lists_modal(
         # An album page's id is not a MusicBrainz recording, so the provider
         # cannot describe it; the album row we already hold can.
         album = (
-            music_services.album_for_media_id(media_id)
+            music_services.album_for_media_id(media_id, user=request.user)
             if tracking_media_type == MediaTypes.MUSIC.value
             and source == Sources.MUSICBRAINZ.value
             else None

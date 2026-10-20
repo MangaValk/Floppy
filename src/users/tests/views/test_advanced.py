@@ -682,7 +682,7 @@ class ExportLogsTests(TestCase):
     def setUp(self):
         """Create a user and an isolated log directory to read from."""
         self.credentials = {"username": "test", "password": "12345"}
-        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.user = get_user_model().objects.create_superuser(**self.credentials)
         self.client.login(**self.credentials)
 
         log_dir = Path(tempfile.mkdtemp())
@@ -693,6 +693,25 @@ class ExportLogsTests(TestCase):
     def export_body(response):
         """Read the streamed download."""
         return b"".join(response.streaming_content).decode()
+
+    def test_export_logs_denies_regular_users(self):
+        """Instance-wide diagnostics must not disclose other users' activity."""
+        self.user.is_superuser = False
+        self.user.save(update_fields=["is_superuser"])
+
+        response = self.client.get(reverse("export_logs"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertNotContains(
+            self.client.get(reverse("advanced")),
+            reverse("export_logs"),
+        )
+
+    def test_export_logs_requires_login(self):
+        """Anonymous requests must pass through authentication middleware."""
+        self.client.logout()
+        response = self.client.get(reverse("export_logs"))
+        self.assertEqual(response.status_code, 302)
 
     def test_export_logs_includes_rotated_backups_oldest_first(self):
         """The download should span rotated backups, not just the active file."""
@@ -729,7 +748,6 @@ class ExportLogsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("only entry", self.export_body(response))
 
-
     def test_export_logs_appends_supervisor_log_and_crash_tracebacks(self):
         """Process exits and fatal-signal tracebacks belong in the download."""
         self.log_file.write_text("app entry\n")
@@ -748,6 +766,20 @@ class ExportLogsTests(TestCase):
         self.assertIn("terminated by SIGKILL", body)
         self.assertIn("Segmentation fault", body)
         self.assertLess(body.index("app entry"), body.index("terminated by SIGKILL"))
+
+    def test_export_logs_includes_restart_history(self):
+        """Each restart's cause belongs in the download, past floppy.log rotation."""
+        self.log_file.write_text("app entry\n")
+        (self.log_file.parent / "restart-history.log").write_text(
+            "2026-10-14T18:46:10+00:00 Restart: previous run stopped cleanly.\n"
+        )
+
+        with override_settings(LOG_FILE=str(self.log_file)):
+            response = self.client.get(reverse("export_logs"))
+
+        body = self.export_body(response)
+        self.assertIn("===== restart-history.log =====", body)
+        self.assertIn("previous run stopped cleanly", body)
 
     def test_export_logs_skips_empty_crash_traceback_file(self):
         """faulthandler.log exists from the first start; an empty one is noise."""

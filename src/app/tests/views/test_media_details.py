@@ -4575,12 +4575,12 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, "1h 30min watched")
         self.assertIn('<div class="mb-3 md:mb-1 text-center md:text-start">', content)
         self.assertIn(
-            'class="flex w-full items-center justify-center gap-0.5 whitespace-nowrap text-[13px] tracking-[-0.01em] @max-[26rem]:flex-col md:hidden cursor-pointer"',
+            'class="flex w-full items-center justify-center gap-0.5 whitespace-nowrap text-[13px] tracking-[-0.01em] @max-[26rem]:flex-col md:hidden group cursor-pointer hover:text-[var(--color-text)] hover:underline"',
             content,
         )
         self.assertIn("1h 30min (1/8)", content)
         self.assertIn(
-            'class="hidden w-full flex-wrap items-center justify-center gap-y-1 md:flex md:justify-start cursor-pointer"',
+            'class="hidden w-full flex-wrap items-center justify-center gap-y-1 md:flex md:justify-start group cursor-pointer hover:text-[var(--color-text)] hover:underline"',
             content,
         )
         self.assertNotContains(response, "Your History")
@@ -9281,7 +9281,7 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertEqual(content.count('aria-label="Select season"'), 2)
         history_buttons = re.findall(
-            r'<button[^>]*aria-label="View session history"[^>]*>.*?</button>',
+            r'<button[^>]*aria-label="View play history"[^>]*>.*?</button>',
             content,
             flags=re.DOTALL,
         )

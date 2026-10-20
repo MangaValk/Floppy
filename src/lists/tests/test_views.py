@@ -14,6 +14,7 @@ from django.utils import timezone
 from app.models import (
     TV,
     Album,
+    AlbumTracker,
     Anime,
     Artist,
     Episode,
@@ -3708,6 +3709,117 @@ class ListsModalViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("album_save"))
+        mock_get_metadata.assert_not_called()
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_album_id_routes_resolve_to_users_canonical_duplicate(
+        self,
+        mock_get_metadata,
+    ):
+        """Duplicate rows for one release open the one the user already tracks."""
+        release_id = "123e4567-e89b-12d3-a456-426614174003"
+        untracked = Album.objects.create(
+            title="Running",
+            artist=Artist.objects.create(name="Alan Braxe"),
+            musicbrainz_release_id=release_id,
+        )
+        tracked = Album.objects.create(
+            title="Running",
+            artist=Artist.objects.create(name="Alan Braxe & Fred Falke"),
+            musicbrainz_release_id=release_id,
+        )
+        AlbumTracker.objects.create(
+            user=self.user,
+            album=tracked,
+            status=Status.COMPLETED.value,
+        )
+        self.assertLess(untracked.id, tracked.id)
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                args=[Sources.MUSICBRAINZ.value, MediaTypes.MUSIC.value, release_id],
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{tracked.id}"')
+        self.assertNotContains(response, f'value="{untracked.id}"')
+        mock_get_metadata.assert_not_called()
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_album_release_id_considers_duplicate_without_release_group(
+        self,
+        mock_get_metadata,
+    ):
+        """A tracked duplicate that lacks the group id still wins for its release id."""
+        release_id = "123e4567-e89b-12d3-a456-426614174005"
+        with_group = Album.objects.create(
+            title="Running",
+            artist=Artist.objects.create(name="Alan Braxe"),
+            musicbrainz_release_id=release_id,
+            musicbrainz_release_group_id="123e4567-e89b-12d3-a456-426614174006",
+        )
+        tracked = Album.objects.create(
+            title="Running",
+            artist=Artist.objects.create(name="Alan Braxe & Fred Falke"),
+            musicbrainz_release_id=release_id,
+        )
+        AlbumTracker.objects.create(
+            user=self.user,
+            album=tracked,
+            status=Status.COMPLETED.value,
+        )
+        self.assertLess(with_group.id, tracked.id)
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                args=[Sources.MUSICBRAINZ.value, MediaTypes.MUSIC.value, release_id],
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{tracked.id}"')
+        self.assertNotContains(response, f'value="{with_group.id}"')
+        mock_get_metadata.assert_not_called()
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_anonymous_album_link_goes_to_album_page(self, mock_get_metadata):
+        """A public list's album card reaches the album route, not the provider."""
+        artist = Artist.objects.create(name="Alan Braxe")
+        album = Album.objects.create(
+            title="Running",
+            artist=artist,
+            musicbrainz_release_id="123e4567-e89b-12d3-a456-426614174004",
+        )
+        self.client.logout()
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.MUSICBRAINZ.value,
+                    "media_type": MediaTypes.MUSIC.value,
+                    "media_id": album.musicbrainz_release_id,
+                    "title": "running",
+                },
+            ),
+        )
+
+        self.assertRedirects(
+            response,
+            reverse(
+                "music_album_details",
+                kwargs={
+                    "artist_id": artist.id,
+                    "artist_slug": "alan-braxe",
+                    "album_id": album.id,
+                    "album_slug": "running",
+                },
+            ),
+            fetch_redirect_response=False,
+        )
         mock_get_metadata.assert_not_called()
 
     def test_lists_modal_view_filters_lists_by_tag(self):

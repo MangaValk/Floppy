@@ -741,6 +741,38 @@ class ImportStremioTests(TestCase):
             MediaTypes.ANIME.value,
         )
 
+    def test_promoting_an_existing_show_asks_for_a_full_refresh(self):
+        """Moving a tracked show between libraries changes days no list names."""
+        flat = Item.objects.create(
+            media_id="1396",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Show",
+            image="x.jpg",
+        )
+        grouped = Item.objects.create(
+            media_id="1397",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            library_media_type=MediaTypes.ANIME.value,
+            title="Anime",
+            image="x.jpg",
+        )
+        importer = stremio.StremioImporter.__new__(stremio.StremioImporter)
+
+        with (
+            patch(
+                "app.services.grouped_anime.promote_grouped_anime",
+                return_value=True,
+            ),
+            helpers.record_bulk_rows() as recorded,
+        ):
+            importer._promote_grouped(grouped, None)
+            self.assertEqual(recorded, [])
+            self.assertTrue(importer._promote_grouped(flat, None))
+
+        self.assertEqual(recorded, [helpers.FULL_REFRESH])
+
     def test_anime_episode_mapping_uses_canonical_tmdb_season(self):
         """Stremio anime imports remap source seasons without false completion."""
         self.user.anime_enabled = True
@@ -765,7 +797,7 @@ class ImportStremioTests(TestCase):
                 "image": "http://example.com/rezero.jpg",
                 "tvdb_id": "305089",
             }
-            if list(season_numbers) == [1]:
+            if 1 in season_numbers:
                 metadata["season/1"] = {
                     "image": "http://example.com/season.jpg",
                     "max_progress": 85,
@@ -817,6 +849,83 @@ class ImportStremioTests(TestCase):
         season = Season.objects.get(item__media_id="1396")
         self.assertEqual(season.status, Status.IN_PROGRESS.value)
 
+    def test_anime_episode_mapping_ignored_when_tmdb_lacks_the_episode(self):
+        """A stale AniBridge target TMDB does not list keeps the source episode."""
+        self.user.anime_enabled = True
+        self.user.save(update_fields=["anime_enabled"])
+        video_ids = ["tt0903747:4:1", "tt0903747:4:19"]
+        library_items = [
+            {
+                "_id": "tt0903747",
+                "type": "series",
+                "name": "Re:ZERO",
+                "state": {
+                    "watched": encode_watched_bitfield(
+                        video_ids,
+                        {"tt0903747:4:19"},
+                    ),
+                    "lastWatched": "2023-01-02T00:00:00Z",
+                },
+            },
+        ]
+
+        def fake_metadata(media_id, season_numbers):
+            metadata = {
+                "title": "Re:ZERO",
+                "image": "http://example.com/rezero.jpg",
+                "tvdb_id": "305089",
+            }
+            for number, count in ((1, 85), (4, 20)):
+                if number in season_numbers:
+                    metadata[f"season/{number}"] = {
+                        "image": "http://example.com/season.jpg",
+                        "max_progress": count,
+                        "episodes": [
+                            {"episode_number": episode}
+                            for episode in range(1, count + 1)
+                        ],
+                    }
+            return metadata
+
+        match = GroupedAnimeMatch(
+            decision="move",
+            reason="exact_external_id_and_animation_genre",
+            tmdb_id="1396",
+            tvdb_id="305089",
+            mal_ids=("31240",),
+        )
+        mapping_data = {
+            "tvdb_show:305089:s4": {
+                "tmdb_show:1396:s1": {"1-19": "90-108"},
+            },
+        }
+
+        with (
+            patch(
+                "integrations.imports.stremio.anime_mapping.load_mapping_snapshot",
+                return_value=object(),
+            ),
+            patch(
+                "integrations.imports.stremio.anime_mappings.fetch_mapping_data",
+                return_value=mapping_data,
+            ),
+            patch(
+                "app.services.grouped_anime.classify_tv_metadata",
+                return_value=match,
+            ),
+        ):
+            self._run_import(
+                library_items,
+                cinemeta_videos={"tt0903747": video_ids},
+                tmdb_tv_with_seasons=fake_metadata,
+            )
+
+        episode = Episode.objects.get(item__media_id="1396")
+        self.assertEqual(
+            (episode.item.season_number, episode.item.episode_number),
+            (4, 19),
+        )
+
     def test_remapped_anime_season_completes_when_all_its_episodes_watched(self):
         """Every episode of the remapped canonical season watched is Completed."""
         self.user.anime_enabled = True
@@ -840,7 +949,7 @@ class ImportStremioTests(TestCase):
                 "image": "http://example.com/anime.jpg",
                 "tvdb_id": "70900",
             }
-            if list(season_numbers) == [5]:
+            if 5 in season_numbers:
                 metadata["season/5"] = {
                     "image": "http://example.com/season.jpg",
                     "max_progress": 4,
