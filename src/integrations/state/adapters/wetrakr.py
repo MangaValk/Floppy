@@ -418,7 +418,12 @@ class WeTrakrAdapter:
             receipt = ""
             if item.operation == "play":
                 ref = _ref(item.external_id)
-                receipt = dated.get((ref, _instant(item.payload.get("watched_at"))), "")
+                # Two plays of one title at one instant each take their own id.
+                same_time = dated.get(
+                    (ref, _instant(item.payload.get("watched_at"))),
+                    [],
+                )
+                receipt = same_time.pop(0) if same_time else ""
                 if not receipt and asked[ref] == 1 and len(undated.get(ref, [])) == 1:
                     # The reply named the play but not its date, and only one
                     # play of this title was sent, so there is no mix-up.
@@ -427,7 +432,7 @@ class WeTrakrAdapter:
 
     @staticmethod
     def _receipts(added):
-        """Return the id WeTrakr gave each new play, by title and date.
+        """Return the ids WeTrakr gave new plays, by title and date.
 
         The second map holds plays the reply named without a date.
         """
@@ -446,7 +451,7 @@ class WeTrakrAdapter:
             if when is None:
                 undated.setdefault(ref, []).append(str(play["play_id"]))
             else:
-                dated[(ref, when)] = str(play["play_id"])
+                dated.setdefault((ref, when), []).append(str(play["play_id"]))
         return dated, undated
 
 

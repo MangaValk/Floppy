@@ -765,6 +765,24 @@ class AdapterReplyTests(WeTrakrTestCase):
 
         self.assertEqual(results[0].receipt, "9001")
 
+    def test_two_plays_at_the_same_moment_each_keep_their_own_receipt(self):
+        when = "2026-10-18T20:15:00+00:00"
+        reply = {
+            "added": {
+                "plays": [
+                    {"play_id": 9001, "ids": {"tmdb": 155}, "tracked_at": when},
+                    {"play_id": 9002, "ids": {"tmdb": 155}, "tracked_at": when},
+                ],
+            },
+        }
+
+        results = self._send(
+            [_play_item(1, "movie:155", when), _play_item(2, "movie:155", when)],
+            reply,
+        )
+
+        self.assertEqual([r.receipt for r in results], ["9001", "9002"])
+
     def test_a_receipt_without_a_date_is_used_when_only_one_play_was_sent(self):
         reply = {"added": {"plays": [{"play_id": 9001, "ids": {"tmdb": 155}}]}}
 
