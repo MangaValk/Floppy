@@ -11,9 +11,20 @@ import datetime
 from http import HTTPStatus as HTTP  # noqa: N814
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
+from django.test import TestCase
 from django.utils import timezone
 
-from app.models import Episode, Movie, MoviePlay, Status
+from app.models import (
+    Anime,
+    Episode,
+    Item,
+    MediaTypes,
+    Movie,
+    MoviePlay,
+    Sources,
+    Status,
+)
 from integrations.models import IntegrationToken
 from integrations.webhooks.generic_scrobble import GenericScrobbleProcessor
 
@@ -225,3 +236,89 @@ class ManualMarkTests(FloppyApiTestCase):
             self._movies().get().end_date.date(),
             played_at.date(),
         )
+
+
+@patch("app.services.metadata_resolution.upsert_provider_links")
+@patch("integrations.webhooks.anime_mappings.find_entries_for_mal_id", return_value=[])
+@patch("integrations.webhooks.anime_mappings.fetch_mapping_data", return_value={})
+@patch(
+    "app.providers.mal.anime",
+    return_value={"title": "Cour Two", "image": "", "max_progress": 12},
+)
+class ManualMarkFlatAnimeTests(TestCase):
+    """A flat MAL entry is one row per cour, so a mark must not add a second."""
+
+    def setUp(self):
+        """Create a user tracking a flat MAL entry."""
+        self.user = get_user_model().objects.create_user(username="flat-anime")
+        self.item = Item.objects.create(
+            media_id="999",
+            source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Cour Two",
+        )
+        self.processor = GenericScrobbleProcessor()
+
+    def _mark(self, episode_number, *, manual=True):
+        payload = {"media_type": "episode", "completed": True, "manual": manual}
+        return self.processor._handle_anime("999", episode_number, payload, self.user)
+
+    def _rows(self):
+        return Anime.objects.filter(item=self.item, user=self.user)
+
+    def test_marking_a_completed_cour_adds_no_rewatch(self, *_mocks):
+        """The user finished it long ago; a tap today is agreement."""
+        Anime.objects.create(
+            item=self.item,
+            user=self.user,
+            progress=12,
+            status=Status.COMPLETED.value,
+            end_date=LONG_AGO,
+        )
+
+        self._mark(12)
+
+        self.assertEqual(self._rows().count(), 1)
+        self.assertEqual(self._rows().get().end_date, LONG_AGO)
+
+    def test_marking_an_early_episode_never_winds_progress_back(self, *_mocks):
+        """Episode 3 is already behind the user's progress of 5."""
+        Anime.objects.create(
+            item=self.item,
+            user=self.user,
+            progress=5,
+            status=Status.IN_PROGRESS.value,
+        )
+
+        self._mark(3)
+
+        self.assertEqual(self._rows().get().progress, 5)
+
+    def test_marking_the_last_episode_completes_the_entry_in_place(self, *_mocks):
+        """The final episode finishes the cour without a second row."""
+        Anime.objects.create(
+            item=self.item,
+            user=self.user,
+            progress=5,
+            status=Status.IN_PROGRESS.value,
+        )
+
+        self._mark(12)
+
+        row = self._rows().get()
+        self.assertEqual(row.status, Status.COMPLETED.value)
+        self.assertEqual(row.progress, 12)
+
+    def test_playing_a_completed_cour_again_is_still_a_rewatch(self, *_mocks):
+        """Only a manual mark is agreement; a real second viewing still counts."""
+        Anime.objects.create(
+            item=self.item,
+            user=self.user,
+            progress=12,
+            status=Status.COMPLETED.value,
+            end_date=LONG_AGO,
+        )
+
+        self._mark(12, manual=False)
+
+        self.assertEqual(self._rows().count(), 2)
