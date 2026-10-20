@@ -71,6 +71,17 @@ def _scrobble_request_error(data):
             status=HTTP.BAD_REQUEST,
         )
 
+    percent = data.get("progress_percent")
+    if percent is not None and (
+        isinstance(percent, bool)
+        or not isinstance(percent, int | float)
+        or not 0 <= percent <= 100  # noqa: PLR2004
+    ):
+        return Response(
+            {"detail": "'progress_percent' must be a number from 0 to 100."},
+            status=HTTP.BAD_REQUEST,
+        )
+
     raw_played_at = data.get("played_at")
     if raw_played_at:
         try:
@@ -194,6 +205,17 @@ class ScrobbleView(drf_views.APIView):
                     },
                     "position_seconds": {"type": "integer", "nullable": True},
                     "duration_seconds": {"type": "integer", "nullable": True},
+                    "progress_percent": {
+                        "type": "number",
+                        "nullable": True,
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "For a player that knows how far "
+                        "through a title it is but not in seconds. Floppy "
+                        "turns it into a position with duration_seconds, or "
+                        "else the title's runtime. Ignored when "
+                        "position_seconds is sent.",
+                    },
                     "completed": {
                         "type": "boolean",
                         "nullable": True,
@@ -266,6 +288,7 @@ class ScrobbleView(drf_views.APIView):
                 "episode_number": request.data.get("episode_number"),
                 "position_seconds": request.data.get("position_seconds"),
                 "duration_seconds": request.data.get("duration_seconds"),
+                "progress_percent": request.data.get("progress_percent"),
                 "completed": request.data.get("completed"),
                 "played_at": try_parse_datetime_input(raw_played_at)
                 if raw_played_at
@@ -336,7 +359,8 @@ class ScrobbleView(drf_views.APIView):
         lookup. Exposed to clients via /api/v1/playback/progress/.
         """
         position = payload.get("position_seconds")
-        if position is None:
+        percent = payload.get("progress_percent")
+        if position is None and percent is None:
             return
         try:
             item = fork_views_playback.resolve_video_item(
@@ -350,6 +374,12 @@ class ScrobbleView(drf_views.APIView):
             if item is None:
                 return
             duration = payload.get("duration_seconds")
+            if position is None:
+                # Percentage-only client: the length comes from the title.
+                duration = duration or live_playback.runtime_seconds(item) or None
+                position = live_playback.position_from_percent(percent, duration)
+                if position is None:
+                    return
             fork_views_playback.upsert_playback_progress(
                 user,
                 item,
@@ -405,6 +435,7 @@ class ScrobbleView(drf_views.APIView):
                 episode_number=episode_number,
                 view_offset_seconds=data.get("position_seconds"),
                 duration_seconds=data.get("duration_seconds"),
+                progress_percent=data.get("progress_percent"),
                 image=image,
             )
         except Exception:
