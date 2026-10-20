@@ -1,6 +1,6 @@
 {% load i18n %}
 {% if service.state == "connected" %}
-  <span class="px-2 py-1 text-xs rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">{% translate "Connected" %}</span>
+  <span class="px-2 py-1 text-xs rounded bg-emerald-500/10 text-[var(--color-success-text)] border border-emerald-500/30">{% translate "Connected" %}</span>
 {% elif service.state == "attention" %}
   <span class="px-2 py-1 text-xs rounded bg-amber-500/10 text-[var(--color-warning-text)] border border-amber-500/30">{% translate "Needs attention" %}</span>
 {% elif service.state == "waiting" %}
