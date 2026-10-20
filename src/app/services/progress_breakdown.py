@@ -39,11 +39,18 @@ class SeasonProgress:
     dropped: bool = False
     rewatching: bool = False
     catalogue_missing: bool = False
+    count_unaired: bool = False
     episodes: list = field(default_factory=list)
 
     @property
     def counted(self):
-        """Return the episodes that count toward totals (aired or watched)."""
+        """Return the episodes that count toward totals.
+
+        Aired or watched ones, except on a season's own page, where the card
+        divides by the provider's full episode count, so unaired ones count too.
+        """
+        if self.count_unaired:
+            return self.episodes
         return [ep for ep in self.episodes if ep["state"] != UPCOMING]
 
     @property
@@ -341,6 +348,7 @@ def build_progress_breakdown(*, tv=None, season=None):
                 ),
                 rewatching=bool(tracked_season and tracked_season.is_rewatching),
                 catalogue_missing=payload is None,
+                count_unaired=season is not None,
                 episodes=_episode_rows(
                     payload,
                     watched_numbers,

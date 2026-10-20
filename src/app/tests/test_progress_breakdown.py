@@ -353,6 +353,23 @@ class BuildProgressBreakdownTests(BreakdownTestCase):
         self.assertEqual((result.watched, result.total, result.percent), (1, 2, 50))
         self.assertEqual(json.loads(result.open_state_json), {"s0": True})
 
+    def test_season_page_counts_unaired_episodes_like_its_card(self):
+        """On a season page the card divides by every episode, so the modal does too."""
+        season = self.season(1)
+        self.watch(season, 1)
+        season.max_progress = 3
+        catalogue = _catalogue(
+            s1=[_episode(1), _episode(2, air_date=FUTURE), _episode(3, air_date=None)],
+        )
+
+        season_view = self.breakdown(catalogue, season=season)
+        show_view = self.breakdown(catalogue)
+
+        self.assertEqual(season_view.percent, season.watched_once_percentage)
+        self.assertEqual((season_view.watched, season_view.total), (1, 3))
+        # The show page's card uses released episodes only, so its modal does too.
+        self.assertEqual((show_view.watched, show_view.total, show_view.percent), (1, 1, 100))
+
     def test_links_point_at_episode_and_season_pages(self):
         """Every season and episode links to its own details page."""
         self.watch(self.season(1), 1)
