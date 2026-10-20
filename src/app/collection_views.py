@@ -195,6 +195,30 @@ def _shows_for_keys(show_keys):
     ]
 
 
+# Custom fields that number a copy within its item. A manga series is one item
+# whose copies are told apart only by volume, so a card needs to say which.
+_COPY_NUMBER_LABELS = {"volume": "Vol. %s", "issue": "#%s", "issue nr": "#%s"}
+
+
+def _copy_labels(user, entries):
+    """Return ``{entry id: "Vol. 3"}`` for entries whose copy carries a number."""
+    numbering = {
+        str(field.id): _COPY_NUMBER_LABELS[field.label.strip().casefold()]
+        for field in CollectionField.objects.filter(group__user=user)
+        if field.label.strip().casefold() in _COPY_NUMBER_LABELS
+    }
+    labels = {}
+    for entry in entries:
+        for field_id, pattern in numbering.items():
+            value = (entry.custom_field_values or {}).get(field_id)
+            if value in (None, ""):
+                continue
+            number = f"{value:g}" if isinstance(value, float) else str(value)
+            labels[entry.id] = pattern % number
+            break
+    return labels
+
+
 def _decorate_collection_entries(user, entries):
     """Attach the user's media (rating, status) and TV completeness to entries."""
     media_by_item_id = {
@@ -204,8 +228,10 @@ def _decorate_collection_entries(user, entries):
             list({entry.item_id: entry.item for entry in entries}.values()),
         )
     }
+    copy_labels = _copy_labels(user, entries)
     for entry in entries:
         entry.media = media_by_item_id.get(entry.item_id)
+        entry.copy_label = copy_labels.get(entry.id, "")
     badge_entries = [
         entry
         for entry in entries
