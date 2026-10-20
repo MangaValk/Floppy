@@ -830,3 +830,17 @@ class BarcodeOwnedSearchTests(TestCase):
         self.client.login(username="o", password="12345")
         self.assertEqual(self.search("9784088736211"), [])
         self.assertTrue(other.is_active)
+
+    def test_camera_button_uses_the_real_comic_issue_type_value(self):
+        """The search bar lists each type's own value, so Comic Issues scans too."""
+        with patch(
+            "app.providers.services.search",
+            return_value={"page": 1, "total_results": 0, "total_pages": 0, "results": []},
+        ):
+            response = self.client.get(
+                reverse("search"),
+                {"media_type": MediaTypes.COMIC_ISSUE.value, "q": "x"},
+            )
+
+        scan_types = f"['book', 'manga', 'comic', '{MediaTypes.COMIC_ISSUE.value}']"
+        self.assertContains(response, scan_types)

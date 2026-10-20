@@ -110,3 +110,33 @@ class SeriesBarcodeSearchTests(TestCase):
             )
 
         baka_search.assert_called_once_with(ISBN_13, 1)
+
+    @patch("app.providers.services.search_by_id", return_value=None)
+    @patch("app.providers.services.googlebooks.search")
+    @patch("app.providers.services.googlebooks.enabled", return_value=True)
+    @patch("app.providers.services.mangabaka.search")
+    @patch("app.providers.services.openlibrary.search")
+    def test_google_books_answers_when_open_library_is_down(
+        self,
+        ol_search,
+        baka_search,
+        _enabled,
+        google_search,
+        _id,
+    ):
+        """An Open Library outage still lets Google Books name the series."""
+        ol_search.side_effect = RuntimeError("down")
+        google_search.return_value = {
+            "results": [{"title": "Death Note, Vol. 2: Confluence"}],
+        }
+        baka_search.return_value = {"results": []}
+
+        services.search(
+            MediaTypes.MANGA.value,
+            ISBN_13,
+            1,
+            source=Sources.MANGABAKA.value,
+        )
+
+        google_search.assert_called_once_with(f"isbn:{ISBN_13}", 1)
+        baka_search.assert_called_once_with("Death Note", 1)

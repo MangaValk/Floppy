@@ -1481,17 +1481,20 @@ _SERIES_BARCODE_TYPES = frozenset(
 
 def _isbn_series_title(isbn):
     """Return the series title a volume's ISBN belongs to, or an empty string."""
+    lookups = [lambda: openlibrary.search(isbn, 1)]
+    if googlebooks.enabled():
+        lookups.append(lambda: googlebooks.search(f"isbn:{isbn}", 1))
+
     title = ""
-    try:
-        ol_results = openlibrary.search(isbn, 1).get("results", [])
-        if ol_results:
-            title = str(ol_results[0].get("title") or "")
-        if not title and googlebooks.enabled():
-            gb_results = googlebooks.search(f"isbn:{isbn}", 1).get("results", [])
-            if gb_results:
-                title = str(gb_results[0].get("title") or "")
-    except Exception as error:  # best-effort provider lookup
-        logger.debug("ISBN title lookup failed: %s", exception_summary(error))
+    for lookup in lookups:
+        try:
+            results = lookup().get("results", [])
+        except Exception as error:  # best-effort provider lookup
+            logger.debug("ISBN title lookup failed: %s", exception_summary(error))
+            continue
+        title = str(results[0].get("title") or "") if results else ""
+        if title:
+            break
     return _VOLUME_SUFFIX_RE.sub("", title).strip(" ,:-")
 
 

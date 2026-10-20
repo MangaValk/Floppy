@@ -502,7 +502,7 @@
                                  hx-swap="innerHTML"
                                  hx-include="[name='media_type']"
                                  class="w-full py-2 pl-10 pr-4 text-sm text-[var(--color-text-secondary)] bg-[var(--color-panel)] rounded-l-md focus:outline-none focus:ring-2 focus:ring-(--color-accent) focus:ring-inset placeholder-[var(--color-text-muted)]"
-                                 :class="['book', 'manga', 'comic', 'comic_issue'].includes(selectedType.value) ? 'pr-10' : ''">
+                                 :class="['book', 'manga', 'comic', 'comicissue'].includes(selectedType.value) ? 'pr-10' : ''">
                           <button type="submit"
                                   x-ref="searchButton"
                                   aria-label="{% translate 'Search' %}"
@@ -512,7 +512,7 @@
                           </button>
                           {# Camera button (only visible for types sold with a book barcode) #}
                           <button type="button"
-                                  x-show="['book', 'manga', 'comic', 'comic_issue'].includes(selectedType.value)"
+                                  x-show="['book', 'manga', 'comic', 'comicissue'].includes(selectedType.value)"
                                   @click="$refs.barcodeInput?.click()"
                                   x-bind:disabled="barcodeScanning"
                                   class="absolute right-2 top-1/2 transform -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-(--color-accent) rounded-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
