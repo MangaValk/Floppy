@@ -305,7 +305,9 @@ class Command(BaseCommand):
                 rendered_nodes = ", ".join(nodes) if nodes else "<none>"
                 lines.append(f"- {app}: {rendered_nodes}")
                 lines.append(
-                    f"  Fix: python src/manage.py makemigrations {app} --merge"
+                    f"  Fix: point the migration your branch adds at the other leaf "
+                    f"and renumber it. Only when both leaves are already on latest, "
+                    f"run python src/manage.py makemigrations {app} --merge"
                 )
             failures.append("\n".join(lines))
 
