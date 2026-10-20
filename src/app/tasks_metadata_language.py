@@ -259,6 +259,22 @@ def repair_metadata_language_batch(batch_size=10):
                 next_run_after=timezone.now()
                 + timedelta(seconds=REPAIR_BATCH_DELAY_SECONDS),
             )
+            # History cards read cached Item.title; refresh so repaired episode
+            # titles appear on locandine without waiting for the next watch.
+            if result["success"]:
+                try:
+                    from app import history_cache
+
+                    history_cache.invalidate_history_cache(
+                        user.pk,
+                        reason="metadata_language_repair",
+                    )
+                    history_cache.schedule_history_refresh(user.pk)
+                except Exception as error:
+                    logger.warning(
+                        "Could not refresh history after language repair: %s",
+                        exception_summary(error),
+                    )
         next_run = pending.values_list("next_run_after", flat=True).first()
         if next_run:
             _schedule_repair(
