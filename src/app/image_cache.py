@@ -60,6 +60,9 @@ APPROVED_IMAGE_HOSTS = frozenset(
         # each redirect hop is checked against this list.
         "i.ytimg.com",
         "img.youtube.com",
+        # CLZ Comics covers: its catalogue, and the user's own uploads.
+        "clzcomics.r.sizr.io",
+        "comic-clzimages.s3.amazonaws.com",
     },
 )
 APPROVED_IMAGE_HOST_SUFFIXES = (

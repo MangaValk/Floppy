@@ -128,10 +128,25 @@ def allocate_sequence(user) -> int:
 class ProjectedState:
     """The state derived from the legacy stores for one (user, item)."""
 
-    __slots__ = ("first_watched_at", "last_watched_at", "play_count", "watched")
+    __slots__ = (
+        "first_watched_at",
+        "last_watched_at",
+        "play_count",
+        "play_dates",
+        "watched",
+    )
 
-    def __init__(self, *, watched, play_count, first_watched_at, last_watched_at):
-        """Store the derived values."""
+    def __init__(
+        self,
+        *,
+        watched,
+        play_count,
+        first_watched_at,
+        last_watched_at,
+        play_dates=(),
+    ):
+        """Store the derived values; ``play_dates`` lists each dated play."""
+        self.play_dates = list(play_dates)
         self.watched = watched
         self.play_count = play_count
         self.first_watched_at = first_watched_at
@@ -168,6 +183,7 @@ def _derive_movie(user, item):
         play_count=play_count,
         first_watched_at=min(dates) if dates else None,
         last_watched_at=max(dates) if dates else None,
+        play_dates=dates,
     )
 
 
@@ -194,6 +210,7 @@ def _derive_episode(user, item):
         play_count=play_count,
         first_watched_at=min(dates) if dates else None,
         last_watched_at=max(dates) if dates else None,
+        play_dates=dates,
     )
 
 
@@ -215,6 +232,7 @@ def _derive_flat(user, item):
         play_count=play_count,
         first_watched_at=min(completed_dates) if completed_dates else None,
         last_watched_at=max(completed_dates) if completed_dates else None,
+        play_dates=completed_dates,
     )
 
 
