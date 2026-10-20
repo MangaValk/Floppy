@@ -132,6 +132,7 @@ class CollectionView(drf_views.APIView):
             limit,
             offset,
             total=total,
+            already_sliced=True,
         )
         paginated["results"] = serialize_data(
             paginated["results"],
