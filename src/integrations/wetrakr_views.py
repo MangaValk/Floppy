@@ -19,6 +19,7 @@ from integrations import wetrakr_api
 from integrations.imports.helpers import decrypt, encrypt
 from integrations.models import (
     CAPABILITY_PLAY_PUSH,
+    CAPABILITY_PLAY_REMOVE,
     CAPABILITY_RATING_PUSH,
     CAPABILITY_STATUS_PUSH,
     OutboundDeliveryStatus,
@@ -41,6 +42,7 @@ INSTANCE_KEY = "wetrakr.com"
 # What the card lets the user switch on, by form field.
 SENDABLE = (
     ("plays", CAPABILITY_PLAY_PUSH),
+    ("removals", CAPABILITY_PLAY_REMOVE),
     ("statuses", CAPABILITY_STATUS_PUSH),
     ("ratings", CAPABILITY_RATING_PUSH),
 )
@@ -75,7 +77,8 @@ def wetrakr_status(user):
             binding
             and any(
                 binding.allows(SyncDirection.OUTBOUND.value, cap)
-                for _name, cap in SENDABLE
+                for name, cap in SENDABLE
+                if name != "removals"
             ),
         ),
         "schedules": SyncDeliverySchedule.choices,
