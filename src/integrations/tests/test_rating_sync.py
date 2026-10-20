@@ -655,7 +655,7 @@ class ConnectionTests(RatingSyncTestCase):
                 ),
             ):
                 response = self.client.post(reverse("tmdb_connect"))
-            self.assertEqual(response.url, reverse("integrations"))
+            self.assertEqual(response.url, reverse("mal_export"))
             self.assertNotIn("tmdb_auth", self.client.session)
 
     def test_callback_encrypts_session_and_does_not_enable_sync(self):
@@ -715,7 +715,7 @@ class ConnectionTests(RatingSyncTestCase):
 
     def test_settings_show_connection_and_delivery_results(self):
         self.edit(8)
-        response = self.client.get(reverse("integrations"))
-        self.assertContains(response, "TMDb ratings")
+        response = self.client.get(reverse("mal_export"))
+        self.assertContains(response, "send-tmdb")
         self.assertContains(response, "tmdb-user")
         self.assertNotContains(response, "private-session")

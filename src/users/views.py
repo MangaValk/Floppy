@@ -1786,7 +1786,6 @@ def convert_tv_library(request):
 def integrations(request):
     """Render the integrations settings page."""
     from integrations.state import settings_view
-    from integrations.tmdb_views import rating_sync_status
     from integrations.webhooks.jellyfin import jellyfin_template_outdated
 
     user = request.user
@@ -1880,7 +1879,6 @@ def integrations(request):
         {
             "user": user,
             "sync_bindings": settings_view.binding_rows(user),
-            "tmdb_rating_sync": rating_sync_status(user),
             "sync_conflicts": settings_view.open_conflicts(user),
             "plex_webhook_needs_update": plex_webhook_needs_update,
             "jellyfin_template_outdated": jellyfin_template_outdated(user.id),
@@ -2320,10 +2318,28 @@ def export_data(request):
     return render(request, "users/export_data.html", context)
 
 
+def _outbound_state(account):
+    """Badge state for an outbound service account: off, waiting, attention or connected."""
+    if account is None:
+        return "off"
+    if getattr(account, "is_pending", False):
+        return "waiting"
+    if not getattr(account, "is_connected", True) and not account.connection_broken:
+        return "off"
+    if account.connection_broken or account.last_error_message:
+        return "attention"
+    return "connected"
+
+
 @require_GET
 def mal_export(request):
-    """Render the MyAnimeList export (status sync) settings page."""
+    """Render the Sync to Trackers page: MyAnimeList, TMDb and WeTrakr."""
+    from integrations.tmdb_views import rating_sync_status
+    from integrations.wetrakr_views import wetrakr_status
+
     user = request.user
+    tmdb_sync = rating_sync_status(user)
+    wetrakr_sync = wetrakr_status(user)
     mal_account = getattr(user, "mal_account", None)
     schedule = None
     periodic_task = (
@@ -2353,6 +2369,23 @@ def mal_export(request):
         "mal_sync_initial": mal_sync.full_sync_report(mal_account) if mal_account else None,
         "mal_ignored_mappings": mal_sync.ignored_mappings(user) if mal_account else [],
         "mal_manual_mappings": mal_sync.manual_episode_mappings(user) if mal_account else [],
+        "tmdb_rating_sync": tmdb_sync,
+        "wetrakr_sync": wetrakr_sync,
+        # One row and modal per service; a new destination adds a dict here.
+        "outbound_services": [
+            {
+                "slug": "tmdb",
+                "description": gettext("Ratings"),
+                "state": _outbound_state(tmdb_sync["account"]),
+                "body": "users/components/tmdb_rating_sync.html",
+            },
+            {
+                "slug": "wetrakr",
+                "description": gettext("Plays, statuses and ratings"),
+                "state": _outbound_state(wetrakr_sync["account"]),
+                "body": "users/components/wetrakr_sync.html",
+            },
+        ],
     }
     return render(request, "users/mal_export.html", context)
 
