@@ -156,6 +156,7 @@ urlpatterns = [
         name="import_data_plex_sections",
     ),
     path("settings/export", views.export_data, name="export_data"),
+    path("settings/export/mal", views.mal_export, name="mal_export"),
     path("settings/advanced", views.advanced, name="advanced"),
     path(
         "settings/advanced/image-cache",
@@ -174,6 +175,7 @@ urlpatterns = [
         name="update_server_port",
     ),
     path("settings/about", views.about, name="about"),
+    path("settings/about/whats-new", views.whats_new, name="whats_new"),
     path(
         "delete_import_schedule",
         views.delete_import_schedule,
@@ -287,6 +289,11 @@ urlpatterns = [
         "update_jellyfin_webhook_events",
         views.update_jellyfin_webhook_events,
         name="update_jellyfin_webhook_events",
+    ),
+    path(
+        "update_group_scrobbled_anime",
+        views.update_group_scrobbled_anime,
+        name="update_group_scrobbled_anime",
     ),
     # kept: URL path/name unchanged, matches views.py route (see plan)
     path(

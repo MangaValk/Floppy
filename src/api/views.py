@@ -226,7 +226,7 @@ class CalendarUpdateView(drf_views.APIView):
 
     def post(self, request):
         """Trigger calendar events update for the authenticated user."""
-        tasks.reload_calendar.delay(request.user)
+        tasks.reload_calendar.delay(user_id=request.user.pk)
         return Response(
             {"detail": "Task queued"},
             status=HTTP.ACCEPTED,

@@ -377,7 +377,7 @@ def media_search(request):
     else:
         media_type = MediaTypes.TV.value
     query = request.GET["q"]
-    page = int(request.GET.get("page", 1))
+    page = helpers.get_page_number(request)
     layout = request.GET.get("layout", "grid")
 
     if media_type == ALL_SEARCH_TYPE:
