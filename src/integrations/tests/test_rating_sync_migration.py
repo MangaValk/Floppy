@@ -51,7 +51,11 @@ class RatingSyncMigrationTests(TransactionTestCase):
             )
             MigrationExecutor(connection).migrate([after])
             executor = MigrationExecutor(connection)
-            apps = executor.loader.project_state(latest).apps
+            # The database is at ``after``, so read it with models of that
+            # schema; a later migration may add columns it does not have yet.
+            apps = executor.loader.project_state(
+                [after, *(leaf for leaf in latest if leaf[0] != "integrations")]
+            ).apps
             deliveries = apps.get_model("integrations", "OutboundStateDelivery").objects
             self.assertEqual(deliveries.get(pk=watched.pk).operation, "watched")
             self.assertFalse(deliveries.get(pk=watched.pk).intent)

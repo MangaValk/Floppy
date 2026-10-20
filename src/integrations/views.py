@@ -50,7 +50,7 @@ from app import helpers as app_helpers
 from app import image_cache
 from app.db_retry import run_retryable_db_operation
 from app.log_safety import exception_summary
-from app.models import TV, Item, MediaTypes, Movie, Sources
+from app.models import TV, Item, MediaTypes, Movie, Sources, Status
 from app.providers import credentials, services
 from app.redis_diagnosis import queue_failure_message
 from app.services import metadata_resolution
@@ -2241,6 +2241,12 @@ def import_clz(request):
         messages.error(request, "Unknown media type for the CLZ import.")
         return _integration_redirect(request)
 
+    wishlist_status = (request.POST.get("clz_wishlist_status") or "").strip() or None
+    if wishlist_status and wishlist_status not in Status.values:
+        discard_staged_upload(staged_file)
+        messages.error(request, "Unknown status for the CLZ wishlist items.")
+        return _integration_redirect(request)
+
     if _queue_staged_task_or_message(
         request,
         tasks.import_clz,
@@ -2248,6 +2254,8 @@ def import_clz(request):
         file=staged_file,
         mode=request.POST.get("mode", "new"),
         media_type=media_type,
+        wishlist_status=wishlist_status,
+        wishlist_tag=(request.POST.get("clz_wishlist_tag") or "").strip() or None,
         staged_paths=(staged_file,),
     ) is False:
         return _integration_redirect(request, connected_slug="clz")
