@@ -469,8 +469,14 @@ def _parse_quantity(text):
 
 
 def _clean_barcode(value):
-    """Return the barcode's digits without a trailing 2 or 5 digit supplement."""
-    digits = re.sub(r"\D", "", _text(value))
+    """Return the barcode's digits without a trailing 2 or 5 digit supplement.
+
+    An ISBN-10 keeps its check character, which may be an ``X``.
+    """
+    compact = re.sub(r"[\s-]", "", _text(value))
+    if re.fullmatch(r"\d{9}[\dXx]", compact):
+        return compact.upper()
+    digits = re.sub(r"\D", "", compact)
     return digits[: _BARCODE_BASE_LENGTH.get(len(digits), len(digits))]
 
 
@@ -666,9 +672,19 @@ class CLZImporter:
         self._custom_columns = [
             column
             for column in columns
-            if column_key(column) not in STRUCTURAL_COLUMNS
-            and column_key(column) not in ENTRY_FIELD_COLUMNS
+            if self._is_custom_column(column)
         ]
+
+    def _is_custom_column(self, column):
+        """Return whether *column* is stored as a custom field.
+
+        A manga row collapses onto its series, so an explicit Volume column
+        is the only record of which volume the copy is.
+        """
+        key = column_key(column)
+        if key == "volume" and self.media_type == MediaTypes.MANGA.value:
+            return True
+        return key not in STRUCTURAL_COLUMNS and key not in ENTRY_FIELD_COLUMNS
 
     def _prepare_fields(self, records, media_type):
         """Resolve every custom column against the user's fields once."""
@@ -685,15 +701,17 @@ class CLZImporter:
         ]
         self.resolver.prepare(columns)
 
-    @staticmethod
-    def _field_label(column, media_type):
+    def _field_label(self, column, media_type):
         """Return the custom field label a new column is created under.
 
-        A manga record's issue number is the volume of its series.
+        A manga record's issue number is the volume of its series, unless the
+        export has a Volume column of its own.
         """
-        if media_type == MediaTypes.MANGA.value and column_key(column) in {
-            column_key(label) for label in ISSUE_COLUMNS
-        }:
+        if (
+            media_type == MediaTypes.MANGA.value
+            and "volume" not in self._column_index
+            and column_key(column) in {column_key(label) for label in ISSUE_COLUMNS}
+        ):
             return "Volume"
         return column
 

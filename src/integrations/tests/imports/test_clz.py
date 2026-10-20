@@ -694,6 +694,24 @@ class CLZNativeExportTests(TestCase):
         volumes = sorted(entry.custom_field_values[str(field.id)] for entry in entries)
         self.assertEqual(volumes, [1, 2, 2])
 
+    def test_explicit_volume_column_is_kept_on_manga_copies(self):
+        """A Volume column, not an issue column, still marks each copy."""
+        csv = "Title,Series,Volume\nTest Series Vol. 1,Test Series,1\nTest Series Vol. 2,Test Series,2\n"
+        clz.importer(
+            upload("manga.csv", csv),
+            self.user,
+            "new",
+            media_type=MediaTypes.MANGA.value,
+        )
+
+        item = Item.objects.get(title="Test Series", media_type=MediaTypes.MANGA.value)
+        field = CollectionField.objects.get(group__user=self.user, label="Volume")
+        volumes = sorted(
+            entry.custom_field_values[str(field.id)]
+            for entry in CollectionEntry.objects.filter(user=self.user, item=item)
+        )
+        self.assertEqual(volumes, [1, 2])
+
     def test_comics_keep_one_item_per_issue(self):
         """Issues stay separate items, with the issue saved on each copy."""
         self.run_import(media_type=MediaTypes.COMIC_ISSUE.value)
@@ -722,6 +740,8 @@ class CLZNativeExportTests(TestCase):
         self.assertEqual(clz._clean_barcode("9781234567897"), "9781234567897")
         self.assertEqual(clz._clean_barcode("123456789012"), "123456789012")
         self.assertEqual(clz._clean_barcode(""), "")
+        self.assertEqual(clz._clean_barcode("097522980X"), "097522980X")
+        self.assertEqual(clz._clean_barcode("0-9752-2980-x"), "097522980X")
         self.run_import()
         field = CollectionField.objects.get(group__user=self.user, label="Barcode")
         stored = {
