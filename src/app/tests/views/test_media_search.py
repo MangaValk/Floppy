@@ -12,6 +12,9 @@ from app.models import (
     Artist,
     ArtistTracker,
     CollectionEntry,
+    CollectionField,
+    CollectionFieldGroup,
+    CollectionFieldType,
     Item,
     ItemTag,
     MediaTypes,
@@ -761,3 +764,69 @@ class AllTypeSearchTests(TestCase):
         anime = groups[MediaTypes.ANIME.value]["results"][0]
         self.assertEqual(anime["item"], item)
         self.assertEqual(anime["media"].route_media_type, MediaTypes.ANIME.value)
+
+
+class BarcodeOwnedSearchTests(TestCase):
+    """A scanned barcode finds the volumes the user already owns (#809)."""
+
+    def setUp(self):
+        """Create a user owning one barcoded manga volume."""
+        self.credentials = {"username": "scan", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+        group = CollectionFieldGroup.objects.create(user=self.user, name="Shelf")
+        self.field = CollectionField.objects.create(
+            group=group,
+            label="Barcode",
+            field_type=CollectionFieldType.TEXT,
+            media_types=[MediaTypes.MANGA.value],
+        )
+        self.item = Item.objects.create(
+            media_id="series-1",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MANGA.value,
+            title="Owned Series",
+            image="",
+        )
+        CollectionEntry.objects.create(
+            user=self.user,
+            item=self.item,
+            custom_field_values={str(self.field.id): "978408873621112345"},
+        )
+
+    def search(self, query):
+        """Return the local library results shown for *query*."""
+        with patch(
+            "app.providers.services.search",
+            return_value={"page": 1, "total_results": 0, "total_pages": 0, "results": []},
+        ):
+            response = self.client.get(
+                reverse("search"),
+                {"media_type": "manga", "q": query},
+            )
+        self.assertEqual(response.status_code, 200)
+        return [result["item"] for result in response.context["local_results"]]
+
+    def test_scanned_barcode_finds_the_owned_item(self):
+        """The stored barcode carries a supplement the scan does not read."""
+        self.assertEqual(self.search("9784088736211"), [self.item])
+
+    def test_hyphens_and_spaces_are_ignored(self):
+        """A typed ISBN with separators still matches."""
+        self.assertEqual(self.search("978-4-08-873621-1"), [self.item])
+
+    def test_other_barcodes_find_nothing(self):
+        """A different barcode does not match."""
+        self.assertEqual(self.search("9780000000002"), [])
+
+    def test_titles_are_not_treated_as_barcodes(self):
+        """Ordinary text never queries the barcode field."""
+        self.assertEqual(self.search("1984"), [])
+
+    def test_other_users_barcodes_never_match(self):
+        """Another user's collection is not searched."""
+        other = get_user_model().objects.create_user(username="o", password="12345")
+        self.client.logout()
+        self.client.login(username="o", password="12345")
+        self.assertEqual(self.search("9784088736211"), [])
+        self.assertTrue(other.is_active)

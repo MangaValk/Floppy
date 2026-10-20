@@ -1463,6 +1463,38 @@ def _extract_isbns(metadata):
     return normalized
 
 
+# "Death Note, Vol. 1: Boredom" -> "Death Note", "Spider-Man #5" -> "Spider-Man".
+_VOLUME_SUFFIX_RE = re.compile(
+    r"[\s,:(\-]*(?:\b(?:vol(?:ume)?|book|omnibus|part)\b\.?\s*#?|#)\s*\d+.*$",
+    re.IGNORECASE,
+)
+# These types have no ISBN lookup of their own: a scanned book barcode is
+# turned into the series title and searched like typed text.
+_SERIES_BARCODE_TYPES = frozenset(
+    {
+        MediaTypes.MANGA.value,
+        MediaTypes.COMIC.value,
+        MediaTypes.COMIC_ISSUE.value,
+    },
+)
+
+
+def _isbn_series_title(isbn):
+    """Return the series title a volume's ISBN belongs to, or an empty string."""
+    title = ""
+    try:
+        ol_results = openlibrary.search(isbn, 1).get("results", [])
+        if ol_results:
+            title = str(ol_results[0].get("title") or "")
+        if not title and googlebooks.enabled():
+            gb_results = googlebooks.search(f"isbn:{isbn}", 1).get("results", [])
+            if gb_results:
+                title = str(gb_results[0].get("title") or "")
+    except Exception as error:  # best-effort provider lookup
+        logger.debug("ISBN title lookup failed: %s", exception_summary(error))
+    return _VOLUME_SUFFIX_RE.sub("", title).strip(" ,:-")
+
+
 def _resolve_hardcover_isbn_search(query, page, user=None):
     """Resolve ISBN queries against Hardcover using Open Library metadata."""
     from app import helpers
@@ -1661,6 +1693,10 @@ def search(
         )
 
     source = _resolve_search_source(media_type, source)
+
+    if media_type in _SERIES_BARCODE_TYPES:
+        isbn = _normalize_isbn_candidate(query)
+        query = (isbn and _isbn_series_title(isbn)) or query
 
     # Attempt direct ID lookup on page 1 only. The result is merged with the
     # normal text-search results below rather than returned immediately, so a
