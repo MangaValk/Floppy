@@ -7801,6 +7801,99 @@ class MediaDetailsViewTests(TestCase):
         self.assertEqual(last.context["prev_episode_number"], 2)
         self.assertIsNone(last.context["next_episode_number"])
 
+    @patch("app.views.tmdb.episode")
+    @patch("app.providers.services.get_media_metadata")
+    @patch("app.providers.tmdb.process_episodes")
+    def test_episode_details_honors_metadata_language(
+        self,
+        mock_process_episodes,
+        mock_get_metadata,
+        mock_episode,
+    ):
+        """Episode details must fetch season/episode metadata in the user's language.
+
+        Movies and season pages already pass metadata_language; episode details
+        previously always used TMDB_LANG (English), so History → episode showed
+        English titles/synopses even when the preference was Italian/Spanish.
+        """
+        self.user.metadata_language = "it"
+        self.user.save(update_fields=["metadata_language"])
+
+        mock_get_metadata.return_value = {
+            "title": "Those About to Die",
+            "media_id": "218589",
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            "image": "http://example.com/image.jpg",
+            "season/1": {
+                "title": "Those About to Die",
+                "season_title": "Stagione 1",
+                "media_id": "218589",
+                "media_type": MediaTypes.SEASON.value,
+                "source": Sources.TMDB.value,
+                "image": "http://example.com/season.jpg",
+                "episodes": [
+                    {
+                        "episode_number": 10,
+                        "name": "Che i giochi abbiano inizio",
+                        "overview": "Finale di stagione in italiano.",
+                    }
+                ],
+            },
+        }
+        mock_process_episodes.return_value = [
+            {
+                "media_id": "218589",
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.EPISODE.value,
+                "season_number": 1,
+                "episode_number": 10,
+                "title": "Che i giochi abbiano inizio",
+                "overview": "Finale di stagione in italiano.",
+                "air_date": "2024-07-18",
+                "watched": True,
+                "history": [],
+            }
+        ]
+        mock_episode.return_value = {
+            "episode_title": "Che i giochi abbiano inizio",
+            "title": "Those About to Die",
+            "cast": [],
+            "crew": [],
+        }
+
+        response = self.client.get(
+            reverse(
+                "episode_details",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_id": "218589",
+                    "title": "those-about-to-die",
+                    "season_number": 1,
+                    "episode_number": 10,
+                },
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.context["episode_title"],
+            "Che i giochi abbiano inizio",
+        )
+        self.assertContains(response, "Finale di stagione in italiano.")
+
+        mock_get_metadata.assert_called()
+        _args, kwargs = mock_get_metadata.call_args
+        self.assertEqual(kwargs.get("language"), "it")
+        self.assertEqual(kwargs.get("user"), self.user)
+
+        mock_episode.assert_called_once_with(
+            "218589",
+            1,
+            10,
+            language="it",
+        )
+
     @patch("app.views.tmdb.episode", return_value={})
     @patch("app.providers.services.get_media_metadata")
     @patch("app.providers.tmdb.process_episodes")

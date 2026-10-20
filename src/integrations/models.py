@@ -2051,6 +2051,7 @@ class SyncClientKind(models.TextChoices):
     AUDIOBOOKSHELF = "audiobookshelf", "Audiobookshelf"
     GENERIC = "generic", "Generic client"
     TMDB = "tmdb", "TMDb"
+    WETRAKR = "wetrakr", "WeTrakr"
 
 
 class SyncDirection(models.TextChoices):
@@ -2079,6 +2080,17 @@ CAPABILITY_WATCHED_PUSH_PLAYED = "watched.push_played"
 CAPABILITY_WATCHED_PUSH_UNPLAYED = "watched.push_unplayed"
 CAPABILITY_LISTEN_READ = "listen.read"
 CAPABILITY_RATING_PUSH = "rating.push"
+CAPABILITY_PLAY_PUSH = "play.push"
+CAPABILITY_STATUS_PUSH = "status.push"
+CAPABILITY_PLAY_REMOVE = "play.remove"
+
+
+class SyncDeliverySchedule(models.TextChoices):
+    """How soon queued deliveries for one binding are sent."""
+
+    LIVE = "live", "As it happens"
+    HOURLY = "hourly", "Hourly"
+    DAILY = "daily", "Daily"
 
 
 class SyncBinding(models.Model):
@@ -2118,6 +2130,14 @@ class SyncBinding(models.Model):
     kill_switch = models.BooleanField(default=False)
 
     label = models.CharField(max_length=255, blank=True, default="")
+    # Live sends within a short batching window; the others hold deliveries and
+    # send them together once the interval since the last flush has passed.
+    delivery_schedule = models.CharField(
+        max_length=16,
+        choices=SyncDeliverySchedule,
+        default=SyncDeliverySchedule.LIVE.value,
+    )
+    last_flushed_at = models.DateTimeField(null=True, blank=True)
     last_reconciled_at = models.DateTimeField(null=True, blank=True)
     last_error_message = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -2536,9 +2556,18 @@ class OutboundStateDelivery(models.Model):
     operation = models.CharField(
         max_length=16,
         default="watched",
-        choices=[("watched", "Watched"), ("rating", "Rating")],
+        choices=[
+            ("watched", "Watched"),
+            ("rating", "Rating"),
+            ("play", "Play"),
+            ("status", "Status"),
+            ("play_remove", "Play removal"),
+        ],
     )
     rating = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
+    # Operation-specific values that need no column of their own: a play's
+    # watch time, a status name.
+    payload = models.JSONField(default=dict, blank=True)
     target_digest = models.CharField(max_length=64, blank=True, default="")
     intent = models.BooleanField(
         default=True,
@@ -2552,6 +2581,9 @@ class OutboundStateDelivery(models.Model):
     )
     attempts = models.PositiveIntegerField(default=0)
     next_attempt_at = models.DateTimeField(null=True, blank=True)
+    # When the current attempt started. A row still in flight long after this
+    # belongs to a worker that died, and is put back in the queue.
+    claimed_at = models.DateTimeField(null=True, blank=True)
     last_error_message = models.TextField(blank=True, default="")
 
     client_event_id = models.CharField(max_length=255, blank=True, default="")
@@ -2636,6 +2668,59 @@ class TMDbAccount(models.Model):
     def __str__(self):
         """Readable identity without exposing the session credential."""
         return f"TMDbAccount({self.username})"
+
+
+class WeTrakrAccount(models.Model):
+    """A WeTrakr login made with the user's own application key.
+
+    The tokens are only valid for the application key they were issued to, so
+    the key is kept alongside them: changing the key in Settings must not break
+    a connection that is already working. A connection starts as a pending
+    device-flow approval (``device_code`` set) and becomes usable once WeTrakr
+    returns tokens.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="wetrakr_account",
+    )
+    # Names this connection's binding. WeTrakr is not asked who the user is, so
+    # a reconnect mints a new one and the old binding is stopped.
+    profile_key = models.CharField(max_length=64)
+    client_id = models.CharField(max_length=255)
+    username = models.CharField(max_length=255, blank=True, default="")
+    access_token = models.TextField(blank=True, default="", help_text="Encrypted")
+    refresh_token = models.TextField(blank=True, default="", help_text="Encrypted")
+    access_expires_at = models.DateTimeField(null=True, blank=True)
+
+    # A device-flow approval that has been started and not yet completed.
+    device_code = models.TextField(blank=True, default="", help_text="Encrypted")
+    user_code = models.CharField(max_length=64, blank=True, default="")
+    verification_url = models.URLField(blank=True, default="")
+    device_interval = models.PositiveIntegerField(default=5)
+    device_expires_at = models.DateTimeField(null=True, blank=True)
+
+    connection_broken = models.BooleanField(default=False)
+    last_error_message = models.TextField(blank=True, default="")
+    last_failed_at = models.DateTimeField(null=True, blank=True)
+    failure_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        """Readable identity without exposing a credential."""
+        return f"WeTrakrAccount({self.user_id})"
+
+    @property
+    def is_connected(self):
+        """Return whether tokens exist and WeTrakr has not rejected them."""
+        return bool(self.refresh_token and not self.connection_broken)
+
+    @property
+    def is_pending(self):
+        """Return whether a device-flow approval is waiting on the user."""
+        return bool(self.device_code and not self.refresh_token)
 
 
 class EmbyAccount(models.Model):

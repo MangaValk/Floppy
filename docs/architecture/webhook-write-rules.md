@@ -69,6 +69,11 @@ comes back from Jellyfin as a checkmark toggle stamped with the push time,
 which the play-time dedupe cannot tell from a new play. See
 `docs/architecture/watched-state-sync.md` ("Convergent").
 
+The scrobble API has the same rule behind an explicit flag. A client whose user
+tapped Mark Watched sends the usual `stop` with `completed: true` and
+`manual: true`; `GenericScrobbleProcessor._is_manual_mark` reads the flag. A
+`stop` without it is a play, so a real second viewing still records a rewatch.
+
 ## Adding or changing an integration
 
 1. Give the processor a `SOURCE_LABEL` and add its row to
