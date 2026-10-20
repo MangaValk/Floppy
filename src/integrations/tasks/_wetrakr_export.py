@@ -14,7 +14,7 @@ from celery import shared_task
 from django.contrib.auth import get_user_model
 from django.db.models import Exists, Max, OuterRef, Q
 
-from app.models import TV, Episode, Item, Movie, Status
+from app.models import TV, Episode, Item, Movie, MoviePlay, Status
 from integrations.models import (
     CAPABILITY_PLAY_PUSH,
     CAPABILITY_RATING_PUSH,
@@ -25,6 +25,7 @@ from integrations.models import (
     SyncBinding,
     SyncClientKind,
     SyncDirection,
+    WeTrakrAccount,
 )
 from integrations.state import outbound
 from integrations.tasks._ratings import _latest_rating
@@ -33,11 +34,26 @@ EXPORT_CHUNK = 500
 
 
 def _movie_plays(user):
-    return Movie.objects.filter(
-        user=user,
-        status=Status.COMPLETED.value,
+    """Return ``(item_id, watched_at)`` for every dated watch of a movie.
+
+    Each ``MoviePlay`` is one watch. A completed ``Movie`` row with no plays
+    (imported or older entries) counts once, by its own end date.
+    """
+    plays = MoviePlay.objects.filter(
+        movie__user=user,
+        movie__item__isnull=False,
         end_date__isnull=False,
-    ).values_list("item_id", "end_date")
+    ).values_list("movie__item_id", "end_date")
+    legacy = (
+        Movie.objects.filter(
+            user=user,
+            status=Status.COMPLETED.value,
+            end_date__isnull=False,
+        )
+        .exclude(Exists(MoviePlay.objects.filter(movie=OuterRef("pk"))))
+        .values_list("item_id", "end_date")
+    )
+    return [*plays, *legacy]
 
 
 def _episode_plays(user):
@@ -74,13 +90,19 @@ def _rated_items(user):
 
 def library_preview(user):
     """Return how many plays, statuses and ratings an export would queue."""
-    plays = _movie_plays(user).count() + _episode_plays(user).count()
+    plays = len(_movie_plays(user)) + _episode_plays(user).count()
     undated = (
         Movie.objects.filter(
             user=user,
             status=Status.COMPLETED.value,
             end_date__isnull=True,
-        ).count()
+        )
+        .exclude(
+            Exists(
+                MoviePlay.objects.filter(movie=OuterRef("pk"), end_date__isnull=False),
+            ),
+        )
+        .count()
         + Episode.objects.filter(
             related_season__user=user,
             related_season__order_archived=False,
@@ -135,9 +157,14 @@ def _queue(binding, user, operation, rows, revisions, *, hold):
 def export_wetrakr_library(user_id):
     """Queue every dated play, and the statuses WeTrakr takes, once."""
     user = get_user_model().objects.filter(pk=user_id).first()
+    account = WeTrakrAccount.objects.filter(user_id=user_id).first() if user else None
     binding = (
-        SyncBinding.objects.filter(user_id=user_id, client_kind="wetrakr").first()
-        if user
+        SyncBinding.objects.filter(
+            user_id=user_id,
+            client_kind=SyncClientKind.WETRAKR.value,
+            profile_key=account.profile_key,
+        ).first()
+        if account and account.profile_key
         else None
     )
     if binding is None:
@@ -157,7 +184,9 @@ def export_wetrakr_library(user_id):
         revisions = _next_revisions(binding, "play")
         rows = [
             (item_id, when)
-            for item_id, when in [*_movie_plays(user), *_episode_plays(user)]
+            for item_id, when in dict.fromkeys(
+                [*_movie_plays(user), *_episode_plays(user)],
+            )
             if (item_id, when.isoformat()) not in already
         ]
         for start in range(0, len(rows), EXPORT_CHUNK):
