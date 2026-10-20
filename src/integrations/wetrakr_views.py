@@ -45,7 +45,6 @@ SENDABLE = (
     ("ratings", CAPABILITY_RATING_PUSH),
 )
 MIN_POLL_SECONDS = 3
-MAX_POLL_SECONDS = 60
 
 
 def _binding_for(account):
@@ -195,7 +194,7 @@ def wetrakr_poll(request):
         _clear_device_flow(account)
         messages.error(request, "The code expired. Start again.")
         return JsonResponse({"state": "failed"})
-    pace = min(max(account.device_interval, MIN_POLL_SECONDS), MAX_POLL_SECONDS)
+    pace = max(account.device_interval, MIN_POLL_SECONDS)
     if not cache.add(f"wetrakr_poll:{request.user.pk}", 1, timeout=pace - 1):
         return JsonResponse({"state": "pending", "interval": pace})
     try:
@@ -217,7 +216,7 @@ def wetrakr_poll(request):
         messages.error(request, payload)
         return JsonResponse({"state": "failed"})
     if payload and payload.get("interval"):
-        pace = min(max(payload["interval"], pace), MAX_POLL_SECONDS)
+        pace = max(payload["interval"], pace)
         WeTrakrAccount.objects.filter(pk=account.pk).update(device_interval=pace)
     return JsonResponse({"state": "pending", "interval": pace})
 

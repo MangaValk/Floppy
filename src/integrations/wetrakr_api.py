@@ -23,7 +23,7 @@ import requests
 from cryptography.fernet import InvalidToken
 from django.utils import timezone
 
-from app.cache_safety import ON_ERROR_PROCEED, acquire_lock, release_lock
+from app.cache_safety import ON_ERROR_SKIP, acquire_lock, release_lock
 from app.providers import credentials
 from integrations import connection_health
 from integrations.imports.helpers import decrypt, encrypt
@@ -377,7 +377,7 @@ class WeTrakrClient:
         if not acquire_lock(
             lock_key,
             timeout=REFRESH_LOCK_TIMEOUT,
-            on_error=ON_ERROR_PROCEED,
+            on_error=ON_ERROR_SKIP,
         ):
             self._wait_for_other_refresh(stale)
             return
