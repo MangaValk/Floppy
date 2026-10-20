@@ -268,6 +268,16 @@ class ScheduleTests(BatchTestCase):
         self.assertLessEqual(wait.total_seconds(), outbound.LIVE_BATCH_WINDOW_SECONDS)
 
 
+    def test_changing_the_schedule_does_not_shorten_a_backoff_the_provider_asked_for(self):
+        self._play()
+        backoff = timezone.now() + datetime.timedelta(hours=2)
+        OutboundStateDelivery.objects.update(attempts=1, next_attempt_at=backoff)
+
+        outbound.set_delivery_schedule(self.binding, SyncDeliverySchedule.LIVE.value)
+
+        self.assertEqual(self._deliveries().get().next_attempt_at, backoff)
+
+
 class FlushTests(BatchTestCase):
     def test_everything_due_leaves_in_one_request(self):
         self._play(item=self._movie_item("3001"))
@@ -470,6 +480,42 @@ class FailureTests(BatchTestCase):
         first_key, second_key = (key for key, _ in self.adapter.requests)
         self.assertEqual(first_key, second_key)
 
+    def test_retries_that_fall_due_together_keep_the_key_each_was_sent_under(self):
+        first, second = self._movie_item("3001"), self._movie_item("3002")
+        self.adapter.error = TransientAdapterError("down")
+        for item in (first, second):
+            self._play(item=item)
+            self._make_due()
+            outbound.flush_binding(self.binding.pk)
+        keys = [key for key, _ in self.adapter.requests]
+        self.adapter.error = None
+        self._make_due()
+
+        outbound.flush_binding(self.binding.pk)
+
+        sent = self.adapter.requests[len(keys) :]
+        self.assertEqual(sorted(key for key, _ in sent), sorted(set(keys)))
+        self.assertEqual([len(items) for _, items in sent], [1, 1])
+
+    def test_a_retry_keeps_its_key_when_a_member_has_dropped_out(self):
+        first, second = self._movie_item("3001"), self._movie_item("3002")
+        self._play(item=first)
+        self._play(item=second)
+        self._make_due()
+        self.adapter.error = TransientAdapterError("down")
+        outbound.flush_binding(self.binding.pk)
+        original_key = self.adapter.requests[0][0]
+        self.adapter.error = None
+        self._deliveries().filter(item=second).update(
+            status=OutboundDeliveryStatus.SKIPPED.value,
+        )
+        self._make_due()
+
+        outbound.flush_binding(self.binding.pk)
+
+        self.assertEqual(self.adapter.requests[1][0], original_key)
+        self.assertEqual(len(self.adapter.requests[1][1]), 1)
+
     def test_a_retry_is_not_mixed_into_new_work(self):
         self._play(item=self._movie_item("3001"))
         self._make_due()
@@ -548,7 +594,80 @@ class StatusAndRatingTests(BatchTestCase):
         self.assertEqual((item.operation, item.rating), ("rating", 8))
 
 
+class StatusDurabilityTests(BatchTestCase):
+    def test_a_status_whose_save_never_landed_is_not_sent(self):
+        """The intent is recorded before the write, so a lost write leaves one."""
+        outbound.enqueue_status_change(self.user, self.item, Status.DROPPED.value)
+        self.assertEqual(self._deliveries("status").count(), 1)
+        self._make_due()
+
+        outbound.flush_binding(self.binding.pk)
+
+        self.assertEqual(self.adapter.requests, [])
+        self.assertEqual(
+            self._deliveries("status").get().status,
+            OutboundDeliveryStatus.SUPERSEDED.value,
+        )
+
+    def test_a_status_that_was_written_is_sent(self):
+        Movie.objects.create(
+            item=self.item,
+            user=self.user,
+            status=Status.DROPPED.value,
+        )
+        self._make_due()
+
+        outbound.flush_binding(self.binding.pk)
+
+        self.assertEqual(len(self.adapter.requests), 1)
+
+    def test_a_status_replaced_by_a_write_that_queued_nothing_is_not_sent(self):
+        Movie.objects.create(
+            item=self.item,
+            user=self.user,
+            status=Status.DROPPED.value,
+        )
+        Movie.objects.filter(user=self.user, item=self.item).update(
+            status=Status.PAUSED.value,
+        )
+        self._make_due()
+
+        outbound.flush_binding(self.binding.pk)
+
+        self.assertEqual(self.adapter.requests, [])
+
+    def test_a_save_that_leaves_other_fields_alone_queues_no_status(self):
+        movie = Movie.objects.create(
+            item=self.item,
+            user=self.user,
+            status=Status.PLANNING.value,
+        )
+        movie.status = Status.DROPPED.value
+
+        movie.save(update_fields=["notes"])
+
+        self.assertEqual(self._deliveries("status").count(), 1)
+
+
 class SweepTests(BatchTestCase):
+    def test_an_attempt_left_in_flight_before_the_upgrade_is_sent_again(self):
+        """Rows from before ``claimed_at`` existed have no claim time."""
+        self._play()
+        delivery = self._deliveries().get()
+        OutboundStateDelivery.objects.filter(pk=delivery.pk).update(
+            status=OutboundDeliveryStatus.IN_FLIGHT.value,
+            attempts=1,
+            claimed_at=None,
+            next_attempt_at=None,
+            updated_at=timezone.now() - datetime.timedelta(hours=1),
+        )
+
+        outbound.sweep_due_deliveries()
+
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, OutboundDeliveryStatus.DELIVERED.value)
+
+
     def test_an_attempt_abandoned_by_a_dead_worker_is_sent_again(self):
         self._play()
         delivery = self._deliveries().get()
