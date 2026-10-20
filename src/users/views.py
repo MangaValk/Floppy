@@ -1526,6 +1526,15 @@ def preferences(request):
             request.user.time_format = time_format
             fields_to_update.append("time_format")
 
+        currency = request.POST.get("currency")
+        if (
+            currency
+            and currency in [choice[0] for choice in User._meta.get_field("currency").choices]
+            and request.user.currency != currency
+        ):
+            request.user.currency = currency
+            fields_to_update.append("currency")
+
         week_start_day = request.POST.get("week_start_day")
         if (
             week_start_day and week_start_day in WeekStartDayChoices.values
@@ -1733,6 +1742,7 @@ def preferences(request):
         "ui_language_choices": UiLanguageChoices.choices,
         "session_duration_choices": SessionDurationChoices.choices,
         "week_start_day_choices": WeekStartDayChoices.choices,
+        "currency_choices": User._meta.get_field("currency").choices,
     }
 
     return render(request, "users/preferences.html", context)
@@ -2439,7 +2449,7 @@ def export_logs(request):
 
     log_name = Path(settings.LOG_FILE).name
     sections = [(log_name, _log_files(log_name))]
-    sections += [(n, _log_files(n)) for n in ("supervisord.log", "faulthandler.log")]
+    sections += [(n, _log_files(n)) for n in ("restart-history.log", "supervisord.log", "faulthandler.log")]
 
     def lines():
         for title, found in sections:
