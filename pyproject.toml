@@ -26,7 +26,7 @@ dependencies = [
     "floppy-mcp",
     "gunicorn==25.3.0",
     "icalendar==7.0.3",
-    "Pillow==12.3.0",
+    "Pillow==13.0.0",
     "psycopg[binary,pool]==3.3.3",
     "python-decouple==3.8",
     "pyotp==2.9.0",
