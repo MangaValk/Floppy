@@ -9,6 +9,7 @@ the item keeps the path ``/covers/<sha256>.<ext>``. See
 import hashlib
 import io
 import logging
+import os
 import re
 import tempfile
 from contextlib import suppress
@@ -62,8 +63,14 @@ def path_for(name):
     """Return the file behind a cover name, or None for anything unexpected."""
     if not _NAME_RE.fullmatch(name or ""):
         return None
-    path = covers_root() / name
-    return path if path.is_file() else None
+    root = os.path.normpath(covers_root())
+    path = os.path.normpath(f"{root}{os.sep}{name}")
+    # The name pattern already allows no separators; this keeps the folder
+    # check explicit for anything that reads the result.
+    if not path.startswith(root + os.sep):
+        return None
+    result = Path(path)
+    return result if result.is_file() else None
 
 
 def content_type_for(name):
