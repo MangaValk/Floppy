@@ -811,25 +811,35 @@ def sweep_due_deliveries(limit=100):
     return attempted
 
 
+def kick_flush(binding):
+    """Flush a batch binding after the live window, once the transaction commits.
+
+    On an hourly or daily schedule nothing is kicked: the sweeper flushes at the
+    release time already written on each delivery.
+    """
+    from integrations.tasks import flush_outbound_batch
+
+    if binding.delivery_schedule != SyncDeliverySchedule.LIVE.value:
+        return
+    transaction.on_commit(
+        lambda: flush_outbound_batch.apply_async(
+            kwargs={"binding_id": binding.pk},
+            countdown=LIVE_BATCH_WINDOW_SECONDS,
+        ),
+        robust=True,
+    )
+
+
 def schedule_delivery(delivery):
     """Kick a delivery once the surrounding transaction commits.
 
-    A batch binding is flushed instead, after the live window; on an hourly or
-    daily schedule nothing is kicked, because the sweeper flushes it at the
-    release time already written on the delivery.
+    A batch binding is flushed instead (see ``kick_flush``).
     """
-    from integrations.tasks import deliver_watched_state, flush_outbound_batch
+    from integrations.tasks import deliver_watched_state
 
     binding = delivery.binding
     if _is_batch(get_adapter(binding)):
-        if binding.delivery_schedule == SyncDeliverySchedule.LIVE.value:
-            transaction.on_commit(
-                lambda: flush_outbound_batch.apply_async(
-                    kwargs={"binding_id": binding.pk},
-                    countdown=LIVE_BATCH_WINDOW_SECONDS,
-                ),
-                robust=True,
-            )
+        kick_flush(binding)
         return
     transaction.on_commit(
         lambda: deliver_watched_state.delay(delivery_id=delivery.pk),

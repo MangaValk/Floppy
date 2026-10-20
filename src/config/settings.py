@@ -1277,6 +1277,17 @@ MAL_API_SECRET = config(
     ),
 )
 
+# The application key a WeTrakr account is connected with. WeTrakr issues these
+# on request, so each user or instance brings their own (Settings > Metadata);
+# nothing ships with the image.
+WETRAKR_CLIENT_ID = config(
+    "WETRAKR_CLIENT_ID",
+    default=secret(
+        "WETRAKR_CLIENT_ID_FILE",
+        "",
+    ),
+)
+
 MU_NSFW = config("MU_NSFW", default=False, cast=bool)
 
 MANGABAKA_NSFW = config("MANGABAKA_NSFW", default=False, cast=bool)
