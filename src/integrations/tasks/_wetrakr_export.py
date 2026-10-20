@@ -33,8 +33,8 @@ from integrations.tasks._ratings import _latest_rating
 EXPORT_CHUNK = 500
 
 
-def _movie_plays(user):
-    """Return ``(item_id, watched_at)`` for every dated watch of a movie.
+def _movie_play_sets(user):
+    """Return the two querysets behind a movie's dated watches.
 
     Each ``MoviePlay`` is one watch. A completed ``Movie`` row with no plays
     (imported or older entries) counts once, by its own end date.
@@ -53,6 +53,12 @@ def _movie_plays(user):
         .exclude(Exists(MoviePlay.objects.filter(movie=OuterRef("pk"))))
         .values_list("item_id", "end_date")
     )
+    return plays, legacy
+
+
+def _movie_plays(user):
+    """Return ``(item_id, watched_at)`` for every dated watch of a movie."""
+    plays, legacy = _movie_play_sets(user)
     return [*plays, *legacy]
 
 
@@ -66,7 +72,7 @@ def _episode_plays(user):
     ).values_list("item_id", "end_date")
 
 
-def _statuses(user):
+def _status_sets(user):
     movies = Movie.objects.filter(
         user=user,
         status__in=[Status.PLANNING.value, Status.DROPPED.value],
@@ -75,6 +81,11 @@ def _statuses(user):
         user=user,
         status__in=[Status.PLANNING.value, Status.PAUSED.value, Status.DROPPED.value],
     ).values_list("item_id", "status")
+    return movies, shows
+
+
+def _statuses(user):
+    movies, shows = _status_sets(user)
     return [*movies, *shows]
 
 
@@ -90,7 +101,11 @@ def _rated_items(user):
 
 def library_preview(user):
     """Return how many plays, statuses and ratings an export would queue."""
-    plays = len(_movie_plays(user)) + _episode_plays(user).count()
+    # Counts only: this runs on a page load, so it must not read the history.
+    plays = (
+        sum(rows.count() for rows in _movie_play_sets(user))
+        + _episode_plays(user).count()
+    )
     undated = (
         Movie.objects.filter(
             user=user,
@@ -113,7 +128,7 @@ def library_preview(user):
     return {
         "plays": plays,
         "undated": undated,
-        "statuses": len(_statuses(user)),
+        "statuses": sum(rows.count() for rows in _status_sets(user)),
     }
 
 

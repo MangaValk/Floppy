@@ -1479,6 +1479,25 @@ class ExportTests(WeTrakrTestCase):
         self.assertEqual(preview["plays"], 1)
         self.assertEqual(preview["statuses"], 1)
 
+    def test_the_preview_counts_without_reading_the_history(self):
+        when = datetime.datetime(2026, 10, 1, 19, 0, tzinfo=datetime.UTC)
+        self._movie(self.film, Status.COMPLETED.value, when)
+        self._movie(self.other, Status.PLANNING.value)
+
+        with (
+            patch(
+                "integrations.tasks._wetrakr_export._movie_plays",
+                side_effect=AssertionError("preview read every play"),
+            ),
+            patch(
+                "integrations.tasks._wetrakr_export._statuses",
+                side_effect=AssertionError("preview read every status"),
+            ),
+        ):
+            preview = library_preview(self.user)
+
+        self.assertEqual((preview["plays"], preview["statuses"]), (1, 1))
+
     def test_a_user_without_a_binding_exports_nothing(self):
         self.binding.delete()
 
