@@ -2988,6 +2988,9 @@
   .pr-12 {
     padding-right: calc(var(--spacing) * 12);
   }
+  .pr-24 {
+    padding-right: calc(var(--spacing) * 24);
+  }
   .pr-\[max\(1rem\,var\(--safe-right\)\)\] {
     padding-right: max(1rem, var(--safe-right));
   }
