@@ -254,6 +254,46 @@ class ForkCollectionEndpointTests(FloppyApiTestCase):
         self.assertEqual(response.status_code, HTTP.NOT_FOUND)
         self.assertTrue(CollectionEntry.objects.filter(id=entry.id).exists())
 
+    def test_collection_update_keeps_fields_it_is_not_sent(self):
+        """A PATCH changes only the fields in the request."""
+        item = self._movie_item()
+        entry = CollectionEntry.objects.create(
+            user=self.user1,
+            item=item,
+            media_type="bluray",
+            is_3d=True,
+            bitrate=320,
+            purchase_price="9.99",
+            purchase_location="Shop",
+        )
+
+        response = self.client.patch(
+            f"/api/v1/collection/{entry.id}",
+            {"resolution": "4k"},
+            format="json",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, HTTP.OK)
+        entry.refresh_from_db()
+        self.assertEqual(entry.resolution, "4k")
+        self.assertEqual(entry.media_type, "bluray")
+        self.assertTrue(entry.is_3d)
+        self.assertEqual(entry.bitrate, 320)
+        self.assertEqual(str(entry.purchase_price), "9.99")
+        self.assertEqual(entry.purchase_location, "Shop")
+
+        response = self.client.patch(
+            f"/api/v1/collection/{entry.id}",
+            {"is_3d": False, "bitrate": None},
+            format="json",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, HTTP.OK)
+        entry.refresh_from_db()
+        self.assertFalse(entry.is_3d)
+        self.assertIsNone(entry.bitrate)
+        self.assertEqual(str(entry.purchase_price), "9.99")
+
     def test_collection_add_requires_item(self):
         """POST without item_id is a 400."""
         response = self.client.post(

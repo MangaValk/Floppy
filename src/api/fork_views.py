@@ -213,8 +213,13 @@ class CollectionEntryView(drf_views.APIView):
                 status=HTTP.NOT_FOUND,
             )
 
-        form_data = dict(request.data)
-        form_data.setdefault("item", entry.item_id)
+        # Start from the stored values: the form would clear a field the
+        # request leaves out (is_3d, bitrate, purchase_price).
+        form_data = {
+            name: entry.serializable_value(name)
+            for name in CollectionEntryForm.Meta.fields
+        }
+        form_data.update(request.data)
         form = CollectionEntryForm(
             form_data,
             instance=entry,
