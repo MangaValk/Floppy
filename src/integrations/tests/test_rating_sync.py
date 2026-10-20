@@ -716,6 +716,6 @@ class ConnectionTests(RatingSyncTestCase):
     def test_settings_show_connection_and_delivery_results(self):
         self.edit(8)
         response = self.client.get(reverse("mal_export"))
-        self.assertContains(response, "TMDb ratings")
+        self.assertContains(response, "send-tmdb")
         self.assertContains(response, "tmdb-user")
         self.assertNotContains(response, "private-session")

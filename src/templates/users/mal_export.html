@@ -790,11 +790,14 @@
       </div>
     {% endif %}
 
-    {# Services that take Floppy's plays, statuses and ratings: one card each #}
-    {% include "users/components/tmdb_rating_sync.html" %}
-    {% include "users/components/wetrakr_sync.html" %}
+    {% include "users/components/outbound_services.html" %}
 
     </div>
+
+    {# Outbound service modals render outside the cards, as on the Metadata page #}
+    {% for service in outbound_services %}
+      {% include "users/components/outbound_service_modal.html" %}
+    {% endfor %}
 
     {# Manual MAL episode mapping wizard #}
     <div x-show="activeModal === 'mal-mapping-wizard'"

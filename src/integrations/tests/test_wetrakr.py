@@ -1191,10 +1191,47 @@ class ConnectViewTests(TestCase):
         sync_page = self.client.get(reverse("mal_export"))
         integrations = self.client.get(reverse("integrations"))
 
-        self.assertContains(sync_page, "TMDb ratings")
-        self.assertContains(sync_page, "WeTrakr")
-        self.assertNotContains(integrations, "TMDb ratings")
+        self.assertContains(sync_page, "Send to Services")
+        self.assertContains(sync_page, "send-tmdb")
+        self.assertContains(sync_page, "send-wetrakr")
+        self.assertNotContains(integrations, "send-tmdb")
         self.assertNotContains(integrations, "Connect WeTrakr")
+
+    def test_each_service_is_one_row_with_its_own_modal(self):
+        page = self.client.get(reverse("mal_export"))
+
+        slugs = [service["slug"] for service in page.context["outbound_services"]]
+        self.assertEqual(slugs, ["tmdb", "wetrakr"])
+        for slug in slugs:
+            self.assertContains(page, f"activeModal = 'send-{slug}'", count=1)
+            self.assertContains(page, f"activeModal === 'send-{slug}'", count=1)
+
+    def test_the_row_badge_follows_the_connection(self):
+        states = lambda: {  # noqa: E731
+            service["slug"]: service["state"]
+            for service in self.client.get(reverse("mal_export")).context[
+                "outbound_services"
+            ]
+        }
+        self.assertEqual(states()["wetrakr"], "off")
+
+        self._connect()
+        self.assertEqual(states()["wetrakr"], "connected")
+
+        WeTrakrAccount.objects.filter(user=self.user).update(connection_broken=True)
+        self.assertEqual(states()["wetrakr"], "attention")
+
+    def test_the_modal_opens_by_itself_while_waiting_for_approval(self):
+        self.assertNotContains(
+            self.client.get(reverse("mal_export")),
+            "x-init=\"activeModal = 'send-wetrakr'\"",
+        )
+
+        self._start()
+
+        page = self.client.get(reverse("mal_export"))
+        self.assertContains(page, "x-init=\"activeModal = 'send-wetrakr'\"")
+        self.assertContains(page, "ABCD-1234")
 
     def test_a_connected_card_lists_the_switches(self):
         self._connect()
