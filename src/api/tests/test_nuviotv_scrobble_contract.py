@@ -313,3 +313,35 @@ class NuvioTvProgressPercentTests(FloppyApiTestCase):
                 response = self._send("pause", bad)
 
                 self.assertEqual(response.status_code, HTTP.BAD_REQUEST)
+
+    def test_a_first_scrobble_of_an_untracked_film_still_stores_the_position(self):
+        """No stored runtime yet: it is read from the provider, not lost."""
+        self.item.delete()
+        details = {**MATRIX, "max_progress": 1, "details": {"runtime": "2h 16min"}}
+
+        with patch("api.fork_views_scrobble.services.get_media_metadata", return_value=details):
+            response = self._send("stop", 50, completed=False)
+
+        self.assertEqual(response.status_code, HTTP.OK)
+        progress = PlaybackProgress.objects.get(user=self.user1, item__media_id="603")
+        self.assertEqual(progress.position_seconds, 4080)
+        self.assertEqual(progress.duration_seconds, 8160)
+
+    def test_a_stop_with_a_percent_but_no_completed_flag_judges_completion(self):
+        """Other clients may omit `completed`; 90% and up is a finished film."""
+        response = self._send("stop", 100)
+
+        self.assertEqual(response.status_code, HTTP.OK)
+        movie = Movie.objects.get(user=self.user1, item=self.item)
+        self.assertEqual(movie.status, Status.COMPLETED.value)
+        progress = PlaybackProgress.objects.get(user=self.user1, item=self.item)
+        self.assertTrue(progress.completed)
+
+    def test_a_stop_at_half_with_no_completed_flag_stays_in_progress(self):
+        """Below 90% is not a finished film."""
+        self._send("stop", 50)
+
+        movie = Movie.objects.get(user=self.user1, item=self.item)
+        self.assertEqual(movie.status, Status.IN_PROGRESS.value)
+        progress = PlaybackProgress.objects.get(user=self.user1, item=self.item)
+        self.assertFalse(progress.completed)

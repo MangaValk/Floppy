@@ -12,6 +12,8 @@ from rest_framework.response import Response
 import app.providers.tmdb
 from app import live_playback
 from app.models import MediaTypes, Sources
+from app.providers import services
+from app.stats_utils import parse_runtime_to_minutes
 from integrations.delivery import get_or_record_receipt
 from integrations.models import IntegrationToken
 from integrations.webhooks.generic_scrobble import GenericScrobbleProcessor, is_played
@@ -130,6 +132,32 @@ def _resolve_live_playback_media_id(media_type, ids):
         return str(episode_results[0]["show_id"])
     tv_results = find_response.get("tv_results") or []
     return str(tv_results[0]["id"]) if tv_results else None
+
+
+def _runtime_seconds(item):
+    """Return the title's length in seconds, asking the provider if need be.
+
+    A title scrobbled for the first time has no stored runtime yet (a
+    background task fills it in later), and a percentage-only client has no
+    other way to say how long it is. Failures give 0, never an error.
+    """
+    seconds = live_playback.runtime_seconds(item)
+    if seconds:
+        return seconds
+    try:
+        metadata = services.get_media_metadata(
+            item.media_type.lower(),
+            item.media_id,
+            item.source,
+        )
+        minutes = parse_runtime_to_minutes(
+            ((metadata or {}).get("details") or {}).get("runtime"),
+        )
+    except Exception:
+        logger.warning("Scrobble runtime lookup failed", exc_info=True)
+        return 0
+    usable = live_playback.usable_runtime_minutes(minutes)
+    return usable * 60 if usable else 0
 
 
 # /api/v1/scrobble/
@@ -376,7 +404,7 @@ class ScrobbleView(drf_views.APIView):
             duration = payload.get("duration_seconds")
             if position is None:
                 # Percentage-only client: the length comes from the title.
-                duration = duration or live_playback.runtime_seconds(item) or None
+                duration = duration or _runtime_seconds(item) or None
                 position = live_playback.position_from_percent(percent, duration)
                 if position is None:
                     return
