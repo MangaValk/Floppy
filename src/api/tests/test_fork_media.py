@@ -234,6 +234,27 @@ class ForkCollectionEndpointTests(FloppyApiTestCase):
         self.assertEqual(response.status_code, HTTP.NO_CONTENT)
         self.assertFalse(CollectionEntry.objects.filter(id=entry_id).exists())
 
+    def test_collection_list_returns_pages_past_the_first(self):
+        """An offset page lists the next entries instead of none."""
+        item = self._movie_item()
+        entries = [
+            CollectionEntry.objects.create(
+                user=self.user1,
+                item=item,
+                media_type="bluray",
+            )
+            for _ in range(3)
+        ]
+        response = self.client.get(
+            "/api/v1/collection",
+            {"limit": 2, "offset": 2},
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, HTTP.OK)
+        data = response.json()
+        self.assertEqual(data["pagination"]["total"], 3)
+        self.assertEqual([row["id"] for row in data["results"]], [entries[0].id])
+
     def test_collection_entry_scoped_to_user(self):
         """Another user's entry is invisible and immutable."""
         item = self._movie_item()
