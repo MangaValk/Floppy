@@ -108,15 +108,25 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json
   "$FLOPPY/api/v1/media/tv/tmdb/1396/2/episodes/5/collection/"
 ```
 
-The body is optional. `resolution` is free text (at most 100 characters) and is
-shown as the entry's quality.
+The body and every field in it are optional. A repeat call changes only the
+fields it sends.
+
+| Field | Value |
+|---|---|
+| `resolution` | Free text, at most 100 characters, shown as the entry's quality |
+| `media_type` | Free text, at most 20 characters (`bluray`, `dvd`, `digital`) |
+| `hdr`, `audio_codec` | Free text, at most 30 characters |
+| `audio_channels` | Free text, at most 20 characters (`5.1`, `7.1.2`) |
+| `is_3d` | `true` or `false` |
+| `bitrate` | Audio bitrate in kbps, a whole number |
+| `collected_at` | ISO 8601 date and time (a time without an offset is read in Floppy's time zone); defaults to now |
 
 | Status | Meaning |
 |---|---|
 | `201` | Collected; the body is the new collection entry |
-| `200` | Already collected; the same entry is returned, with `resolution` updated if one was sent |
+| `200` | Already collected; the same entry is returned, with the sent fields updated |
 | `204` | Removed (`DELETE`) |
-| `400` | Unsupported media type or source, a body that is not a JSON object, or a show without season and episode |
+| `400` | Unsupported media type or source, a body that is not a JSON object, an invalid field, or a show without season and episode |
 | `404` | The provider does not know the id, or (`DELETE`) there was nothing to remove |
 | `502` | The provider could not be reached; nothing was created, retry later |
 

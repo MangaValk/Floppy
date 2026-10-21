@@ -6,6 +6,8 @@ from http import HTTPStatus as HTTP  # noqa: N814
 
 from django.db import IntegrityError, transaction
 from django.db.models import prefetch_related_objects
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django_celery_results.models import TaskResult
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -264,7 +266,7 @@ class MediaCollectionView(drf_views.APIView):
     """
 
     _SOURCE = "api"
-    _RESOLUTION_MAX_LENGTH = CollectionEntry._meta.get_field("resolution").max_length
+    _TEXT_FIELDS = ("media_type", "resolution", "hdr", "audio_codec", "audio_channels")
 
     def _identity(self, media_type, source, season_number, episode_number):
         """Return ``(lookup_media_type, error_response)`` for the route."""
@@ -303,7 +305,58 @@ class MediaCollectionView(drf_views.APIView):
             source_records__source=self._SOURCE,
         )
 
-    def _create_entry(self, user, item, resolution):
+    def _entry_fields(self, data):
+        """Return ``(fields, error_response)`` for the optional body fields.
+
+        Only the fields that were sent are returned, so a repeat call keeps
+        the stored value of everything it leaves out.
+        """
+        fields = {}
+        for name in self._TEXT_FIELDS:
+            value = data.get(name) or ""
+            max_length = CollectionEntry._meta.get_field(name).max_length
+            if not isinstance(value, str) or len(value) > max_length:
+                return None, self._invalid(name)
+            if value:
+                fields[name] = value
+
+        is_3d = data.get("is_3d")
+        if is_3d is not None:
+            if not isinstance(is_3d, bool):
+                return None, self._invalid("is_3d")
+            fields["is_3d"] = is_3d
+
+        bitrate = data.get("bitrate")
+        if bitrate is not None:
+            if isinstance(bitrate, bool) or not isinstance(bitrate, int) or bitrate < 0:
+                return None, self._invalid("bitrate")
+            fields["bitrate"] = bitrate
+
+        collected_at = data.get("collected_at")
+        if collected_at:
+            try:
+                parsed = (
+                    parse_datetime(collected_at)
+                    if isinstance(collected_at, str)
+                    else None
+                )
+            except ValueError:
+                parsed = None
+            if parsed is None:
+                return None, self._invalid("collected_at")
+            if timezone.is_naive(parsed):
+                parsed = timezone.make_aware(parsed)
+            fields["collected_at"] = parsed
+        return fields, None
+
+    def _invalid(self, name):
+        """Return the 400 response for an invalid body field."""
+        return Response(
+            {"detail": f"Invalid '{name}'."},
+            status=HTTP.BAD_REQUEST,
+        )
+
+    def _create_entry(self, user, item, fields):
         """Return ``(entry, created)``, creating the API-owned copy at most once."""
         record_id = ":".join(
             str(part)
@@ -317,11 +370,7 @@ class MediaCollectionView(drf_views.APIView):
         )
         try:
             with transaction.atomic():
-                entry = CollectionEntry.objects.create(
-                    user=user,
-                    item=item,
-                    resolution=resolution,
-                )
+                entry = CollectionEntry.objects.create(user=user, item=item, **fields)
                 CollectionEntrySource.objects.create(
                     user=user,
                     source=self._SOURCE,
@@ -362,8 +411,9 @@ class MediaCollectionView(drf_views.APIView):
         """Add the title to the collection, creating the item when unknown.
 
         Idempotent: an existing entry is returned, not duplicated. Optional
-        body field `resolution` (e.g. "1080p") is stored on the entry and
-        replaces the stored value on a repeat call, so a quality upgrade
+        body fields `media_type`, `resolution`, `hdr`, `is_3d`, `audio_codec`,
+        `audio_channels`, `bitrate` and `collected_at` are stored on the entry
+        and replace the stored values on a repeat call, so a quality upgrade
         updates the same entry.
         """
         season_number = int(season_number) if season_number is not None else None
@@ -382,15 +432,9 @@ class MediaCollectionView(drf_views.APIView):
                 {"detail": "Request body must be a JSON object."},
                 status=HTTP.BAD_REQUEST,
             )
-        resolution = request.data.get("resolution") or ""
-        if (
-            not isinstance(resolution, str)
-            or len(resolution) > self._RESOLUTION_MAX_LENGTH
-        ):
-            return Response(
-                {"detail": "Invalid 'resolution'."},
-                status=HTTP.BAD_REQUEST,
-            )
+        fields, error = self._entry_fields(request.data)
+        if error:
+            return error
 
         item, error = get_or_create_provider_item(
             lookup_media_type,
@@ -409,10 +453,16 @@ class MediaCollectionView(drf_views.APIView):
         )
         created = False
         if entry is None:
-            entry, created = self._create_entry(request.user, item, resolution)
-        if not created and resolution and entry.resolution != resolution:
-            entry.resolution = resolution
-            entry.save(update_fields=["resolution", "updated_at"])
+            entry, created = self._create_entry(request.user, item, fields)
+        # create() ignores collected_at (auto_now_add), so a new entry still
+        # differs there and this save stores it.
+        changed = [
+            name for name, value in fields.items() if getattr(entry, name) != value
+        ]
+        if changed:
+            for name in changed:
+                setattr(entry, name, fields[name])
+            entry.save(update_fields=[*changed, "updated_at"])
         status = HTTP.CREATED if created else HTTP.OK
 
         return Response(
