@@ -19,6 +19,8 @@ from app.services.progress_changes import (
 from integrations.models import SyncBinding
 from integrations.state.checkpoints import record_applied_position
 
+from .fork_views_playback import item_reference, show_item_map
+
 logger = logging.getLogger(__name__)
 
 MAX_CHANGE_PAGE = 500
@@ -68,6 +70,7 @@ class ProgressChangeFeedView(drf_views.APIView):
             record_applied_position(binding, cursor, resource=PROGRESS_RESOURCE)
 
         changes = progress_changes_since(request.user, cursor, limit=limit)
+        show_map = show_item_map([change.item for change in changes if change.item])
         results = [
             {
                 "sequence": change.sequence,
@@ -78,6 +81,7 @@ class ProgressChangeFeedView(drf_views.APIView):
                 "media_id": change.item.media_id if change.item else None,
                 "source": change.item.source if change.item else None,
                 "media_type": change.item.media_type if change.item else None,
+                **(item_reference(change.item, show_map) if change.item else {}),
                 "origin_key": change.origin_key,
                 "correlation_id": str(change.correlation_id),
             }
