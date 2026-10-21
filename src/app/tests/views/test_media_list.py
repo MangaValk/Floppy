@@ -26,6 +26,7 @@ from app.models import (
     Episode,
     Game,
     Item,
+    ItemTag,
     Manga,
     MediaTypes,
     Movie,
@@ -33,6 +34,7 @@ from app.models import (
     Season,
     Sources,
     Status,
+    Tag,
     Video,
 )
 from app.templatetags import app_tags
@@ -3306,6 +3308,120 @@ class MediaListViewTests(TestCase):
         self.assertContains(response, "Array.from(form.elements)")
         self.assertContains(response, "const persistedKeys = Array.from(")
         self.assertNotContains(response, "const persistedKeys = [")
+
+    def test_saved_tv_tag_exclusion_tracks_tags_added_after_save(self):
+        """A saved NOT-tag filter re-evaluates TV associations on every request."""
+        tagged_before_save = self._create_tv_runtime_entry(
+            "saved-tag-tv-1", "Tagged before save", [24]
+        )
+        tagged_later_one = self._create_tv_runtime_entry(
+            "saved-tag-tv-2", "Tagged later one", [24]
+        )
+        tagged_later_two = self._create_tv_runtime_entry(
+            "saved-tag-tv-3", "Tagged later two", [24]
+        )
+        tag = Tag.objects.create(user=self.user, name="BunnyEarsTV")
+        self.client.post(
+            reverse("tag_item_toggle"),
+            {"tag_id": tag.id, "item_id": tagged_before_save.id},
+        )
+
+        saved_response = self.client.post(
+            reverse("saved_view_create"),
+            {
+                "media_type": MediaTypes.TV.value,
+                "name": "Un-tagged in-progress TV",
+                "status": Status.IN_PROGRESS.value,
+                "tag": tag.name,
+                "tag_mode": "not",
+            },
+        )
+        self.assertEqual(saved_response.status_code, 200)
+        saved_url = saved_response.json()["url"]
+
+        initial = self.client.get(saved_url)
+        initial_ids = {
+            entry.item.id for entry in initial.context["media_list"].object_list
+        }
+        self.assertNotIn(tagged_before_save.id, initial_ids)
+        self.assertIn(tagged_later_one.id, initial_ids)
+        self.assertIn(tagged_later_two.id, initial_ids)
+
+        for item in (tagged_later_one, tagged_later_two):
+            toggle_response = self.client.post(
+                reverse("tag_item_toggle"),
+                {"tag_id": tag.id, "item_id": item.id},
+            )
+            self.assertEqual(toggle_response.status_code, 200)
+            self.assertTrue(ItemTag.objects.filter(tag=tag, item=item).exists())
+
+        refreshed = self.client.get(saved_url)
+        refreshed_ids = {
+            entry.item.id for entry in refreshed.context["media_list"].object_list
+        }
+        self.assertNotIn(tagged_before_save.id, refreshed_ids)
+        self.assertNotIn(tagged_later_one.id, refreshed_ids)
+        self.assertNotIn(tagged_later_two.id, refreshed_ids)
+
+        # The same exclusion remains active after returning through the saved URL.
+        reopened = self.client.get(saved_url)
+        reopened_ids = {
+            entry.item.id for entry in reopened.context["media_list"].object_list
+        }
+        self.assertEqual(reopened_ids, refreshed_ids)
+
+    def test_tag_exclusion_handles_retag_multiple_tags_and_other_media(self):
+        """NOT excludes any matching tag while preserving other media types."""
+        tv_item = self._create_tv_runtime_entry(
+            "saved-tag-tv-retag", "Retagged TV", [24]
+        )
+        movie_item = Item.objects.create(
+            media_id="saved-tag-movie",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Tagged Movie",
+            image="http://example.com/tagged-movie.jpg",
+        )
+        Movie.objects.create(
+            item=movie_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        excluded = Tag.objects.create(user=self.user, name="BunnyEarsTV")
+        other = Tag.objects.create(user=self.user, name="AlsoExcluded")
+
+        toggle_url = reverse("tag_item_toggle")
+        for _ in range(3):
+            self.client.post(
+                toggle_url, {"tag_id": excluded.id, "item_id": tv_item.id}
+            )
+        self.client.post(toggle_url, {"tag_id": other.id, "item_id": tv_item.id})
+        self.client.post(toggle_url, {"tag_id": excluded.id, "item_id": movie_item.id})
+        self.assertTrue(ItemTag.objects.filter(tag=excluded, item=tv_item).exists())
+        self.assertTrue(ItemTag.objects.filter(tag=other, item=tv_item).exists())
+        self.assertTrue(ItemTag.objects.filter(tag=excluded, item=movie_item).exists())
+
+        tv_response = self.client.get(
+            reverse("medialist", args=[MediaTypes.TV.value]),
+            {
+                "status": Status.IN_PROGRESS.value,
+                "tag": [excluded.name, other.name],
+                "tag_mode": "not",
+            },
+        )
+        tv_ids = {
+            entry.item.id for entry in tv_response.context["media_list"].object_list
+        }
+        self.assertNotIn(tv_item.id, tv_ids)
+
+        movie_response = self.client.get(
+            reverse("medialist", args=[MediaTypes.MOVIE.value]),
+            {"status": Status.IN_PROGRESS.value, "tag": excluded.name, "tag_mode": "not"},
+        )
+        movie_ids = {
+            entry.item.id for entry in movie_response.context["media_list"].object_list
+        }
+        self.assertNotIn(movie_item.id, movie_ids)
 
     def test_media_list_layout_toggle_uses_shared_filter_serializer(self):
         """Grid/table links should reuse the shared serializer instead of manual query strings."""
