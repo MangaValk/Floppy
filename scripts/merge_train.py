@@ -30,16 +30,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-REQUIRED_CHECKS = {"lint", "test (3.12)"}  # keep in sync with the ruleset on latest
-# Checks that park a PR when red. migration-order is not in the ruleset yet, but a
-# red one means the PR's migrations clash with latest, so updating it is pointless.
-PARKING_CHECKS = REQUIRED_CHECKS | {"migration-order"}
+REQUIRED_CHECKS = {"lint", "test (3.12)", "migration-order"}
+PARKING_CHECKS = REQUIRED_CHECKS
 FAILED = {"FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PASSED = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 HUNG_AFTER = timedelta(hours=2)  # a required check this old and still pending is stuck
@@ -49,14 +49,16 @@ HUNG_AFTER = timedelta(hours=2)  # a required check this old and still pending i
 STALLED_AFTER = timedelta(minutes=30)
 UNKNOWN_RETRIES = 3  # GitHub recalculates mergeability on request; ask again
 UNKNOWN_WAIT_SECONDS = 10
+ATTEMPT_MARKER = re.compile(r"<!-- merge-train-base:([0-9a-f]{40})(?::(refused))? -->")
 
 QUERY = """
 query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    ref(qualifiedName: "refs/heads/latest") { target { oid } }
+    ref(qualifiedName: "refs/heads/latest") { target { ... on Commit { oid committedDate } } }
     pullRequests(states: OPEN, baseRefName: "latest", first: 100) {
       nodes {
         number
+        body
         isDraft
         isCrossRepository
         maintainerCanModify
@@ -101,6 +103,26 @@ def _failure_reason(pr: dict, now: datetime) -> str | None:
     return None
 
 
+def _old_non_migration_failure(pr: dict) -> bool:
+    latest_date = pr.get("_latest_date")
+    if not latest_date:
+        return False
+    failures = [
+        check
+        for check in _checks(pr, REQUIRED_CHECKS - {"migration-order"})
+        if check.get("conclusion") in FAILED
+    ]
+    return bool(failures) and all(
+        check.get("completedAt") and _time(check["completedAt"]) < _time(latest_date)
+        for check in failures
+    )
+
+
+def _attempt_marker(pr: dict) -> tuple[str, str | None] | None:
+    match = ATTEMPT_MARKER.search(pr.get("body") or "")
+    return (match.group(1), match.group(2)) if match else None
+
+
 def _up_to_date_verdict(pr: dict, now: datetime) -> tuple[str, str]:
     """Judge a PR whose head already contains latest: in flight, or stuck."""
     checks = _checks(pr, REQUIRED_CHECKS)
@@ -126,11 +148,27 @@ def _up_to_date_verdict(pr: dict, now: datetime) -> tuple[str, str]:
 
 def judge(pr: dict, behind: int | None, now: datetime) -> tuple[str, str]:
     """Return (verdict, reason) for one queued PR: 'update', 'wait' or 'skip'."""
+    if pr["mergeStateStatus"] == "DIRTY" or pr["mergeable"] == "CONFLICTING":
+        return "skip", "merge conflict with latest; its author has to resolve it"
+    if any(
+        c.get("name") == "migration-order" and c.get("conclusion") in FAILED
+        for c in _checks(pr, {"migration-order"})
+    ):
+        return "skip", "required check 'migration-order' failed; migration conflicts need manual reconciliation"
+    if behind is None:
+        return "skip", "could not tell whether it is behind latest; will retry"
+    latest_oid = pr.get("_latest_oid")
+    marker = _attempt_marker(pr)
+    old_failure = _old_non_migration_failure(pr)
+    if behind > 0 and old_failure:
+        if marker and marker[0] == latest_oid:
+            if marker[1] == "refused":
+                return "skip", "GitHub refused the branch update (HTTP 403 or equivalent); the contributor has to merge latest into the branch themselves"
+            return "wait", "branch update was attempted for this latest commit; waiting for fresh required checks"
+        return "update", f"required check failed before latest advanced; refreshing {behind} commits"
     reason = _failure_reason(pr, now)
     if reason:
         return "skip", reason
-    if behind is None:
-        return "skip", "could not tell whether it is behind latest; will retry"
     if behind == 0:
         return _up_to_date_verdict(pr, now)
     if pr["isCrossRepository"] and not pr["maintainerCanModify"]:
@@ -203,7 +241,23 @@ def _fetch(owner: str, name: str) -> tuple[list[dict], str]:
             f"query={QUERY}",
         )
     )["data"]["repository"]
-    return data["pullRequests"]["nodes"], data["ref"]["target"]["oid"]
+    latest = data["ref"]["target"]
+    prs = data["pullRequests"]["nodes"]
+    for pr in prs:
+        pr["_latest_oid"] = latest["oid"]
+        pr["_latest_date"] = latest.get("committedDate")
+    return prs, latest["oid"]
+
+
+def _record_attempt(owner: str, name: str, pr: dict, refused: bool = False) -> None:
+    body = pr.get("body") or ""
+    marker = f"<!-- merge-train-base:{pr['_latest_oid']}{':refused' if refused else ''} -->"
+    body = ATTEMPT_MARKER.sub("", body).rstrip()
+    updated = f"{body}\n\n{marker}" if body else marker
+    _gh(
+        "api", "-X", "PATCH", f"repos/{owner}/{name}/pulls/{pr['number']}",
+        "-f", f"body={updated}",
+    )
 
 
 def _behind_by(owner: str, name: str, latest: str, head: str) -> int | None:
@@ -272,11 +326,26 @@ def main(argv: list[str]) -> int:
         if dry_run:
             _report([*lines, f"dry run: would update the branch of #{number}"], False)
             return 0
+        pr = next(p for p in prs if p["number"] == number)
+        retrying_failed_checks = _old_non_migration_failure(pr)
+        if retrying_failed_checks:
+            try:
+                _record_attempt(owner, name, pr)
+            except subprocess.CalledProcessError as error:
+                failed.append(
+                    f"#{number} skipped: could not record the one-time update attempt: "
+                    f"{error.stderr.strip()}"
+                )
+                prs = [p for p in prs if p["number"] != number]
+                continue
         try:
             _gh(
                 "api", "-X", "PUT", f"repos/{owner}/{name}/pulls/{number}/update-branch"
             )
         except subprocess.CalledProcessError as error:
+            if retrying_failed_checks:
+                with suppress(subprocess.CalledProcessError):
+                    _record_attempt(owner, name, pr, refused=True)
             failed.append(f"#{number} skipped: {_refusal(error.stderr.strip())}")
             prs = [p for p in prs if p["number"] != number]
             continue
