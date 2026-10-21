@@ -20,6 +20,7 @@ train = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(train)
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+LATEST_SHA = "a" * 40
 
 
 class _Clock(datetime):
@@ -35,20 +36,22 @@ def _iso(delta=timedelta()):
 
 
 def running(minutes=10):
-    """Both required checks queued or running, started `minutes` ago."""
+    """All required checks queued or running, started `minutes` ago."""
     started = _iso(timedelta(minutes=minutes))
     return [
         ("lint", "IN_PROGRESS", None, started, None),
         ("test (3.12)", "IN_PROGRESS", None, started, None),
+        ("migration-order", "IN_PROGRESS", None, started, None),
     ]
 
 
 def passed(minutes_ago=5):
-    """Both required checks finished green `minutes_ago` minutes ago."""
+    """All required checks finished green `minutes_ago` minutes ago."""
     done = _iso(timedelta(minutes=minutes_ago))
     return [
         ("lint", "COMPLETED", "SUCCESS", done, done),
         ("test (3.12)", "COMPLETED", "SUCCESS", done, done),
+        ("migration-order", "COMPLETED", "SUCCESS", done, done),
     ]
 
 
@@ -66,6 +69,7 @@ def pr(
     """Build a PR as the GraphQL query returns it (enabled=None: no auto-merge)."""
     return {
         "number": number,
+        "body": "Example PR description",
         "isDraft": draft,
         "isCrossRepository": fork,
         "maintainerCanModify": editable,
@@ -176,7 +180,7 @@ class MergeTrainTests(TestCase):
         self.assertIn("'test (3.12)' failed", notes[0])
 
     def test_failed_migration_order_parks_the_pr(self):
-        """A migration clash is not required by the ruleset but is still fatal."""
+        """A failed required migration check parks the PR for manual repair."""
         done = _iso(timedelta(minutes=5))
         clash = pr(
             1,
@@ -186,6 +190,10 @@ class MergeTrainTests(TestCase):
             ],
         )
         self.assertEqual(train.choose([clash], {1: 0}, NOW)[0], "stuck")
+
+    def test_pending_migration_order_keeps_the_queue_in_flight(self):
+        waiting = pr(1, checks=[*running()[:-1], ("migration-order", "IN_PROGRESS", None, _iso(), None)])
+        self.assertEqual(train.choose([waiting], {1: 0}, NOW)[:2], ("wait", 1))
 
     def test_failed_optional_check_does_not_block(self):
         """Only the required checks count; CodeQL or the image build do not."""
@@ -259,17 +267,21 @@ class _FakeGh:
         if args[:2] == ("api", "graphql"):
             data = {
                 "repository": {
-                    "ref": {"target": {"oid": "latestsha"}},
+                    "ref": {"target": {"oid": LATEST_SHA, "committedDate": "2026-10-05T10:00:00Z"}},
                     "pullRequests": {"nodes": self.prs},
                 }
             }
             return json.dumps({"data": data})
-        if args[1].startswith("repos/o/r/compare/latestsha..."):
+        if args[1].startswith(f"repos/o/r/compare/{LATEST_SHA}..."):
             head = args[1].rsplit("...", 1)[1]
             behind = self.behind[int(head.removeprefix("sha"))]
             if behind is None:
                 raise subprocess.CalledProcessError(1, args, stderr="boom")
             return f"{behind}\n"
+        if args[2] == "PATCH":
+            number = int(args[3].split("/")[-1])
+            next(pr for pr in self.prs if pr["number"] == number)["body"] = args[-1].removeprefix("body=")
+            return "{}"
         number = int(args[3].split("/")[4])
         if number in self.refuse:
             raise subprocess.CalledProcessError(1, args, stderr=self.refuse[number])
@@ -296,6 +308,43 @@ class MainTests(TestCase):
         """The ordinary path: behind latest, so latest is merged into it."""
         code, fake = self.run_train([pr(1, state="UNKNOWN")], {1: 2})
         self.assertEqual((code, fake.updated), (0, [1]))
+
+    def test_old_failed_check_is_refreshed_once_after_latest_advances(self):
+        old = pr(
+            1,
+            checks=[
+                ("lint", "COMPLETED", "FAILURE", _iso(timedelta(hours=3)), _iso(timedelta(hours=3))),
+                ("test (3.12)", "COMPLETED", "SUCCESS", _iso(), _iso()),
+                ("migration-order", "COMPLETED", "SUCCESS", _iso(), _iso()),
+            ],
+        )
+        code, fake = self.run_train([old], {1: 2})
+        self.assertEqual((code, fake.updated), (0, [1]))
+        self.assertIn(f"merge-train-base:{LATEST_SHA}", old["body"])
+
+    def test_old_failed_check_is_not_retried_against_same_base(self):
+        old = pr(1, checks=[
+            ("lint", "COMPLETED", "FAILURE", _iso(timedelta(hours=3)), _iso(timedelta(hours=3))),
+            ("test (3.12)", "COMPLETED", "SUCCESS", _iso(), _iso()),
+            ("migration-order", "COMPLETED", "SUCCESS", _iso(), _iso()),
+        ])
+        old["_latest_oid"] = LATEST_SHA
+        old["_latest_date"] = "2026-10-05T10:00:00Z"
+        old["body"] += f"\n<!-- merge-train-base:{LATEST_SHA} -->"
+        self.assertEqual(train.judge(old, 2, NOW)[0], "wait")
+
+    def test_failed_fork_update_records_refusal_and_actionable_fallback(self):
+        old = pr(
+            1, fork=True,
+            checks=[
+                ("lint", "COMPLETED", "FAILURE", _iso(timedelta(hours=3)), _iso(timedelta(hours=3))),
+                ("test (3.12)", "COMPLETED", "SUCCESS", _iso(), _iso()),
+                ("migration-order", "COMPLETED", "SUCCESS", _iso(), _iso()),
+            ],
+        )
+        code, fake = self.run_train([old], {1: 2}, {1: "gh: user doesn't have permission (HTTP 403)"})
+        self.assertEqual((code, fake.updated), (1, []))
+        self.assertIn(f"merge-train-base:{LATEST_SHA}:refused", old["body"])
 
     def test_dry_run_updates_nothing(self):
         """--dry-run only reports."""
