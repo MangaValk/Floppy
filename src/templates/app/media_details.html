@@ -37,7 +37,7 @@
                  hx-get="{{ detail_carousel_fragment_url }}"
                  hx-trigger="load delay:100ms"
                  hx-swap="innerHTML"
-                 hx-on::after-request="this.closest('.detail-carousel-grid').classList.remove('detail-hero-pending')"{% endif %}>{% if initial_carousel %}{% include "app/components/detail_carousel_fragment.html" with carousel=initial_carousel inline=True %}{% endif %}</div>
+                 hx-on::after-settle="this.closest('.detail-carousel-grid').classList.remove('detail-hero-pending')"{% endif %}>{% if initial_carousel %}{% include "app/components/detail_carousel_fragment.html" with carousel=initial_carousel inline=True %}{% elif media_type != MediaTypes.GAME.value %}<div class="detail-carousel-content detail-carousel-pending" aria-hidden="true"><div class="detail-carousel-preview detail-carousel-preview--bounded"></div><div class="detail-carousel-strip-wrap"></div></div>{% endif %}</div>
           </div>
 
           <div class="detail-carousel-grid__header flex flex-col md:flex-row md:flex-wrap md:items-center md:justify-between gap-4">
