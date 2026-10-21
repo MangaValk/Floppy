@@ -8,6 +8,7 @@ register_converter(converters.SourceChecker, "source")
 
 
 urlpatterns = [
+    path("progress/cancel-rewatch/", progress_views.cancel_progress_rewatch, name="cancel_progress_rewatch"),
     path(
         "tv/<int:tv_id>/episode-ordering/",
         episode_order_views.episode_ordering_settings,

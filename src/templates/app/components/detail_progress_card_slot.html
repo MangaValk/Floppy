@@ -1,29 +1,30 @@
-{% load i18n %}
+{% load i18n l10n progress_tags %}
 <div id="detail-progress-card-slot-{{ media_type }}-{{ media.media_id }}-{{ media.source }}"
      class="detail-progress-card-slot"
      {% if progress_card_slot_oob %}hx-swap-oob="outerHTML"{% endif %}>
   {% if not public_view and current_instance and current_instance.watched_once_percentage is not None %}
+    {% detail_progress current_instance as progress_display %}
+    {% if media_type == 'season' %}{% url 'season_progress_breakdown' current_instance.id as progress_url %}{% else %}{% url 'tv_progress_breakdown' current_instance.id as progress_url %}{% endif %}
     <div class="relative"
-         x-data="{ percent: {{ current_instance.watched_once_percentage }}, rewatch: {{ current_instance.rewatch_percentage|default_if_none:'null' }}, open: false, failed: false }"
-         @detail-progress-updated.window="if ($event.detail.id === {{ current_instance.id }}) { const pct = (n) => Math.max(0, Math.min(100, Math.round(n / {{ current_instance.max_progress }} * 100))); percent = pct($event.detail.watched_once); rewatch = $event.detail.rewatching ? pct($event.detail.completed) : null }"
+         x-data="{ percent: {{ progress_display.percent|default_if_none:current_instance.watched_once_percentage }}, rewatch: {{ progress_display.rewatch_percent|default_if_none:'null' }}, offset: {{ progress_display.rewatch_offset|unlocalize }}, width: {{ progress_display.rewatch_width|unlocalize }}, label: '{{ progress_display.rewatch_label|escapejs }}', runKey: '{{ progress_display.run_key|escapejs }}', open: false, failed: false }"
+         @detail-progress-updated.window="if ($event.detail.tv_id === {% if media_type == 'season' %}{{ current_instance.related_tv_id }}{% else %}{{ current_instance.id }}{% endif %} || ($event.detail.id === {{ current_instance.id }} &amp;&amp; '{{ media_type }}' === 'season')) { htmx.ajax('GET', '{{ progress_url }}', { target: '#progress-breakdown-{{ current_instance.id }}-{{ media_type }}', swap: 'innerHTML' }) }"
+         @rewatch-progress-resolved.window="if ($event.detail.id === {{ current_instance.id }} &amp;&amp; $event.detail.media_type === '{{ media_type }}') { const data = $event.detail; if (data.percent !== null) percent = data.percent; rewatch = data.rewatch; offset = data.offset; width = data.width; label = data.label; runKey = data.run_key }"
          @keydown.escape.window="open = false">
       <button type="button"
               class="detail-progress-card w-full cursor-pointer text-left"
-              hx-get="{% if media_type == 'season' %}{% url 'season_progress_breakdown' current_instance.id %}{% else %}{% url 'tv_progress_breakdown' current_instance.id %}{% endif %}"
+              hx-get="{{ progress_url }}"
               hx-target="#progress-breakdown-{{ current_instance.id }}-{{ media_type }}"
               hx-swap="innerHTML"
               @click="open = true; failed = false"
               @htmx:response-error="failed = true"
               @htmx:send-error="failed = true"
               aria-haspopup="dialog"
+              :aria-description="label"
               aria-label="{% translate 'Your progress' %}">
         <span class="detail-progress-card__title">{% translate "Your Progress" %}<span class="detail-progress-card__sub"
       x-show="rewatch !== null"
       x-cloak
-      x-text="'{% translate 'Rewatching' %} · ' + rewatch + '%'">
-          {% if current_instance.rewatch_percentage is not None %}
-            {% translate "Rewatching" %} &middot; {{ current_instance.rewatch_percentage }}%
-          {% endif %}
+      x-text="label">{{ progress_display.rewatch_label }}
         </span></span>
         <span class="detail-progress-card__bar"
               role="progressbar"
@@ -31,10 +32,19 @@
               aria-valuemin="0"
               aria-valuemax="100"
               :aria-valuenow="percent"><span :style="{ width: percent + '%' }"></span><span class="progress-glow"
+      x-show="rewatch !== null &amp;&amp; width > 0"
+      x-cloak
+      :style="{ left: offset + '%', width: width + '%' }"
+      aria-hidden="true"></span></span>
+        <span class="sr-only"
       x-show="rewatch !== null"
       x-cloak
-      :style="{ width: (rewatch || 0) + '%' }"></span></span>
-        <strong class="detail-progress-card__value" x-text="percent + '%'">{{ current_instance.watched_once_percentage }}%</strong>
+      role="progressbar"
+      :aria-label="label"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      :aria-valuenow="rewatch"></span>
+        <strong class="detail-progress-card__value" x-text="percent + '%'">{{ progress_display.percent|default_if_none:current_instance.watched_once_percentage }}%</strong>
       </button>
       {# The card row clips overflow, so the tip is teleported to the body and placed from the icon's position. #}
       <div class="absolute right-3 top-3 z-10"
@@ -74,13 +84,28 @@
             <div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
               <h2 id="progress-breakdown-title-{{ current_instance.id }}-{{ media_type }}"
                   class="min-w-0 truncate text-base font-semibold text-[var(--color-text)]">
-                {% translate "Your Progress" %} &middot; {{ current_instance.item.title }}
+                {% translate "Your Progress" %} · {{ current_instance.item.title }}
               </h2>
-              <button type="button"
+              <div class="flex shrink-0 items-center gap-3">
+                <form x-show="runKey !== ''"
+                      x-cloak
+                      hx-post="{% url 'cancel_progress_rewatch' %}"
+                      hx-target="#progress-breakdown-{{ current_instance.id }}-{{ media_type }}"
+                      hx-swap="innerHTML">
+                  {% csrf_token %}
+                  <input type="hidden" name="media_type" value="{{ media_type }}">
+                  <input type="hidden" name="instance_id" value="{{ current_instance.id }}">
+                  <input type="hidden" name="run_key" :value="runKey">
+                  <button type="submit"
+                          class="cursor-pointer text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:underline"
+                          hx-disabled-elt="this">{% translate "Cancel rewatch" %}</button>
+                </form>
+                <button type="button"
                       x-ref="close"
                       class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)]"
                       aria-label="{% translate 'Close' %}"
                       @click="open = false">{% include "app/icons/x.svg" with classes="h-5 w-5" %}</button>
+              </div>
             </div>
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
               <p x-show="failed"

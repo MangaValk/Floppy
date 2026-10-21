@@ -91,6 +91,7 @@ from app.models.provider_credential import (
     InstanceProviderCredential,
     UserProviderCredential,
 )
+from app.models.rewatch import RewatchCancellation
 from app.models.statistics import (
     StatisticsDirtyDay,
     StatisticsSnapshot,
@@ -183,6 +184,7 @@ __all__ = [
     "ProgressChangeKind",
     "ProviderMetadataStatus",
     "RewatchAlreadyCompleteError",
+    "RewatchCancellation",
     "Season",
     "Sources",
     "StatisticsDirtyDay",

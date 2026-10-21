@@ -151,6 +151,7 @@ SpecialModels = [
     "StatisticsSnapshot",
     "StatisticsSyncState",
     "GameArtwork",
+    "RewatchCancellation",
 ]
 for model in app_models:
     if (
