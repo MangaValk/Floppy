@@ -175,6 +175,12 @@ class CollectionView(drf_views.APIView):
         entry.user = request.user
         entry.item = item
         entry.save()
+        collected_at = form.cleaned_data.get("collected_at")
+        if collected_at:
+            CollectionEntry.objects.filter(id=entry.id).update(
+                collected_at=collected_at
+            )
+            entry.collected_at = collected_at
         return Response(
             serialize_data(entry, serializer_class=CollectionEntrySerializer),
             status=HTTP.CREATED,
@@ -236,6 +242,12 @@ class CollectionEntryView(drf_views.APIView):
             )
 
         entry = form.save()
+        collected_at = form.cleaned_data.get("collected_at")
+        if collected_at:
+            CollectionEntry.objects.filter(id=entry.id).update(
+                collected_at=collected_at
+            )
+            entry.collected_at = collected_at
         return Response(
             serialize_data(entry, serializer_class=CollectionEntrySerializer),
             status=HTTP.OK,
