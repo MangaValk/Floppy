@@ -20,6 +20,8 @@ name: Merge Train
 #
 # Needs the AUTO_MERGE_TOKEN secret (Pull requests and Contents read/write): a
 # branch updated with the built-in token does not start CI.
+# Maintainer edit permission on a fork does not guarantee this token can update
+# its branch. On a GitHub refusal, the contributor has to merge latest manually.
 
 on:
   push:
