@@ -1669,6 +1669,10 @@ html.light .theme-toggle-icon-moon {
     padding-top: 3.25rem;
   }
 
+  .detail-carousel-grid.detail-hero-pending .detail-carousel-grid__title {
+    padding-top: 3.25rem;
+  }
+
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title h1 {
     position: absolute;
     width: 1px;
@@ -1810,6 +1814,10 @@ html.light .theme-toggle-icon-moon {
   }
 
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title {
+    padding-top: 6.75rem;
+  }
+
+  .detail-carousel-grid.detail-hero-pending .detail-carousel-grid__title {
     padding-top: 6.75rem;
   }
 
@@ -2323,6 +2331,25 @@ html.light .theme-toggle-icon-moon {
 
   .detail-carousel-grid__header {
     margin-top: 0;
+  }
+
+  /* Deferred galleries reserve their final rows before HTMX responds. The
+     hidden preview and strip keep the initial grid from switching after the
+     poster and metadata have already painted. */
+  .detail-carousel-pending {
+    visibility: hidden;
+  }
+
+  .detail-carousel-grid.detail-hero-pending #detail-carousel-logo-slot {
+    display: flex;
+    align-items: flex-end;
+    min-height: 7rem;
+  }
+
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) #detail-carousel-logo-slot:has(.detail-carousel-overview-logo) {
+    display: flex;
+    align-items: flex-end;
+    min-height: 7rem;
   }
 
   /* Carousel confirmed non-empty: expand to the carousel's own two-row
