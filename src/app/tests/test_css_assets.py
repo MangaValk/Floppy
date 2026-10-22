@@ -117,9 +117,10 @@ class PhoneLayoutCssContractTests(SimpleTestCase):
         "hero logo centres on the content box, not the full-bleed hero": (
             r"left: calc\(50% \+ \(var\(--hero-gutter-l\) - var\(--hero-gutter-r\)\) / 2\)"
         ),
-        "touch screens share phone card widths in either orientation": (
-            r"\(pointer: coarse\) and \(max-width: 1600px\) and "
-            r"\(max-height: 1100px\)"
+        "phones share card widths in either orientation": (
+            r"\(max-width: 600px\), \(orientation: landscape\) and "
+            r"\(pointer: coarse\) and \(max-width: 1000px\) and "
+            r"\(max-height: 720px\)"
         ),
         "compact cards keep the narrow phone size": r"--card-cap: 6\.75rem",
         "comfortable cards keep a fixed size": r"--card-cap: 10\.5rem",

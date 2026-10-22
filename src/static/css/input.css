@@ -4249,8 +4249,10 @@ html.light .theme-toggle-icon-moon {
 
 /* Keep phone cards the same size when rotating or unfolding: extra width
    reveals more cards. Only screens too narrow for the preferred column count
-   reduce the size. Touch tablets share these widths in either orientation. */
-@media (max-width: 768px), (pointer: coarse) and (max-width: 1600px) and (max-height: 1100px), (hover: none) and (max-width: 1600px) and (max-height: 1100px) {
+   reduce the size. Tablets keep the desktop card size: their extra room goes
+   to more cards, not smaller ones, and phone-sized cards leave the progress
+   controls wider than the card. */
+@media (max-width: 600px), (orientation: landscape) and (pointer: coarse) and (max-width: 1000px) and (max-height: 720px), (orientation: landscape) and (hover: none) and (max-width: 1000px) and (max-height: 720px) {
   body {
     --card-cols: 3;
     --card-cap: 6.75rem;
