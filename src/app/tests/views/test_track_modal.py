@@ -23,6 +23,7 @@ from app.models import (
     DiscoverFeedbackType,
     Episode,
     Item,
+    ItemTag,
     MediaTypes,
     MetadataProviderPreference,
     Movie,
@@ -33,6 +34,7 @@ from app.models import (
     Season,
     Sources,
     Status,
+    Tag,
 )
 from app.providers import services
 from app.services.metadata_resolution import MetadataResolutionResult
@@ -354,6 +356,60 @@ class TrackModalViewTests(TestCase):
         self.assertContains(response, "showMonthsView", html=False)
         self.assertContains(response, "showYearsView", html=False)
         self.assertNotContains(response, "Custom Metadata")
+
+    def test_track_modal_renders_tags_tab_for_tracked_media(self):
+        """The edit modal exposes tag management in its own tab."""
+        tag = Tag.objects.create(user=self.user, name="Favourite")
+        ItemTag.objects.create(tag=tag, item=self.item)
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "238",
+                },
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["tags_tab_available"])
+        self.assertContains(response, "@click=\"activeTab = 'tags'\"")
+        self.assertContains(response, "Favourite")
+        self.assertContains(response, 'name="tag_surface"')
+        self.assertContains(response, 'value="track"')
+        self.assertNotContains(response, "tagsOpen = false")
+
+    @patch("app.providers.services.get_media_metadata")
+    def test_track_modal_omits_tags_tab_for_untracked_media(
+        self,
+        mock_get_metadata,
+    ):
+        """Without an item row there is nothing to attach tags to yet."""
+        mock_get_metadata.return_value = {
+            "media_id": "278",
+            "title": "New Movie",
+            "media_type": MediaTypes.MOVIE.value,
+            "source": Sources.TMDB.value,
+            "image": "http://example.com/image.jpg",
+            "max_progress": 1,
+        }
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                kwargs={
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.MOVIE.value,
+                    "media_id": "278",
+                },
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["tags_tab_available"])
+        self.assertNotContains(response, "@click=\"activeTab = 'tags'\"")
 
     def test_session_history_row_opens_standard_modal_for_instance(self):
         """Session rows preserve the tracked instance when opening the editor."""
