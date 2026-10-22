@@ -604,6 +604,8 @@ class Media(models.Model):
         if self.item.media_type == MediaTypes.SEASON.value and season_number:
             # For a Season: query episodes in this season where episode_number > progress
             # Only count episodes that have actually been released (have aired)
+            from events.models import released_q
+
             current_datetime = timezone.now()
             unwatched_episodes = (
                 Item.objects.filter(
@@ -614,8 +616,8 @@ class Media(models.Model):
                     episode_number__gt=self.progress,
                     runtime_minutes__isnull=False,
                     release_datetime__isnull=False,  # Only count episodes with air dates
-                    release_datetime__lte=current_datetime,  # Only count episodes that have aired
                 )
+                .filter(released_q("release_datetime", current_datetime))
                 .exclude(
                     runtime_minutes=RUNTIME_UNKNOWN_FAILED,  # Exclude placeholder for unknown runtime
                 )

@@ -1825,6 +1825,8 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
 
     def _annotate_next_event(self, media_list):
         """Annotate next_event for media items."""
+        from events.models import is_released_datetime
+
         current_time = timezone.now()
 
         for media in media_list:
@@ -1835,7 +1837,7 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     for event in getattr(media.item, "prefetched_events", [])
                     # Digital and physical dates are per region, so only the
                     # main release counts as a card's next event.
-                    if event.datetime > current_time
+                    if not is_released_datetime(event.datetime, current_time)
                     and not getattr(event, "release_type", "")
                 ],
                 key=lambda e: e.datetime,
@@ -2023,11 +2025,15 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
 
         item_ids = [media.item.id for media in media_list]
 
+        from events.models import released_q
+
         # Fetch all relevant events in a single query
         events_data = events.models.Event.objects.filter(
             item_id__in=item_ids,
-            datetime__lte=current_datetime,
-        ).values("item_id", "content_number")
+        ).filter(released_q("datetime", current_datetime)).values(
+            "item_id",
+            "content_number",
+        )
 
         # Process events to find max content number per item
         for event in events_data:
@@ -2168,15 +2174,31 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
 
         released_by_show: dict[tuple[str, str], dict[int, int]] = defaultdict(dict)
 
+        from events.models import released_q
+
+        # The calendar event is the authoritative air time for an episode.
+        # Item.release_datetime is a fallback for episodes the calendar has
+        # not dated, and it may still be a date-only value from another write
+        # path; letting it participate here is what released an episode on its
+        # listed day even when a precise event said it airs hours later.
+        existing_event = events.models.Event.objects.filter(
+            item__media_id=OuterRef("media_id"),
+            item__source=OuterRef("source"),
+            item__media_type=MediaTypes.SEASON.value,
+            item__season_number=OuterRef("season_number"),
+            content_number=OuterRef("episode_number"),
+        )
+
         episode_rows = (
             Item.objects.filter(
                 media_type=MediaTypes.EPISODE.value,
                 media_id__in=media_ids,
                 source__in=media_sources,
                 release_datetime__isnull=False,
-                release_datetime__lte=current_datetime,
                 season_number__gt=0,
             )
+            .exclude(Exists(existing_event))
+            .filter(released_q("release_datetime", current_datetime))
             .values("media_id", "source", "season_number")
             .annotate(max_episode=models.Max("episode_number"))
         )
@@ -2196,9 +2218,9 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 item__source__in=media_sources,
                 item__media_type=MediaTypes.SEASON.value,
                 item__season_number__gt=0,
-                datetime__lte=current_datetime,
                 content_number__isnull=False,
             )
+            .filter(released_q("datetime", current_datetime))
             .exclude(datetime__year__lt=1900)
             .values(
                 "item__media_id",
@@ -2346,6 +2368,17 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
 
         released_by_season: dict[tuple[str, str, int], int] = {}
 
+        from events.models import released_q
+
+        # Events win over item fallbacks; see _annotate_tv_released_episodes.
+        existing_event = events.models.Event.objects.filter(
+            item__media_id=OuterRef("media_id"),
+            item__source=OuterRef("source"),
+            item__media_type=MediaTypes.SEASON.value,
+            item__season_number=OuterRef("season_number"),
+            content_number=OuterRef("episode_number"),
+        )
+
         episode_rows = (
             Item.objects.filter(
                 media_type=MediaTypes.EPISODE.value,
@@ -2353,8 +2386,9 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 source__in=media_sources,
                 season_number__in=season_numbers,
                 release_datetime__isnull=False,
-                release_datetime__lte=current_datetime,
             )
+            .exclude(Exists(existing_event))
+            .filter(released_q("release_datetime", current_datetime))
             .values("media_id", "source", "season_number")
             .annotate(max_episode=models.Max("episode_number"))
         )
@@ -2370,9 +2404,9 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 item__source__in=media_sources,
                 item__media_type=MediaTypes.SEASON.value,
                 item__season_number__in=season_numbers,
-                datetime__lte=current_datetime,
                 content_number__isnull=False,
             )
+            .filter(released_q("datetime", current_datetime))
             .exclude(datetime__year__lt=1900)
             .values(
                 "item__media_id",

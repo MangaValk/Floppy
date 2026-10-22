@@ -2604,6 +2604,8 @@ def sort_home_entries(
         without_recent = [e for e in entries if _entry_recent_timestamp(e) is None]
         with_recent.sort(key=_entry_recent_timestamp, reverse=descending)
 
+        from events.models import is_released_datetime
+
         now = timezone.now()
 
         def _unstarted_recent_key(entry):
@@ -2612,7 +2614,7 @@ def sort_home_entries(
             if release_dt is None:
                 return (2, 0, title)
             timestamp = release_dt.timestamp()
-            if release_dt <= now:
+            if is_released_datetime(release_dt, now):
                 return (0, -timestamp, title)
             return (1, timestamp, title)
 
@@ -2777,10 +2779,12 @@ def _upcoming_values(user, candidates, direction):
 
 def _release_rank(item, now):
     """Return (group, key) ordering unstarted items: released, upcoming, undated."""
+    from events.models import is_released_datetime
+
     release_dt = _coerce_datetime(_entry_release_date(item))
     if release_dt is None:
         return (2, 0)
-    if release_dt <= now:
+    if is_released_datetime(release_dt, now):
         return (0, -release_dt.timestamp())
     return (1, release_dt.timestamp())
 
@@ -2815,8 +2819,10 @@ def _recent_sql_order(ctx, seed, direction):
             ),
         ).values("value")[:1],
     )
-    released = Q(release_datetime__lte=now)
-    upcoming = Q(release_datetime__gt=now)
+    from events.models import released_q
+
+    released = released_q("release_datetime", now)
+    upcoming = Q(release_datetime__isnull=False) & ~released
     descending = direction == DirectionChoices.DESC
     recent_key = F("_home_recent")
     return (

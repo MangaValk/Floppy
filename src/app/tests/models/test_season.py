@@ -16,6 +16,8 @@ from app.models import (
     Sources,
     Status,
 )
+from events.calendar.helpers import date_parser
+from events.models import Event
 from users.models import QuickWatchDateChoices
 
 mock_path = Path(__file__).resolve().parent.parent / "mock_data"
@@ -1017,16 +1019,14 @@ class SeasonEpisodeItemModelTests(TestCase):
         )
 
     @override_settings(TIME_ZONE="Europe/Berlin")
-    def test_get_episode_item_anchors_date_only_air_date_to_utc(self):
+    def test_get_episode_item_keeps_date_only_air_date_on_its_calendar_day(self):
         """A date-only air_date must not shift with the server's TIME_ZONE.
 
         Regression test: get_episode_item() used to interpret a "YYYY-MM-DD"
-        air_date as midnight in the server's configured TIME_ZONE rather
-        than UTC. Under a positive-offset zone like Europe/Berlin (+2h in
-        summer), that shifted the stored release_datetime into the previous
-        UTC day - e.g. an episode that airs 2026-07-15 got stored as
-        2026-07-14 22:00 UTC, so any page or comparison that reads the date
-        component in UTC showed the wrong calendar day.
+        air_date as midnight in a timezone, which either shifted the stored
+        release_datetime into the previous UTC day or made release state treat
+        the episode as released part-way through its listed date. Date-only
+        values use the unknown-time sentinel so the calendar day is stable.
         """
         item = self.season.get_episode_item(
             5,
@@ -1043,10 +1043,24 @@ class SeasonEpisodeItemModelTests(TestCase):
 
         self.assertEqual(
             item.release_datetime,
-            datetime(2026, 7, 15, 0, 0, tzinfo=UTC),
-            "a date-only air_date must be stored as UTC midnight, "
+            date_parser("2026-07-15"),
+            "a date-only air_date must use the unknown-time sentinel, "
             "regardless of the server's configured TIME_ZONE",
         )
+        self.assertEqual(item.release_datetime.date().isoformat(), "2026-07-15")
+
+    def test_available_episode_numbers_waits_for_a_date_only_release_day_to_end(self):
+        """A date-only episode is not available on its listed day."""
+        today = timezone.localdate()
+        Event.objects.create(
+            item=self.season.item,
+            content_number=1,
+            datetime=date_parser(today),
+        )
+        now = datetime(today.year, today.month, today.day, 14, tzinfo=UTC)
+
+        with patch("django.utils.timezone.now", return_value=now):
+            self.assertEqual(self.season.available_episode_numbers(), [])
 
     def test_get_episode_item_updates_existing_item_with_episode_title(self):
         """Episode items should store the episode title instead of the show title."""

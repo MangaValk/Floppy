@@ -61,6 +61,7 @@ from app.models import (
 from app.providers import services, tmdb
 from app.services import game_lengths as game_length_services
 from app.services.metadata_resolution import AnimeTMDBIdentity, MetadataResolutionResult
+from events.calendar.helpers import date_parser
 from integrations.models import PlexAccount
 from lists.models import CustomList, CustomListItem
 from users.models import DateFormatChoices, RatingScaleChoices, TimeFormatChoices
@@ -8438,7 +8439,7 @@ class MediaDetailsViewTests(TestCase):
         stale_episode.refresh_from_db()
         self.assertEqual(
             stale_episode.release_datetime,
-            datetime(2023, 1, 8, tzinfo=UTC),
+            date_parser("2023-01-08"),
             "a NULL release_datetime must self-heal from the live payload",
         )
 
@@ -8451,7 +8452,7 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertEqual(
             new_episode.release_datetime,
-            datetime(2023, 1, 15, tzinfo=UTC),
+            date_parser("2023-01-15"),
             "a newly created episode must get release_datetime from the same payload",
         )
         self.assertIsNone(
@@ -8484,19 +8485,18 @@ class MediaDetailsViewTests(TestCase):
     @override_settings(TIME_ZONE="Europe/Berlin")
     @patch("app.providers.services.get_media_metadata")
     @patch("app.providers.tmdb.process_episodes")
-    def test_season_details_persists_date_only_air_date_as_utc_regardless_of_server_timezone(
+    def test_season_details_persists_date_only_air_date_as_unknown_time(
         self,
         mock_process_episodes,
         mock_get_metadata,
     ):
-        """A date-only air_date must not shift with the server's TIME_ZONE.
+        """A date-only air_date must not shift or look released early.
 
         Regression test: the per-episode self-heal loop used to interpret a
-        "YYYY-MM-DD" air_date as midnight in the server's configured
-        TIME_ZONE rather than UTC. Under a positive-offset zone like
-        Europe/Berlin (+2h in summer), that shifted the stored
-        release_datetime into the previous UTC day - e.g. an episode airing
-        2026-07-15 got stored as 2026-07-14 22:00 UTC.
+        "YYYY-MM-DD" air_date as midnight in a timezone, which either shifted
+        the stored release_datetime into the previous UTC day or made release
+        state treat the episode as released part-way through its listed date.
+        Date-only values now use the unknown-time sentinel.
         """
         tv_item = Item.objects.create(
             media_id="1668",
@@ -8574,8 +8574,8 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertEqual(
             new_episode.release_datetime,
-            datetime(2026, 7, 15, 0, 0, tzinfo=UTC),
-            "a date-only air_date must be stored as UTC midnight, "
+            date_parser("2026-07-15"),
+            "a date-only air_date must use the unknown-time sentinel, "
             "regardless of the server's configured TIME_ZONE",
         )
 

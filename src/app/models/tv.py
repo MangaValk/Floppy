@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from datetime import UTC
 
@@ -1063,6 +1064,8 @@ class Season(Media):
         else:
             event_rows = prefetched_events
 
+        from events.models import is_released_datetime
+
         now = timezone.now()
         episode_numbers = set()
         for event in event_rows:
@@ -1070,7 +1073,10 @@ class Season(Media):
             event_datetime = getattr(event, "datetime", None)
             if episode_number is None or event_datetime is None:
                 continue
-            if event_datetime.year < MIN_VALID_RELEASE_YEAR or event_datetime > now:
+            if (
+                event_datetime.year < MIN_VALID_RELEASE_YEAR
+                or not is_released_datetime(event_datetime, now)
+            ):
                 continue
             try:
                 episode_numbers.add(int(episode_number))
@@ -1731,12 +1737,15 @@ class Season(Media):
         episode_numbers.discard(None)
 
         # Best local hint for total episodes: release events in the DB
+        from events.models import released_q
+
         total_eps = (
             events.models.Event.objects.filter(
                 item=self.item,
                 content_number__isnull=False,
-                datetime__lte=timezone.now(),
-            ).aggregate(max_ep=Max("content_number"))["max_ep"]
+            )
+            .filter(released_q("datetime", timezone.now()))
+            .aggregate(max_ep=Max("content_number"))["max_ep"]
             or 0
         )
         local_total = self.item.local_season_episode_count or 0
@@ -2112,34 +2121,20 @@ class Season(Media):
             # Extract release_datetime from episode air_date
             air_date = matched_episode.get("air_date")
             if air_date:
-                from datetime import UTC, datetime
+                from events.calendar.helpers import date_parser
 
-                from django.utils import timezone
-
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     # Providers return a date-only value (TMDB as a
                     # "YYYY-MM-DD" string, TVDB sometimes as a naive
                     # datetime) with no real-world timezone attached - it's
-                    # a calendar date, not a local wall-clock moment. Anchor
-                    # it to UTC rather than the server's configured
-                    # TIME_ZONE: using the server's local zone here shifted
-                    # dates by that zone's UTC offset (e.g. Europe/Berlin's
-                    # +2h in summer pushed a July 15 air date to July 14
-                    # 22:00 UTC), which can flip the calendar date shown to
-                    # users depending on deployment timezone.
-                    if isinstance(air_date, str):
-                        date_obj = datetime.strptime(air_date, "%Y-%m-%d")  # noqa: DTZ007  # date-only value; no timezone applies
-                        release_datetime = date_obj.replace(tzinfo=UTC)
-                    elif hasattr(air_date, "year"):
-                        # Already a datetime object
-                        release_datetime = (
-                            air_date
-                            if timezone.is_aware(air_date)
-                            else air_date.replace(tzinfo=UTC)
-                        )
-                except (ValueError, TypeError):
-                    # If parsing fails, keep release_datetime as None
-                    pass
+                    # a calendar date, not a local wall-clock moment. Store
+                    # the unknown-time sentinel so release state treats it as
+                    # an all-day date instead of counting it from midday UTC.
+                    release_datetime = (
+                        air_date
+                        if hasattr(air_date, "year") and timezone.is_aware(air_date)
+                        else date_parser(air_date)
+                    )
 
         # An episode's library bucket should mirror the show's grouping bucket
         # (e.g. 'tv'/'anime' for grouped anime), never the season's own 'season'

@@ -60,6 +60,51 @@ class SentinelDatetime:
     MICROSECOND = 999999
 
 
+def _unknown_time_q(field_name):
+    """Match a datetime carrying the date-only sentinel time.
+
+    DateTimeField extracts its parts in the active timezone, so the sentinel's
+    11:59:59 UTC hour is not stable: it becomes 12:59 or 13:59 in Europe.
+    Minute and second survive a timezone shift, and provider air times sit on
+    minute boundaries, so matching :59:59 identifies the sentinel portably.
+    """
+    return Q(
+        **{
+            f"{field_name}__minute": SentinelDatetime.MINUTE,
+            f"{field_name}__second": SentinelDatetime.SECOND,
+        },
+    )
+
+
+def released_q(field_name, now=None):
+    """Return a Q matching datetimes whose release moment has passed.
+
+    A provider that knows only the release date stores the sentinel time. That
+    value is an all-day date, not an instant: it counts as released once the
+    date has ended in the active timezone. Comparing it directly with ``now``
+    made an episode released at the sentinel's midday time on its listed date,
+    which is the day before it airs for users east of UTC (#1588).
+    """
+    now = now or timezone.now()
+    return Q(**{f"{field_name}__lte": now}) & ~(
+        _unknown_time_q(field_name)
+        & Q(**{f"{field_name}__date__gte": timezone.localdate(now)})
+    )
+
+
+def is_released_datetime(value, now=None):
+    """Return whether a stored release datetime has passed."""
+    if value is None:
+        return False
+    now = now or timezone.now()
+    if (
+        value.minute == SentinelDatetime.MINUTE
+        and value.second == SentinelDatetime.SECOND
+    ):
+        return timezone.localtime(value).date() < timezone.localdate(now)
+    return value <= now
+
+
 # Columns dedupe_cross_provider_items reads; every other Item column is skipped.
 _DEDUPE_ITEM_FIELDS = (
     "id",
@@ -276,7 +321,9 @@ class EventManager(models.Manager):
                 media_type=MediaTypes.ANIME.value,
                 source=Sources.MAL.value,
                 anime__user=user,
-            ).exclude(anime__status__in=INACTIVE_TRACKING_STATUSES),
+            )
+            .exclude(anime__status__in=INACTIVE_TRACKING_STATUSES)
+            .only(*_DEDUPE_ITEM_FIELDS, "title"),
         )
         if not active_anime_items:
             return set()
@@ -383,7 +430,9 @@ class Event(models.Model):
 
     item = models.ForeignKey(Item, on_delete=models.CASCADE)
     content_number = models.IntegerField(null=True)
-    datetime = models.DateTimeField()
+    # The calendar filters a single month out of every event ever stored.
+    # Without this index SQLite scans the whole table (EXPLAIN: SCAN events_event).
+    datetime = models.DateTimeField(db_index=True)
     # Blank for the item's main release date. Digital and physical dates differ
     # per country, so those events also carry the region they apply to and only
     # show for users whose watch provider region matches.

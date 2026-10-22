@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, time, timedelta
 from unittest import mock
 
 from django.conf import settings
@@ -1904,6 +1904,41 @@ class MediaListViewTests(TestCase):
             ],
             ["Caught Up TV"],
         )
+
+    def test_tv_progress_ignores_date_only_episode_on_its_release_date(self):
+        """An episode with only a release date is not released that morning."""
+        from events.calendar.helpers import date_parser
+
+        self._create_tv_seasonal_entry(
+            "tv-unknown-time-release",
+            "Unknown Time Release TV",
+            [
+                {
+                    "season_number": 1,
+                    "status": Status.IN_PROGRESS.value,
+                    "released_episodes": 2,
+                    "watched_episodes": 1,
+                },
+            ],
+        )
+        today = timezone.localdate()
+        episode = Item.objects.get(
+            media_id="tv-unknown-time-release",
+            media_type=MediaTypes.EPISODE.value,
+            episode_number=2,
+        )
+        episode.release_datetime = date_parser(today)
+        episode.save(update_fields=["release_datetime"])
+
+        now = datetime.combine(today, time(14, 0), tzinfo=UTC)
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            response = self.client.get(
+                f"{reverse('medialist', args=[MediaTypes.TV.value])}"
+                "?progress=not_caught_up",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["media_list"].paginator.count, 0)
 
     def test_tv_progress_filter_ignores_dropped_seasons(self):
         """Dropped seasons should not keep a fully released show out of caught-up."""

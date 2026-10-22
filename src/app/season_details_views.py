@@ -436,6 +436,9 @@ def season_details(
         # tracking-user lookup) that are identical for every episode in the
         # same season — an N+1 that only shows up on a season's first view,
         # when every episode is being created for the first time.
+        from events.calendar.helpers import date_parser
+        from events.models import is_released_datetime
+
         parsed_episodes = []
         episode_numbers = []
         for episode in raw_episodes:
@@ -452,16 +455,20 @@ def season_details(
             # even once the provider does have its air date.
             raw_air_date = episode.get("air_date")
             # Episode provider dates are calendar dates, even when a provider
-            # has already wrapped one in a datetime. Persist UTC midnight so a
-            # shared Item does not depend on the timezone of the first viewer.
+            # has already wrapped one in a datetime. Persist the unknown-time
+            # sentinel so a shared Item does not depend on the timezone of the
+            # first viewer, and release state treats it as an all-day date.
             normalized_air_date = (
-                raw_air_date.date().isoformat()
+                raw_air_date.date()
                 if isinstance(raw_air_date, datetime)
                 else raw_air_date
             )
-            air_date_dt = helpers.extract_release_datetime(
-                {"release_date": normalized_air_date},
-            )
+            try:
+                air_date_dt = (
+                    date_parser(normalized_air_date) if normalized_air_date else None
+                )
+            except (ValueError, TypeError):
+                air_date_dt = None
             if air_date_dt and (
                 air_date_dt.year <= MIN_PLAUSIBLE_YEAR
                 or air_date_dt.year == UNKNOWN_RELEASE_YEAR
@@ -535,7 +542,7 @@ def season_details(
                 runtime_minutes = (
                     int(episode["runtime"]) if episode["runtime"] > 0 else None
                 )
-            elif air_date_dt and air_date_dt <= current_datetime:
+            elif air_date_dt and is_released_datetime(air_date_dt, current_datetime):
                 # Episode has aired but no runtime - mark as unknown (use 999998)
                 runtime_minutes = 999998
 

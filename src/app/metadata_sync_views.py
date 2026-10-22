@@ -1799,7 +1799,24 @@ def sync_metadata(request, source, media_type, media_id, season_number=None):
                             hasattr(air_date, "year")
                             and air_date.year > MIN_PLAUSIBLE_AIR_YEAR
                         ):
-                            episode_item.release_datetime = air_date
+                            local_air_date = timezone.localtime(air_date)
+                            if (
+                                local_air_date.hour,
+                                local_air_date.minute,
+                                local_air_date.second,
+                                local_air_date.microsecond,
+                            ) == (0, 0, 0, 0):
+                                # process_episodes anchors a date-only value at
+                                # local midnight. Store the unknown-time
+                                # sentinel so release state treats it as an
+                                # all-day date, not as released at midnight.
+                                from events.calendar.helpers import date_parser
+
+                                episode_item.release_datetime = date_parser(
+                                    local_air_date.date(),
+                                )
+                            else:
+                                episode_item.release_datetime = air_date
                         else:
                             episode_item.release_datetime = None
                     # If air_date is None, don't update release_datetime (keep existing or None)
