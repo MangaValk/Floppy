@@ -623,6 +623,7 @@ def build_episode_play_domain(
             Sources.POCKETCASTS.value,
             Sources.GPODDER.value,
             Sources.AUDIOBOOKSHELF.value,
+            Sources.MANUAL.value,
         }:
             return None
         show = podcast_show or PodcastShow.objects.filter(podcast_uuid=media_id).first()

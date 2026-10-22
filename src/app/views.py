@@ -151,6 +151,7 @@ from app.forms import (
     CollectionEntryForm,
     EpisodeForm,
     ManualItemForm,
+    PodcastShowTrackerForm,
     get_form_class,
 )
 from app.history_views import (
@@ -1255,6 +1256,43 @@ def music_bulk_save(request):
     return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))
 
 
+def _create_manual_podcast_show(request, form):
+    """Create a manual podcast as a show plus the user's show tracker.
+
+    Podcasts are tracked at the show level (PodcastShow/PodcastShowTracker), so
+    a custom entry has to create those instead of the legacy per-episode Item
+    and Podcast rows the generic manual path would otherwise produce.
+    """
+    updated_request = request.POST.copy()
+    updated_request["show_id"] = "0"
+    tracker_form = PodcastShowTrackerForm(updated_request, user=request.user)
+
+    if not tracker_form.is_valid():
+        logger.error(tracker_form.errors.as_json())
+        helpers.form_error_messages(tracker_form, request)
+        return redirect("create_entry")
+
+    item = form.save()
+    show = PodcastShow.objects.create(
+        podcast_uuid=item.media_id,
+        source=Sources.MANUAL.value,
+        title=item.title,
+        image=item.image or "",
+        description=item.synopsis or "",
+    )
+
+    tracker = tracker_form.save(commit=False)
+    tracker.user = request.user
+    tracker.show = show
+    tracker.save()
+
+    msg = gettext("%(value_1)s added successfully.") % {"value_1": item}
+    messages.success(request, msg)
+    logger.info(msg)
+
+    return redirect("create_entry")
+
+
 @require_http_methods(["GET", "POST"])
 def create_entry(request):
     """Return the form for manually adding media items."""
@@ -1276,6 +1314,9 @@ def create_entry(request):
         logger.error(form.errors.as_json())
         helpers.form_error_messages(form, request)
         return redirect("create_entry")
+
+    if form.cleaned_data["media_type"] == MediaTypes.PODCAST.value:
+        return _create_manual_podcast_show(request, form)
 
     # Try to save the item
     try:

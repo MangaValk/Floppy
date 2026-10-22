@@ -10681,6 +10681,42 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, "Episode One")
         self.assertNotContains(response, "Mark All Played")
 
+    def test_manual_podcast_show_media_details_renders(self):
+        """A custom podcast show opens the modern show page, not a 404 (#1624)."""
+        show = PodcastShow.objects.create(
+            podcast_uuid="manual-show-uuid",
+            source=Sources.MANUAL.value,
+            title="Custom Podcast",
+            image="http://example.com/podcast.jpg",
+        )
+        PodcastShowTracker.objects.create(
+            user=self.user,
+            show=show,
+            status=Status.IN_PROGRESS.value,
+        )
+        PodcastEpisode.objects.create(
+            show=show,
+            episode_uuid="manual-episode-1",
+            title="Manual Episode",
+            duration=1800,
+        )
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.MANUAL.value,
+                    "media_type": MediaTypes.PODCAST.value,
+                    "media_id": show.podcast_uuid,
+                    "title": "custom-podcast",
+                },
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Custom Podcast")
+        self.assertContains(response, "Manual Episode")
+
     def test_detail_action_track_modal_is_cloaked(self):
         """The detail page's track modal must not flash before Alpine hides it.
 

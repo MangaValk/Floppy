@@ -1206,6 +1206,7 @@ def track_modal(
             Sources.POCKETCASTS.value,
             Sources.GPODDER.value,
             Sources.AUDIOBOOKSHELF.value,
+            Sources.MANUAL.value,
         }
     ):
         from app.models import PodcastEpisode

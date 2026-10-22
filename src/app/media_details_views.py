@@ -368,6 +368,7 @@ def media_details(
         Sources.POCKETCASTS.value,
         Sources.GPODDER.value,
         Sources.AUDIOBOOKSHELF.value,
+        Sources.MANUAL.value,
     }:
         from app.models import PodcastEpisode, PodcastShow, PodcastShowTracker
         from app.providers.services import _podcast_external_links
