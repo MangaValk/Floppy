@@ -125,6 +125,32 @@ class StatisticsLayoutTests(SerialStaticLiveServerTestCase):
                 )
                 self.assertTrue(inside)
 
+    def test_boosted_sidebar_navigation_initialises_the_page(self):
+        # hx-boost swaps the body, and Alpine used to run before the externally
+        # loaded date-range.js, leaving the whole component uninitialised (#1667).
+        context = self.browser.new_context(viewport={"width": 1280, "height": 800})
+        self.addCleanup(context.close)
+        page = context.new_page()
+        page.goto(f"{self.live_server_url}/")
+        page.get_by_placeholder("Enter your username").fill(
+            self.credentials["username"],
+        )
+        page.get_by_placeholder("Enter your password").fill(
+            self.credentials["password"],
+        )
+        page.get_by_role("button", name="Sign in").click()
+
+        # A full page load would drop this marker; a boosted swap keeps it.
+        page.evaluate("window.__floppyBoostMarker = 'home'")
+        page.locator("#sidebar-nav a[href$='/statistics']").click()
+
+        expect(page.locator(".stats-hero-title").nth(1)).to_contain_text("4 titles")
+        expect(page.locator(".stats-range-button .stats-button-title")).not_to_be_empty()
+        expect(
+            page.locator(".stats-summary-row").get_by_text("Wednesday"),
+        ).to_be_visible()
+        self.assertEqual(page.evaluate("window.__floppyBoostMarker"), "home")
+
     def test_dropdown_menus_stay_on_a_short_screen(self):
         # 640px is where the toolbar wraps and the "Updated ... ago" line pushes the
         # menus further down, so the room left below them is smaller than at 1100px.
