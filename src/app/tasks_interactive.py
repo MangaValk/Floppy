@@ -44,6 +44,14 @@ def refresh_statistics_talent_fragment_task(
     )
 
 
+@shared_task(name="app.tasks.mark_credits_statistics_refresh", ignore_result=True)
+def mark_credits_statistics_refresh(user_id: int):
+    """Record the credits change left behind by a coalesced backfill batch."""
+    from app import statistics_sync
+
+    statistics_sync.mark_credits_statistics_refresh(user_id)
+
+
 @shared_task(name="Reconcile statistics sync", ignore_result=True)
 def reconcile_statistics_sync_task():
     """Queue a sync for every user whose Statistics trail their changes.

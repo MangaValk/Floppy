@@ -565,7 +565,19 @@ def _schedule_metadata_statistics_refresh(items, field: str, reason: str):
             # Day payloads carry no credits (talent is aggregated per range
             # from the database), so re-aggregating is enough. Rebuilding the
             # days turned every backfill batch into hundreds of day builds.
-            statistics_cache.invalidate_statistics_cache(user_id)
+            # Coalesced: a backfill batch lands about every minute, and
+            # marking each one kept the Statistics sync running back to back
+            # against the same SQLite writer (#1706).
+            from app import statistics_sync
+
+            if not statistics_sync.request_credits_statistics_refresh(user_id):
+                logger.debug(
+                    "metadata_refresh_coalesced user_id=%s field=%s reason=%s",
+                    user_id,
+                    field,
+                    reason,
+                )
+                continue
         else:
             statistics_cache.invalidate_statistics_days(
                 user_id, day_keys, reason=reason

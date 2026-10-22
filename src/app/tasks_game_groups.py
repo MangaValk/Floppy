@@ -208,21 +208,16 @@ def enqueue_game_group_backfill_items(item_ids, countdown=10):
 @shared_task(name="app.tasks.populate_game_group_backfill_queue")
 def populate_game_group_backfill_queue(batch_size: int = 25):
     """Drain the game-groups backfill queue in small batches."""
-    batch, more_remaining = backfill_queue.take(
+    with backfill_queue.drain(
         GAME_GROUPS_BACKFILL_ITEMS_QUEUE_KEY,
         GAME_GROUPS_BACKFILL_ITEMS_SCHEDULED_KEY,
         batch_size,
-    )
-    if not batch:
-        return {"processed": 0, "message": "No queued game-group items"}
+        drain_task=populate_game_group_backfill_queue,
+    ) as batch:
+        if not batch:
+            return {"processed": 0, "message": "No queued game-group items"}
 
-    if more_remaining:
-        backfill_queue.reschedule(
-            GAME_GROUPS_BACKFILL_ITEMS_SCHEDULED_KEY,
-            populate_game_group_backfill_queue,
-        )
-
-    return populate_game_group_data_for_items(batch)
+        return populate_game_group_data_for_items(batch)
 
 
 @shared_task(name="app.tasks.reconcile_game_groups_backfill")

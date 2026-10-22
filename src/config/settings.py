@@ -1720,6 +1720,16 @@ STATISTICS_SYNC_HEAVY_SETTLE_SECONDS = config(
 STATISTICS_SYNC_HEAVY_MAX_DELAY_SECONDS = config(
     "STATISTICS_SYNC_HEAVY_MAX_DELAY_SECONDS", default=600, cast=int
 )
+# A credits backfill finishes a batch roughly every minute, and marking every
+# batch made the Statistics sync run back to back for the whole backfill -
+# competing with the credits writes for SQLite's single writer and the CPU
+# (#1706). Credits changes are coalesced to this interval, with one trailing
+# mark so the last credits written are still published. Kept at the heavy-range
+# max delay: a shorter interval would make every mark settle the heavy ranges
+# sooner and rebuild them more often than today.
+STATISTICS_CREDITS_MARK_SECONDS = config(
+    "STATISTICS_CREDITS_MARK_SECONDS", default=600, cast=int
+)
 
 CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default=None) or REDIS_URL
@@ -1793,6 +1803,12 @@ CELERY_TASK_ROUTES = {
     # Budget-bounded, and yields to webhooks. See
     # docs/architecture/statistics-sync.md.
     "app.tasks.statistics_sync_task": {
+        "queue": "interactive",
+        "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
+    },
+    # The trailing half of the credits Statistics debounce: one state update
+    # and a sync enqueue, so a delayed mark never waits behind background work.
+    "app.tasks.mark_credits_statistics_refresh": {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },

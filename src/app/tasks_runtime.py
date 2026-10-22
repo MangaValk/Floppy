@@ -439,21 +439,16 @@ def populate_runtime_data_for_items(item_ids: list[int], delay_seconds: float = 
 @shared_task(name="app.tasks.populate_runtime_backfill_queue")
 def populate_runtime_backfill_queue(batch_size: int = 50, delay_seconds: float = 0.0):
     """Drain the runtime backfill queue and process items in small batches."""
-    batch, more_remaining = backfill_queue.take(
+    with backfill_queue.drain(
         RUNTIME_BACKFILL_ITEMS_QUEUE_KEY,
         RUNTIME_BACKFILL_ITEMS_SCHEDULED_KEY,
         batch_size,
-    )
-    if not batch:
-        return {"processed": 0, "message": "No queued runtime items"}
+        drain_task=populate_runtime_backfill_queue,
+    ) as batch:
+        if not batch:
+            return {"processed": 0, "message": "No queued runtime items"}
 
-    if more_remaining:
-        backfill_queue.reschedule(
-            RUNTIME_BACKFILL_ITEMS_SCHEDULED_KEY,
-            populate_runtime_backfill_queue,
-        )
-
-    return populate_runtime_data_for_items(batch, delay_seconds=delay_seconds)
+        return populate_runtime_data_for_items(batch, delay_seconds=delay_seconds)
 
 
 @shared_task(name="app.tasks.populate_runtime_data_continuous")

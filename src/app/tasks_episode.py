@@ -29,22 +29,17 @@ def populate_episode_runtime_queue(batch_size: int = 20):
     )
 
     # Season keys are encoded tokens, not integers.
-    batch, more_remaining = backfill_queue.take(
+    with backfill_queue.drain(
         RUNTIME_BACKFILL_EPISODES_QUEUE_KEY,
         RUNTIME_BACKFILL_EPISODES_SCHEDULED_KEY,
         batch_size,
+        drain_task=populate_episode_runtime_queue,
         coerce=str,
-    )
-    if not batch:
-        return {"processed": 0, "message": "No queued episode runtime seasons"}
+    ) as batch:
+        if not batch:
+            return {"processed": 0, "message": "No queued episode runtime seasons"}
 
-    if more_remaining:
-        backfill_queue.reschedule(
-            RUNTIME_BACKFILL_EPISODES_SCHEDULED_KEY,
-            populate_episode_runtime_queue,
-        )
-
-    return populate_episode_runtime_data(season_keys=batch)
+        return populate_episode_runtime_data(season_keys=batch)
 
 
 @shared_task(name="app.tasks.populate_episode_runtime_data")

@@ -970,3 +970,64 @@ class SnapshotSerializationTests(StatisticsSyncTestCase):
                 for movie in entry["data"].get("top_rated", [])
             )
         )
+
+
+class CreditsStatisticsCoalescingTests(StatisticsSyncTestCase):
+    """A credits backfill must not rebuild Statistics back to back (#1706)."""
+
+    def setUp(self):
+        super().setUp()
+        statistics_sync._ensure_state(self.user.id)
+        self.before = self.state().generation
+
+    def request(self):
+        return statistics_sync.request_credits_statistics_refresh(self.user.id)
+
+    def test_the_first_credits_batch_marks_the_generation(self):
+        self.assertTrue(self.request())
+        self.assertEqual(self.state().generation, self.before + 1)
+
+    @patch("app.tasks_interactive.mark_credits_statistics_refresh.apply_async")
+    def test_later_batches_are_coalesced_and_schedule_one_trailing_mark(self, enqueue):
+        self.assertTrue(self.request())
+        marked = self.state().generation
+
+        self.assertFalse(self.request())
+        self.assertFalse(self.request())
+
+        self.assertEqual(self.state().generation, marked)
+        enqueue.assert_called_once_with(args=[self.user.id], countdown=600)
+
+    def test_the_trailing_mark_publishes_the_last_coalesced_credits(self):
+        self.request()
+        marked = self.state().generation
+        cache.delete(statistics_sync._credits_mark_key(self.user.id))
+
+        statistics_sync.mark_credits_statistics_refresh(self.user.id)
+
+        self.assertEqual(self.state().generation, marked + 1)
+
+    def test_the_trailing_mark_does_not_duplicate_a_fresh_mark(self):
+        self.request()
+        marked = self.state().generation
+
+        statistics_sync.mark_credits_statistics_refresh(self.user.id)
+
+        self.assertEqual(self.state().generation, marked)
+
+    @patch("app.tasks_interactive.mark_credits_statistics_refresh.apply_async")
+    def test_credits_batches_coalesce_through_the_backfill_scheduler(self, enqueue):
+        from app.models import MetadataBackfillField
+        from app.tasks_backfill_state import _schedule_metadata_statistics_refresh
+
+        items = [movie.item for movie in self.movies]
+        _schedule_metadata_statistics_refresh(
+            items, MetadataBackfillField.CREDITS, "credits_backfill"
+        )
+        marked = self.state().generation
+        _schedule_metadata_statistics_refresh(
+            items, MetadataBackfillField.CREDITS, "credits_backfill"
+        )
+
+        self.assertEqual(self.state().generation, marked)
+        enqueue.assert_called_once()

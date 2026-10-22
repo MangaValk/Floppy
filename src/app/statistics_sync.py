@@ -284,6 +284,52 @@ def mark_aggregate(
     _after_mark(user_id, reason, 0)
 
 
+def _credits_mark_key(user_id: int) -> str:
+    return f"stats:credits_mark:{user_id}"
+
+
+def _credits_trailing_key(user_id: int) -> str:
+    return f"stats:credits_trailing:{user_id}"
+
+
+def request_credits_statistics_refresh(user_id: int) -> bool:
+    """Record a credits change, coalesced to one mark per interval.
+
+    A backfill drain completes a batch about every minute; recording each one
+    as its own generation made the Statistics sync run back to back for the
+    whole backfill, next to the same single SQLite writer (#1706). Mark on the
+    leading edge and leave one trailing mark behind so credits written while
+    marks are coalesced are still published. Returns True when the generation
+    was bumped now.
+    """
+    if not user_id:
+        return False
+    interval = int(settings.STATISTICS_CREDITS_MARK_SECONDS)
+    if cache.add(_credits_mark_key(user_id), True, interval):
+        mark_aggregate(user_id, reason="credits_backfill")
+        return True
+    if cache.add(_credits_trailing_key(user_id), True, interval):
+        from app.tasks_interactive import mark_credits_statistics_refresh
+
+        mark_credits_statistics_refresh.apply_async(
+            args=[user_id],
+            countdown=interval,
+        )
+    return False
+
+
+def mark_credits_statistics_refresh(user_id: int) -> None:
+    """Trailing half of the coalescing: mark credits left by throttled batches."""
+    if not user_id:
+        return
+    interval = int(settings.STATISTICS_CREDITS_MARK_SECONDS)
+    cache.delete(_credits_trailing_key(user_id))
+    # A mark that landed while this task waited already covered the credits;
+    # only bump when the interval really lapsed.
+    if cache.add(_credits_mark_key(user_id), True, interval):
+        mark_aggregate(user_id, reason="credits_backfill")
+
+
 def mark_rows(user_id: int, rows, reason: str | None = None) -> int:
     """Mark the activity days of rows written without signals (bulk writes)."""
     days = [

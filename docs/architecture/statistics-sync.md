@@ -57,6 +57,16 @@ for the same reason (#521).
   generation only; no day is rebuilt.
 * `mark_rows(user_id, rows)` — for bulk writes that skip signals.
 
+Credits are the one field marked through `request_credits_statistics_refresh`
+instead of `mark_aggregate` directly. A credits backfill drain completes a batch
+about every minute, and marking every batch kept the sync running back to back
+for the whole backfill against the same single SQLite writer (#1706). Credits
+marks are coalesced to `STATISTICS_CREDITS_MARK_SECONDS` (default 600, the
+heavy-range max delay, so heavy ranges are not made due more often than today).
+The first batch marks immediately; later batches schedule one trailing
+`app.tasks.mark_credits_statistics_refresh`, so the last credits written are
+still published even after the backfill stops.
+
 The older names still work and route here: `invalidate_statistics_days` →
 `mark_days`, `invalidate_statistics_cache` and `schedule_all_ranges_refresh` →
 `mark_aggregate`, `invalidate_all_statistics_days` → drop every day payload and
