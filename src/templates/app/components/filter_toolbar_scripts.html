@@ -74,7 +74,11 @@
     const groupBy = form && form.elements.group_by ? form.elements.group_by.value : '';
     const currentGroupBy = new URLSearchParams(window.location.search).get('group_by');
     if ((groupBy && groupBy !== 'item') || (currentGroupBy && currentGroupBy !== 'item')) {
-      const query = buildMediaListFilterParams(form).toString();
+      const params = buildMediaListFilterParams(form);
+      if (!groupBy || groupBy === 'item') {
+        params.delete('group');
+      }
+      const query = params.toString();
       window.location.href = query ? `${endpoint}?${query}` : endpoint;
       return;
     }

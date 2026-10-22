@@ -96,37 +96,62 @@ GAME_GROUP_BY_CHOICES = (
 )
 
 
-def _build_game_groups(entries, group_by):
+def _game_group_key_for_item(item, group_by):
+    """Return the provider-qualified key for one game's selected grouping."""
+    if group_by == "series":
+        provider_id = str(getattr(item, "provider_collection_id", "") or "").strip()
+        name = str(getattr(item, "provider_collection_name", "") or "").strip()
+    else:
+        provider_id = str(getattr(item, "provider_franchise_id", "") or "").strip()
+        name = str(getattr(item, "provider_franchise_name", "") or "").strip()
+    if provider_id:
+        return f"id:{provider_id}"
+    if name:
+        return f"name:{name.casefold()}"
+    return ""
+
+
+def _game_group_name_for_item(item, group_by):
+    """Return the provider name for one game's selected grouping."""
+    if group_by == "series":
+        return str(getattr(item, "provider_collection_name", "") or "").strip()
+    return str(getattr(item, "provider_franchise_name", "") or "").strip()
+
+
+def _build_game_groups(entries, group_by, *, sort_key, direction):
     """Return the filtered Games library rolled up into catalog groups."""
     groups = {}
     for entry in entries:
         item = entry.item
-        if group_by == "series":
-            provider_id = str(getattr(item, "provider_collection_id", "") or "").strip()
-            name = str(getattr(item, "provider_collection_name", "") or "").strip()
-        else:
-            provider_id = str(getattr(item, "provider_franchise_id", "") or "").strip()
-            name = str(getattr(item, "provider_franchise_name", "") or "").strip()
-        if provider_id:
-            key = f"id:{provider_id}"
-        elif name:
-            key = f"name:{name.casefold()}"
-        else:
+        key = _game_group_key_for_item(item, group_by)
+        ungrouped = not key
+        if ungrouped:
             key = "__ungrouped__"
+        name = _game_group_name_for_item(item, group_by) or key
         group = groups.setdefault(
             key,
             {
                 "key": key,
-                "name": name or "Ungrouped",
+                "name": "Ungrouped" if ungrouped else name,
+                "ungrouped": ungrouped,
                 "entries": [],
                 "played_count": 0,
                 "completed_count": 0,
                 "playtime_minutes": 0,
                 "last_played": None,
-                "ungrouped": not (provider_id or name),
+                "last_release": None,
+                "image": settings.IMG_NONE,
+                "scores": [],
             },
         )
         group["entries"].append(entry)
+        if not group["image"] and getattr(item, "image", ""):
+            group["image"] = item.image
+        release = getattr(item, "release_datetime", None)
+        if release and (
+            group["last_release"] is None or release > group["last_release"]
+        ):
+            group["last_release"] = release
         media = entry.media
         if media is None:
             continue
@@ -154,12 +179,38 @@ def _build_game_groups(entries, group_by):
         if status == Status.COMPLETED.value:
             group["completed_count"] += 1
         group["playtime_minutes"] += progress
+        score = getattr(media, "aggregated_score", None)
+        if score is None:
+            score = getattr(media, "score", None)
+        if score is not None:
+            group["scores"].append(float(score))
     for group in groups.values():
         group["game_count"] = len(group["entries"])
-    return sorted(
-        groups.values(),
-        key=lambda group: (group["ungrouped"], group["name"].casefold()),
+        group["average_score"] = (
+            sum(group["scores"]) / len(group["scores"]) if group["scores"] else None
+        )
+
+    def _value(group):
+        if sort_key in {"progress", "plays", "time_watched"}:
+            return group["playtime_minutes"]
+        if sort_key in {"start_date", "end_date", "date_added"}:
+            return group["last_played"]
+        if sort_key == "release_date":
+            return group["last_release"]
+        if sort_key in {"score", "critic_rating"}:
+            return group["average_score"]
+        return group["name"].casefold()
+
+    grouped = [group for group in groups.values() if not group["ungrouped"]]
+    ungrouped = [group for group in groups.values() if group["ungrouped"]]
+    present = [group for group in grouped if _value(group) is not None]
+    missing = [group for group in grouped if _value(group) is None]
+    present.sort(
+        key=lambda group: (_value(group), group["name"].casefold()),
+        reverse=direction == "desc",
     )
+    missing.sort(key=lambda group: group["name"].casefold())
+    return present + missing + ungrouped
 
 
 @dataclass
@@ -1495,6 +1546,9 @@ def media_list(request, media_type):
     group_by = request.GET.get("group_by", "item")
     if group_by not in dict(GAME_GROUP_BY_CHOICES) or media_type != MediaTypes.GAME.value:
         group_by = "item"
+    game_group = request.GET.get("group", "").strip() if group_by != "item" else ""
+    grouped_game_overview = group_by != "item" and not game_group
+    current_game_group_name = ""
 
     def apply_range_filters(media_items):
         """Keep entries whose item is inside the rating and date ranges.
@@ -2364,6 +2418,21 @@ def media_list(request, media_type):
 
             media_list = sorted(media_list, key=_untracked_sort_key, reverse=_reverse)
 
+        if game_group:
+            media_list = [
+                entry
+                for entry in media_list
+                if _game_group_key_for_item(entry.item, group_by) == game_group
+            ]
+            current_game_group_name = next(
+                (
+                    _game_group_name_for_item(entry.item, group_by)
+                    for entry in media_list
+                    if _game_group_name_for_item(entry.item, group_by)
+                ),
+                "",
+            )
+
         filter_data_source_items = media_list
         if (
             media_type == MediaTypes.GAME.value
@@ -2815,7 +2884,7 @@ def media_list(request, media_type):
         # Paginate results normally. A grouped Games view needs every filtered
         # entry so each group's rollup covers the whole filtered library.
         items_per_page = (
-            max(len(_media_list_full or []), 1) if group_by != "item" else 32
+            max(len(_media_list_full or []), 1) if grouped_game_overview else 32
         )
         if _sql_media_page is not None:
             media_page = _sql_media_page
@@ -2896,10 +2965,57 @@ def media_list(request, media_type):
         filter_data["show_group_by"] = group_by != "item" or media_type == MediaTypes.GAME.value
 
     media_groups = (
-        _build_game_groups(media_page.object_list, group_by)
-        if group_by != "item"
+        _build_game_groups(
+            media_page.object_list,
+            group_by,
+            sort_key=sort_filter,
+            direction=direction,
+        )
+        if grouped_game_overview
         else []
     )
+    group_params = request.GET.copy()
+    group_params.pop("page", None)
+    group_back_href = ""
+    if game_group:
+        group_params.pop("group", None)
+        group_back_href = (
+            f"{reverse('medialist', args=[route_media_type])}"
+            f"?{group_params.urlencode()}"
+        )
+        if not current_game_group_name:
+            current_game_group_name = game_group.split(":", 1)[-1]
+    else:
+        for group in media_groups:
+            group_params["group"] = group["key"]
+            group["href"] = (
+                f"{reverse('medialist', args=[route_media_type])}"
+                f"?{group_params.urlencode()}"
+            )
+        group_params.pop("group", None)
+
+    ungrouped_entries = [
+        entry
+        for group in media_groups
+        if group["ungrouped"]
+        for entry in group["entries"]
+    ]
+    try:
+        ungrouped_page_number = int(request.GET.get("ug_page", 1))
+    except (TypeError, ValueError):
+        ungrouped_page_number = 1
+    ungrouped_page = Paginator(ungrouped_entries, 32).get_page(
+        max(ungrouped_page_number, 1)
+    )
+    ungrouped_next_url = ""
+    if ungrouped_page.has_next():
+        ungrouped_params = request.GET.copy()
+        ungrouped_params.pop("page", None)
+        ungrouped_params["ug_page"] = ungrouped_page.next_page_number()
+        ungrouped_next_url = (
+            f"{reverse('medialist', args=[route_media_type])}"
+            f"?{ungrouped_params.urlencode()}"
+        )
 
     if tag_values and not _skip_generic_media_list:
         _log_tag_filter_result(
@@ -2922,8 +3038,14 @@ def media_list(request, media_type):
         "media_list_url": reverse("medialist", args=[route_media_type]),
         "filter_hx_target": _layout_class if media_page else "#empty_list",
         "current_group_by": group_by,
+        "current_game_group": game_group,
+        "current_game_group_name": current_game_group_name,
+        "group_back_href": group_back_href,
         "group_by_choices": GAME_GROUP_BY_CHOICES,
+        "group_by_label": dict(GAME_GROUP_BY_CHOICES).get(group_by, ""),
         "media_groups": media_groups,
+        "ungrouped_page": ungrouped_page,
+        "ungrouped_next_url": ungrouped_next_url,
         "current_sort": sort_filter,
         "current_direction": direction,
         "current_status": list(status_filter),
@@ -3429,6 +3551,20 @@ def media_list(request, media_type):
 
     # Handle HTMX requests for partial updates (boosted navigation still
     # sends HX-Request but needs the full page)
+    if (
+        grouped_game_overview
+        and request.GET.get("ug_page")
+        and helpers.is_htmx_fragment(request)
+    ):
+        from django.template.loader import render_to_string
+
+        html = render_to_string(
+            "app/components/game_grouped_ungrouped_page.html",
+            context,
+            request=request,
+        )
+        return HttpResponse(html)
+
     if helpers.is_htmx_fragment(request):
         is_artist_list = context.get("is_artist_list", False)
         is_album_list = context.get("is_album_list", False)

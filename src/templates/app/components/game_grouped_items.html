@@ -2,68 +2,49 @@
 {% load app_tags %}
 {% load user_tags %}
 
-{% for group in media_groups %}
-  <section class="mb-8"
-           {% if group.ungrouped %}data-game-group="ungrouped"{% else %}data-game-group="{{ group.key }}"{% endif %}>
-    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3">
-      <h2 class="text-xl font-semibold">{{ group.name }}</h2>
-      <span class="text-sm text-[var(--color-text-secondary)]">
-        {% blocktranslate count counter=group.game_count %}{{ counter }} game{% plural %}{{ counter }} games{% endblocktranslate %}
-      </span>
-      <span class="text-sm text-[var(--color-text-secondary)]">
-        {% blocktranslate with played=group.played_count total=group.game_count %}{{ played }} of {{ total }} played{% endblocktranslate %}
-      </span>
-      {% if group.completed_count %}
-        <span class="text-sm text-[var(--color-text-secondary)]">
-          {% blocktranslate count counter=group.completed_count %}{{ counter }} completed{% plural %}{{ counter }} completed{% endblocktranslate %}
-        </span>
-      {% endif %}
-      <span class="text-sm text-[var(--color-text-secondary)]">{{ group.playtime_minutes|minutes_hhmm }}</span>
-      {% if group.last_played %}
-        <span class="text-sm text-[var(--color-text-muted)]">
-          {% translate "Last played" %} {{ group.last_played|user_date_format:user }}
-        </span>
-      {% endif %}
-    </div>
-
-    {% if current_layout == "table" %}
-      <div class="bg-[var(--color-surface)] p-4 rounded-lg overflow-hidden max-w-[calc(100svw-4rem)] overflow-x-scroll">
-        <table class="w-full bg-[var(--color-surface)] media-table">
-          <thead class="text-left text-[var(--color-text-muted)] text-sm">
-            <tr>
-              {% if enable_bulk_select %}<th class="w-8 px-2" x-cloak x-show="selectMode"></th>{% endif %}
-              {% for col in resolved_columns %}<th class="{{ col.th_classes }}">{% translate col.label %}</th>{% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for media in group.entries %}
-              <tr class="hover:bg-[var(--color-surface-strong)] transition-colors cursor-pointer hover-tap"
-                  x-data="{ trackOpen: false }"
-                  data-item-id="{{ media.item.id }}">
-                {% if enable_bulk_select %}
-                  <td class="w-8 px-2 py-3" x-cloak x-show="selectMode" @click.stop>
-                    <input type="checkbox"
-                           class="cursor-pointer"
-                           :checked="isItemSelected({{ media.item.id }})"
-                           @change="toggleItemSelected({{ media.item.id }})">
-                  </td>
-                {% endif %}
-                {% for col in resolved_columns %}
-                  <td class="{{ col.td_classes }}">
-                    {% include col.cell_template with media=media user=user %}
-                  </td>
-                {% endfor %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <div class="media-grid">
-        {% for media in group.entries %}
-          {% media_card "library" media=media item=media.item title=media.item current_sort=current_sort card_media_type=media_type image_override=media.media.card_image_override|default:media.item.image image_source=media.media.card_image_source|default:"primary" enable_bulk_select=enable_bulk_select %}
-        {% endfor %}
+<div class="media-grid">
+  {% for group in media_groups %}
+    {% if not group.ungrouped %}
+      <div class="media-card bg-[var(--color-surface)] rounded-lg overflow-hidden shadow-lg relative group">
+        <a href="{{ group.href }}" class="block">
+          <img src="{{ group.image|image_url }}"
+               alt="{{ group.name }}"
+               class="media-card-poster w-full aspect-[2/3] object-cover bg-[var(--color-surface-alt)]"
+               loading="lazy">
+        </a>
+        <div class="media-card-body p-3 bg-card-body">
+          <a href="{{ group.href }}"
+             class="media-card-title block text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-link)] transition duration-300 line-clamp-1"
+             title="{{ group.name }}">{{ group.name }}</a>
+          <p class="media-card-year text-xs text-[var(--color-text-muted)] mt-1 line-clamp-1">
+            {% if current_sort == "progress" or current_sort == "plays" or current_sort == "time_watched" %}
+              {{ group.playtime_minutes|minutes_hhmm }}
+            {% elif current_sort == "end_date" or current_sort == "start_date" or current_sort == "date_added" %}
+              {% if group.last_played %}
+                {{ group.last_played|user_date_format:user }}
+              {% else %}
+                {% blocktranslate count counter=group.game_count %}{{ counter }} game{% plural %}{{ counter }} games{% endblocktranslate %}
+              {% endif %}
+            {% elif current_sort == "release_date" %}
+              {% if group.last_release %}
+                {{ group.last_release|user_date_format:user }}
+              {% else %}
+                {% blocktranslate count counter=group.game_count %}{{ counter }} game{% plural %}{{ counter }} games{% endblocktranslate %}
+              {% endif %}
+            {% elif current_sort == "score" or current_sort == "critic_rating" %}
+              {% if group.average_score %}
+                {{ group.average_score|floatformat:1 }}/10
+              {% else %}
+                {% blocktranslate count counter=group.game_count %}{{ counter }} game{% plural %}{{ counter }} games{% endblocktranslate %}
+              {% endif %}
+            {% else %}
+              {% blocktranslate count counter=group.game_count %}{{ counter }} game{% plural %}{{ counter }} games{% endblocktranslate %}
+            {% endif %}
+          </p>
+        </div>
       </div>
     {% endif %}
-  </section>
-{% endfor %}
+  {% endfor %}
+
+  {% include "app/components/game_grouped_ungrouped.html" %}
+</div>

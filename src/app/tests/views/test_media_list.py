@@ -4404,6 +4404,102 @@ class GameGroupingViewTests(TestCase):
         groups = response.context["media_groups"]
         self.assertEqual([group["name"] for group in groups], ["Ungrouped"])
 
+    def test_ungrouped_games_are_paginated(self):
+        for index in range(40):
+            self._game(index + 1, f"Local Game {index + 1}")
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        ungrouped_page = response.context["ungrouped_page"]
+        self.assertEqual(len(ungrouped_page.object_list), 32)
+        self.assertTrue(ungrouped_page.has_next())
+        self.assertIn("ug_page=2", response.context["ungrouped_next_url"])
+
+    def test_ungrouped_pagination_loads_more_cards(self):
+        for index in range(40):
+            self._game(index + 1, f"Local Game {index + 1}")
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "ug_page": "2"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.decode().count("media-card "), 8)
+        self.assertNotIn('id="grouped-ungrouped', response.content.decode())
+
+    def test_group_cards_sort_by_total_playtime(self):
+        self._game(
+            1,
+            "Short Game",
+            progress=60,
+            franchise=("10", "Small Franchise"),
+        )
+        self._game(
+            2,
+            "Long Game",
+            progress=600,
+            franchise=("20", "Big Franchise"),
+        )
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "sort": "progress", "direction": "desc"},
+        )
+
+        self.assertEqual(
+            [group["name"] for group in response.context["media_groups"]],
+            ["Big Franchise", "Small Franchise"],
+        )
+
+    def test_group_cards_link_to_that_group(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertIn("group_by=franchise", group["href"])
+        self.assertIn("group=id%3A10", group["href"])
+
+    def test_opening_a_group_shows_its_games_as_regular_cards(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "Mario Kart",
+            collection=("2", "Mario Kart"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            3,
+            "Donkey Kong Country",
+            collection=("3", "Donkey Kong Country"),
+            franchise=("20", "Donkey Kong"),
+        )
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "group": "id:10"},
+        )
+
+        self.assertEqual(response.context["current_game_group_name"], "Mario")
+        self.assertCountEqual(
+            [entry.item.title for entry in response.context["media_list"]],
+            ["Super Mario Bros.", "Mario Kart"],
+        )
+        self.assertEqual(response.context["media_groups"], [])
+        self.assertContains(response, "All Franchise")
+
     def test_group_by_does_not_change_a_flat_library(self):
         self._game(1, "Super Mario Bros.", collection=("1", "Super Mario"))
 

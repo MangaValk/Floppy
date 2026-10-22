@@ -24,6 +24,7 @@ STARTUP_SWEEP_COUNTDOWNS = {
     "provider": 540,
     "podcast_website": 660,
     "external_ids": 780,
+    "game_groups": 900,
 }
 
 
@@ -142,6 +143,7 @@ class AppConfig(AppConfig):
             self._schedule_provider_backfill_reconcile()
             self._schedule_podcast_website_backfill_reconcile()
             self._schedule_external_ids_backfill_reconcile()
+            self._schedule_game_groups_backfill_reconcile()
 
     def _add_startup_cache_key(
         self,
@@ -447,6 +449,47 @@ class AppConfig(AppConfig):
         except Exception as error:
             logger.warning(
                 "Failed to schedule external ID backfill reconcile: %s", error
+            )
+
+    def _schedule_game_groups_backfill_reconcile(self):
+        """Schedule a one-time IGDB franchise/collection backfill for games.
+
+        Games tracked before catalog grouping was stored have blank franchise
+        and collection fields, so the new Games Group By view would show them
+        all as Ungrouped until each detail page happened to be visited. Runs
+        once per strategy version.
+        """
+        try:
+            from app.tasks_game_groups import (
+                GAME_GROUPS_BACKFILL_VERSION,
+                reconcile_game_groups_backfill,
+            )
+
+            version_key = f"game_groups_backfilled_v{GAME_GROUPS_BACKFILL_VERSION}"
+            status = cache.get(version_key)
+
+            if status in {"done", "pending"}:
+                return
+
+            cache.set(version_key, "pending", timeout=300)
+
+            try:
+                reconcile_game_groups_backfill.apply_async(
+                    kwargs={"strategy_version": GAME_GROUPS_BACKFILL_VERSION},
+                    countdown=STARTUP_SWEEP_COUNTDOWNS["game_groups"],
+                    priority=getattr(settings, "CELERY_TASK_PRIORITY_BACKGROUND", 9),
+                )
+            except Exception:
+                cache.delete(version_key)
+                raise
+
+            logger.info(
+                "Scheduled game groups backfill reconcile (version=%s)",
+                GAME_GROUPS_BACKFILL_VERSION,
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to schedule game groups backfill reconcile: %s", error
             )
 
     def _schedule_trakt_popularity_reconcile(self):

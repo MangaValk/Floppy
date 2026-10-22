@@ -33,6 +33,9 @@
   <input type="hidden" name="collection" x-model="collection">
   {% if filter_data.show_group_by %}
     <input type="hidden" name="group_by" x-model="group_by">
+    {% if current_game_group %}
+      <input type="hidden" name="group" value="{{ current_game_group }}">
+    {% endif %}
   {% endif %}
   {% if filter_data.show_progress %}
     <input type="hidden" name="progress" x-model="progress">
