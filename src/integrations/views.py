@@ -1313,6 +1313,22 @@ def import_simkl_private(request):
 
     redirect_uri = state_data.get("redirect_uri")
     return_to = state_data.get("return_to")
+
+    if state_data.get("code_verifier") and request.GET.get("iss") != "https://simkl.com":
+        # AUTH V2 callbacks must come from SIMKL itself, not another provider.
+        logger.warning("SIMKL OAuth callback carried an unexpected issuer")
+        messages.error(request, "Invalid or expired SIMKL authorization request.")
+        return _integration_redirect(request, next_url=return_to)
+
+    if request.GET.get("error"):
+        # AUTH V2 reports a declined consent through the callback, unlike V1.
+        messages.error(request, "SIMKL authorization was cancelled or denied.")
+        return _integration_redirect(request, next_url=return_to)
+
+    if not request.GET.get("code"):
+        messages.error(request, "SIMKL authorization did not return a code.")
+        return _integration_redirect(request, next_url=return_to)
+
     try:
         oauth_callback = simkl.get_token(
             request,
