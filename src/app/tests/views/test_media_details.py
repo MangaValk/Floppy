@@ -10717,6 +10717,43 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, "Custom Podcast")
         self.assertContains(response, "Manual Episode")
 
+    @patch("app.services.podcast_import.import_show_from_feed_url")
+    def test_gpodder_feed_url_redirects_to_imported_show(self, mock_import):
+        """A GPodder search result's feed URL should open its imported show."""
+        show = PodcastShow.objects.create(
+            podcast_uuid="gp_linux_outlaws",
+            source=Sources.GPODDER.value,
+            title="Linux Outlaws",
+            rss_feed_url="",
+        )
+        mock_import.return_value = show
+
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.GPODDER.value,
+                    "media_type": MediaTypes.PODCAST.value,
+                    "media_id": "https://example.com/linux.xml",
+                    "title": "linux-outlaws",
+                },
+            ),
+        )
+
+        self.assertRedirects(
+            response,
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.GPODDER.value,
+                    "media_type": MediaTypes.PODCAST.value,
+                    "media_id": show.podcast_uuid,
+                    "title": "linux-outlaws",
+                },
+            ),
+        )
+        mock_import.assert_called_once_with("https://example.com/linux.xml")
+
     def test_detail_action_track_modal_is_cloaked(self):
         """The detail page's track modal must not flash before Alpine hides it.
 

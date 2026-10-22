@@ -376,22 +376,20 @@ def media_details(
         # Check if this is a show (podcast_uuid) or an episode (episode_uuid)
         show = PodcastShow.objects.filter(podcast_uuid=media_id).first()
 
-        # If show not found, check if media_id is an iTunes ID and enrich
+        # If show not found, resolve a provider identifier (an iTunes id or a
+        # GPodder feed URL) into the local show catalog.
         if not show:
-            # Check if media_id looks like an iTunes collection ID (numeric string)
+            from django.contrib import messages
+
+            from app.services.podcast_import import (
+                PodcastImportError,
+                resolve_show_for_media_id,
+            )
+            from app.templatetags import app_tags
+
             try:
-                int(media_id)  # Will raise ValueError if not numeric
-                # This looks like an iTunes ID, try to enrich
-                from django.contrib import messages
-
-                from app.services.podcast_import import (
-                    PodcastImportError,
-                    import_show_from_itunes_id,
-                )
-                from app.templatetags import app_tags
-
-                try:
-                    show = import_show_from_itunes_id(media_id)
+                show = resolve_show_for_media_id(media_id, source=source)
+                if show is not None:
                     return redirect(
                         "media_details",
                         source=source,
@@ -399,19 +397,16 @@ def media_details(
                         media_id=show.podcast_uuid,
                         title=app_tags.slug(show.title or "") or "podcast",
                     )
-                except PodcastImportError as e:
-                    messages.error(request, str(e))
-                    # Fall through to empty metadata
-                except Exception as e:
-                    logger.exception(
-                        "Failed to enrich podcast from iTunes metadata: %s",
-                        exception_summary(e),  # noqa: TRY401  # exception_summary() is the project's sanitised rendering
-                    )
-                    messages.error(request, f"Failed to load podcast details: {e}")
-                    # Fall through to empty metadata
-            except ValueError:
-                # media_id is not numeric, not an iTunes ID - fall through to empty metadata
-                pass
+            except PodcastImportError as e:
+                messages.error(request, str(e))
+                # Fall through to empty metadata
+            except Exception as e:
+                logger.exception(
+                    "Failed to enrich podcast from provider metadata: %s",
+                    exception_summary(e),  # noqa: TRY401  # exception_summary() is the project's sanitised rendering
+                )
+                messages.error(request, f"Failed to load podcast details: {e}")
+                # Fall through to empty metadata
 
         if show:
             # This is a show, not an episode - show show detail page

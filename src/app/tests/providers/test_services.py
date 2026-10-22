@@ -804,6 +804,28 @@ class ServicesTests(TestCase):
         self.assertEqual(result["details"]["show_uuid"], show.podcast_uuid)
         mock_import.assert_called_once_with("1532744254")
 
+    @patch("app.services.podcast_import.import_show_from_feed_url")
+    def test_get_media_metadata_gpodder_feed_url_resolves_show(self, mock_import):
+        """GPodder search results carry a feed URL; resolve it to the show row."""
+        show = PodcastShow.objects.create(
+            podcast_uuid="gp_show",
+            source=Sources.GPODDER.value,
+            title="Linux Outlaws",
+            rss_feed_url="https://example.com/linux.xml",
+        )
+        mock_import.return_value = show
+
+        result = services.get_media_metadata(
+            MediaTypes.PODCAST.value,
+            "https://example.com/linux.xml",
+            Sources.GPODDER.value,
+        )
+
+        self.assertEqual(result["media_id"], show.podcast_uuid)
+        self.assertEqual(result["title"], show.title)
+        self.assertEqual(result["details"]["show_uuid"], show.podcast_uuid)
+        mock_import.assert_called_once_with("https://example.com/linux.xml")
+
     def test_get_media_metadata_podcast_deleted_episode_is_not_found(self):
         """Deleted podcast episodes should not resolve as generic media."""
         show = PodcastShow.objects.create(
@@ -1072,6 +1094,22 @@ class ServicesTests(TestCase):
         self.assertEqual(result, [{"title": "Test Game"}])
 
         mock_search.assert_called_once_with("test", 1, user=None)
+
+    @patch("app.providers.gpodder.search")
+    def test_search_podcast_gpodder(self, mock_search):
+        """Test that the GPodder source dispatches to the GPodder provider."""
+        mock_search.return_value = {"results": [{"title": "Test Podcast"}]}
+
+        result = services.search(
+            MediaTypes.PODCAST.value,
+            "test",
+            1,
+            source=Sources.GPODDER.value,
+        )
+
+        self.assertEqual(result, {"results": [{"title": "Test Podcast"}]})
+
+        mock_search.assert_called_once_with("test", 1)
 
     @patch("app.providers.hardcover.search")
     def test_search_hardcover_book(self, mock_search):
