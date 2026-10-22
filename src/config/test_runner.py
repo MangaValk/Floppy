@@ -55,8 +55,10 @@ import multiprocessing
 import multiprocessing.pool as mp_pool
 import os
 import time
+from collections import defaultdict
 
 from django.test.runner import DiscoverRunner, ParallelTestSuite
+from django.test.utils import iter_test_cases
 
 logger = logging.getLogger(__name__)
 
@@ -354,3 +356,24 @@ class ResilientDiscoverRunner(DiscoverRunner):
         """Override whatever ``--parallel`` asked for with the configured value."""
         super().__init__(*args, **kwargs)
         self.parallel = _configured_parallel(self.parallel)
+
+    def run_suite(self, suite, **kwargs):
+        """Keep Django's individual durations and also summarize module costs."""
+        test_modules = (
+            {str(test): test.__class__.__module__ for test in iter_test_cases(suite)}
+            if self.durations is not None
+            else {}
+        )
+        result = super().run_suite(suite, **kwargs)
+        if self.durations is not None:
+            modules = defaultdict(float)
+            for test, elapsed in result.collectedDurations:
+                modules[test_modules.get(test, "<unattributed>")] += elapsed
+            self.log(
+                "Slowest test modules (test method time, including setUp/tearDown):"
+            )
+            for module, elapsed in sorted(
+                modules.items(), key=lambda item: item[1], reverse=True
+            )[:20]:
+                self.log(f"{elapsed:9.3f}s {module}")
+        return result
