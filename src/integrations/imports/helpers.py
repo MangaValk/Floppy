@@ -648,6 +648,82 @@ def _deduplicate_unique_user_item_rows(model, bulk_media):
     return deduplicated
 
 
+def _unique_identity_fields(model):
+    """Return the DB columns that identify one of ``model``'s unique rows.
+
+    Only the tracking models imports bulk-create have a uniqueness contract:
+    a TV show is one row per user/item, and a season is one row per
+    user/related TV/item. Everything else (movies, episodes, plays) may
+    legitimately have several rows for the same item.
+    """
+    constraints = {
+        tuple(getattr(constraint, "fields", ()))
+        for constraint in model._meta.constraints
+    }
+    if ("user", "item") in constraints:
+        return ("user_id", "item_id")
+    if ("related_tv", "item") in constraints:
+        return ("user_id", "related_tv_id", "item_id")
+    return None
+
+
+def _reuse_persisted_unique_rows(model, bulk_media):
+    """Drop queued rows that another writer already stored during the import.
+
+    Importers decide what is new against a snapshot taken at the start of the
+    run. A tracking row written in the meantime - by a webhook, a sync, or a
+    second import - is missing from that snapshot, so the queued duplicate
+    hits the unique constraint at save time and aborts the import (#1518).
+    The database is authoritative: reuse the stored row, keeping its values,
+    and skip the queued insert.
+    """
+    identity_fields = _unique_identity_fields(model)
+    if identity_fields is None or not bulk_media:
+        return bulk_media
+
+    manager = getattr(model, "all_objects", model._default_manager)
+    stored = {}
+    for start in range(0, len(bulk_media), PROJECTION_BATCH_SIZE):
+        filters = defaultdict(set)
+        for row in bulk_media[start : start + PROJECTION_BATCH_SIZE]:
+            for field in identity_fields:
+                value = getattr(row, field)
+                if value is not None:
+                    filters[field].add(value)
+        if len(filters) != len(identity_fields):
+            continue
+        for row in manager.filter(
+            **{f"{field}__in": values for field, values in filters.items()},
+        ):
+            stored[tuple(getattr(row, field) for field in identity_fields)] = row
+    if not stored:
+        return bulk_media
+
+    retained = []
+    reused = 0
+    for row in bulk_media:
+        key = tuple(getattr(row, field) for field in identity_fields)
+        existing = stored.get(key)
+        if existing is None:
+            retained.append(row)
+            continue
+
+        # Mirror the stored row so callers (chunk receipts, parent hydration)
+        # see an already-persisted instance instead of an unsaved duplicate.
+        for field in model._meta.concrete_fields:
+            setattr(row, field.attname, getattr(existing, field.attname))
+        row._state.adding = False
+        reused += 1
+
+    if reused:
+        logger.info(
+            "Reused %s existing %s rows written during the import",
+            reused,
+            model._meta.model_name,
+        )
+    return retained
+
+
 def _deduplicate_season_related_tv_item_rows(seasons):
     """Remove duplicate unsaved seasons that would violate the related_tv/item key.
 
@@ -874,6 +950,11 @@ def bulk_create_media(bulk_media_list, user, *, backfill_completed=True, prepare
         elif media_type == MediaTypes.PODCAST.value:
             logger.info("Updating references for podcasts to existing episodes")
             update_podcast_references(bulk_media)
+
+        bulk_media = _reuse_persisted_unique_rows(model, bulk_media)
+        bulk_media_list[media_type] = bulk_media
+        if not bulk_media:
+            continue
 
         # Imports are written as the user, so the reason is what tells an
         # imported status apart from one the user set (#1133).

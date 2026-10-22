@@ -78,6 +78,36 @@ class DurableImportTests(TransactionTestCase):
             self.persist()
         self.assertEqual(Movie.objects.count(), 2)
 
+    def test_tracking_row_written_after_staging_is_reused(self):
+        """A row stored between staging and persist must not fail the chunk (#1518)."""
+        item = Item.objects.create(
+            media_id="raced-show",
+            source="tmdb",
+            media_type="tv",
+            title="Raced Show",
+        )
+        queued = TV(item=item, user=self.user, status=Status.IN_PROGRESS)
+        durable.stage(self.run, self.owner, {"tv": [queued]}, [], {"mode": "new"})
+        stored = TV.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.COMPLETED,
+        )
+
+        self.persist()
+
+        self.assertEqual(TV.objects.filter(user=self.user, item=item).count(), 1)
+        self.assertEqual(
+            TV.objects.get(user=self.user, item=item).status,
+            Status.COMPLETED.value,
+        )
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.commit_cursor, 1)
+        self.assertEqual(
+            self.run.prepared_entries.get().persisted_pk,
+            stored.pk,
+        )
+
     def test_exact_watch_and_history_timestamp_survives_staging(self):
         """JSON storage must not round away replay-identity microseconds."""
         watched = timezone.now().replace(microsecond=123456)

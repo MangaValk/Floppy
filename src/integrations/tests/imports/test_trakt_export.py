@@ -231,6 +231,66 @@ class ImportTraktExport(TestCase):
             Status.COMPLETED.value,
         )
 
+    def test_rows_written_after_the_snapshot_are_reused_not_inserted(self):
+        """A tracking row added mid-import must not abort the bulk save (#1518).
+
+        Imports decide what is new against a snapshot taken at the start of the
+        run. A webhook or sync can store the same show while a long import is
+        still preparing it; the queued duplicate then hit
+        ``UNIQUE(user, item)`` and failed the whole import.
+        """
+        item = Item.objects.create(
+            media_id="12345",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Raced Show",
+            image="",
+        )
+        season_item = Item.objects.create(
+            media_id="12345",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            season_number=1,
+            title="Raced Show",
+            image="",
+        )
+        stored_tv = TV.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.COMPLETED.value,
+        )
+        stored_season = Season.objects.create(
+            item=season_item,
+            user=self.user,
+            related_tv=stored_tv,
+            status=Status.COMPLETED.value,
+        )
+
+        queued_tv = TV(item=item, user=self.user, status=Status.IN_PROGRESS.value)
+        queued_season = Season(
+            item=season_item,
+            user=self.user,
+            related_tv=queued_tv,
+            status=Status.IN_PROGRESS.value,
+        )
+        helpers.bulk_create_media(
+            {
+                MediaTypes.TV.value: [queued_tv],
+                MediaTypes.SEASON.value: [queued_season],
+            },
+            self.user,
+        )
+
+        self.assertEqual(TV.objects.filter(user=self.user, item=item).count(), 1)
+        self.assertEqual(Season.objects.filter(user=self.user, item=season_item).count(), 1)
+        self.assertEqual(queued_tv.pk, stored_tv.pk)
+        self.assertEqual(queued_season.pk, stored_season.pk)
+        # Reuse keeps the row the other writer stored, including its status.
+        self.assertEqual(
+            TV.objects.get(user=self.user, item=item).status,
+            Status.COMPLETED.value,
+        )
+
     @patch("integrations.imports.trakt.TraktImporter._get_metadata")
     def test_history_creates_movie_and_episodes(self, mock_get_metadata):
         """Watch history creates Movie/Episode rows and rolls progress up."""
