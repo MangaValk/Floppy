@@ -11,13 +11,22 @@ Play, resume and pause only update the Now Playing card. What writes:
 | Event | Writes? |
 |---|---|
 | `media.play`, `media.resume`, `media.pause` | Never |
-| `media.stop` | If played, if the position is unknown, or at 60 s or more |
+| `media.stop` | If played, if the position is unknown, or at the minimum stop position |
 | `media.scrobble` (Plex scrobble, Kodi end) | Always |
 | `mark` (a manual watched/unwatched toggle) | Always, behind the user's opt-in |
 
 A stop with an unknown position still writes. A stop is a real end signal,
 and dropping it would lose In Progress tracking for a server that does not
 report its position. Only a *known* short stop is a skim.
+
+The minimum stop position is a hybrid of time and progress:
+`min(3 minutes, max(60 seconds, 5% of runtime))`. A ten-minute video counts
+after a minute, a 30-minute episode after 90 seconds, and a two-hour film
+after three minutes. When the runtime is unknown, the 60-second floor applies.
+This keeps a briefly sampled title out of In Progress without excluding a real
+start on a long film. Playback position is the available signal; it is not
+treated as genuine watch duration, so seeking deep into a title can clear the
+threshold.
 
 A row created by a stop or scrobble takes its **start date** from Now Playing
 (`live_playback.get_session_start`), the time the title was first seen

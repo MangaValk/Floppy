@@ -223,6 +223,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             event_type,
             played=self._is_played(payload),
             position_seconds=view_offset_ms / 1000,
+            duration_seconds=live_playback._extract_duration_seconds(payload),
         ):
             return None
 

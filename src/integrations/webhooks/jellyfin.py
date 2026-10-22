@@ -142,11 +142,12 @@ class JellyfinWebhookProcessor(BaseWebhookProcessor):
             playback_media_type,
         )
 
-        position_seconds, _ = self._get_playback_progress(payload)
+        position_seconds, duration_seconds = self._get_playback_progress(payload)
         if not self._should_record(
             "mark" if self._is_manual_mark(payload) else JELLYFIN_EVENT_MAP[event_type],
             played=self._is_played(payload),
             position_seconds=position_seconds,
+            duration_seconds=duration_seconds,
         ):
             return
 

@@ -110,7 +110,14 @@ class BaseWebhookProcessor:
         """Return the server's own item key, as stored in Now Playing state."""
         return
 
-    def _should_record(self, event, *, played, position_seconds):
+    def _should_record(
+        self,
+        event,
+        *,
+        played,
+        position_seconds,
+        duration_seconds=None,
+    ):
         """Check this integration's write policy before touching tracking rows.
 
         See integrations/webhooks/write_policy.py.
@@ -120,6 +127,7 @@ class BaseWebhookProcessor:
             event,
             played=played,
             position_seconds=position_seconds,
+            duration_seconds=duration_seconds,
         )
 
     def _extract_external_ids(self, payload):
