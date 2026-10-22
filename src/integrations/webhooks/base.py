@@ -460,6 +460,16 @@ class BaseWebhookProcessor:
                 )
 
         tvdb_id = tv_metadata.get("tvdb_id") if tv_metadata else None
+        # Existing tracking wins over the current provider preference. A user
+        # who switches Anime Provider still expects later episodes of a show
+        # they already track to land on that show, not to open a second home
+        # under the new provider. This is the same rule the importers apply
+        # through `AnimeRouteResolver`.
+        existing_anime_home = (
+            self._find_existing_anime_home(user, media_id, tvdb_id)
+            if user.anime_enabled
+            else None
+        )
 
         # A TVDB-numbered payload can name a season TMDB also has but fills
         # differently (TVDB Medabots S2E1 is TMDB S1E27), which the
@@ -496,7 +506,11 @@ class BaseWebhookProcessor:
         prefers_grouped_anime = _metadata_resolution.prefers_grouped_anime(user)
 
         grouped_anime_match = None
-        if user.anime_enabled and prefers_grouped_anime:
+        if (
+            user.anime_enabled
+            and prefers_grouped_anime
+            and not (existing_anime_home and existing_anime_home[0] == "flat")
+        ):
             grouped_anime_match = self._classify_grouped_anime(tv_metadata)
             if grouped_anime_match is not None and grouped_anime_match.is_grouped_anime:
                 logger.info(
@@ -528,10 +542,10 @@ class BaseWebhookProcessor:
                 existing_tv_item
                 and existing_tv_item.library_media_type != MediaTypes.ANIME.value
                 and not self._tv_row_has_history(user, existing_tv_item)
+                and existing_anime_home
+                and existing_anime_home[0] == "flat"
             ):
-                anime_home = self._find_existing_anime_home(user, media_id, tvdb_id)
-                if anime_home and anime_home[0] == "flat":
-                    existing_tv_item = None
+                existing_tv_item = None
             if existing_tv_item:
                 logger.info(
                     "Routing episode to existing TV tracking item instead of flat "
@@ -673,7 +687,7 @@ class BaseWebhookProcessor:
             ):
                 return None
 
-            anime_home = self._find_existing_anime_home(user, media_id, tvdb_id)
+            anime_home = existing_anime_home
             if anime_home is not None:
                 home_kind, home_item = anime_home
                 if home_kind == "grouped":

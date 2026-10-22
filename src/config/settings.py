@@ -2086,11 +2086,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "Refresh Discover Profiles",
         "schedule": crontab(hour=4, minute=0),  # every day at 4 AM
     },
-    "migrate_tv_shows_to_preferred_provider": {
-        "task": "Migrate TV shows to preferred metadata provider",
-        "schedule": crontab(hour=3, minute=45),  # every day at 3:45 AM
-        "kwargs": {"batch_size": _scaled(200)},
-    },
     "sync_imdb_ratings": {
         "task": "Sync IMDB ratings from datasets",
         "schedule": crontab(hour=5, minute=0),  # every day at 5 AM

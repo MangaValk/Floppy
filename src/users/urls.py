@@ -102,6 +102,11 @@ urlpatterns = [
         views.convert_tv_library,
         name="convert_tv_library",
     ),
+    path(
+        "settings/metadata/repair-duplicate-anime",
+        views.repair_duplicate_anime_libraries,
+        name="repair_duplicate_anime_libraries",
+    ),
     path("settings/integrations", views.integrations, name="integrations"),
     path(
         "settings/integrations/stremio-catalog-status",

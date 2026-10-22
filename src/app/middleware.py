@@ -610,6 +610,7 @@ class DemoAccountGuardMiddleware:
             "rollback_import_run",
             "convert_anime_library",
             "convert_tv_library",
+            "repair_duplicate_anime_libraries",
         },
     )
 

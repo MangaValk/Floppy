@@ -1760,7 +1760,7 @@ def convert_anime_library(request):
         "Converting your existing anime. This runs in the background; titles "
         "that cannot be converted safely are left as they are.",
     )
-    return redirect("preferences")
+    return redirect("metadata_settings")
 
 
 @login_required
@@ -1769,15 +1769,26 @@ def convert_tv_library(request):
     """Move this user's tracked TV shows to their default TV provider."""
     from app.tasks_tv_provider_migration import move_user_tv_library_task
 
-    # Moving is also the user's go-ahead for the nightly job to keep new shows
-    # on their default provider.
-    request.user.tv_auto_move_to_default_provider = True
-    request.user.save(update_fields=["tv_auto_move_to_default_provider"])
     move_user_tv_library_task.delay(request.user.id)
     messages.success(
         request,
         "Moving your tracked TV shows. This runs in the background; shows that "
         "cannot be moved safely are left as they are.",
+    )
+    return redirect("metadata_settings")
+
+
+@login_required
+@require_POST
+def repair_duplicate_anime_libraries(request):
+    """Fold this user's duplicate Anime/TV tracking rows back together."""
+    from app.tasks_anime_library_repair import repair_duplicated_anime_libraries_task
+
+    repair_duplicated_anime_libraries_task.delay(user_id=request.user.id)
+    messages.success(
+        request,
+        "Repairing duplicated anime libraries. This runs in the background; "
+        "shows that cannot be merged safely are left untouched.",
     )
     return redirect("metadata_settings")
 

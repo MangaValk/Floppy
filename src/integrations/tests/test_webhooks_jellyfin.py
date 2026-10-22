@@ -1011,6 +1011,114 @@ class JellyfinWebhookTests(TestCase):
         )
 
     @override_settings(TVDB_API_KEY="")
+    @patch("app.services.grouped_anime.classify_tv_metadata")
+    @patch("integrations.webhooks.anime_mappings.fetch_mapping_data")
+    @patch("app.providers.mal.anime")
+    @patch("app.providers.tmdb.tv_with_seasons")
+    @patch("app.providers.tmdb.find")
+    def test_provider_switch_keeps_new_season_on_flat_mal_home(
+        self,
+        mock_find,
+        mock_tv_with_seasons,
+        mock_mal_anime,
+        mock_load_mapping_data,
+        mock_classify,
+    ):
+        """Changing the Anime Provider must not open a second home for a show.
+
+        The grouped fast path used to run before the existing-home lookup, so
+        a user who switched from MAL to TVDB saw the next season appear as a
+        new show with only that season's progress (#1698).
+        """
+        self.user.anime_enabled = True
+        self.user.anime_metadata_source_default = Sources.TVDB.value
+        self.user.save()
+
+        mock_find.return_value = {
+            "tv_episode_results": [],
+            "tv_results": [{"id": 12345}],
+        }
+        mock_tv_with_seasons.return_value = {
+            "media_id": "12345",
+            "title": "Split Cour Show",
+            "image": "https://example.com/show.jpg",
+            "genres": ["Animation"],
+            "tvdb_id": "402474",
+            "season/2": {"episodes": [{"episode_number": 1}]},
+        }
+        mock_load_mapping_data.return_value = {
+            "tvdb_show:402474:s1": {"mal:46569": {"1-12": "1-12"}},
+            "tvdb_show:402474:s2": {"mal:46569": {"1-12": "13-24"}},
+        }
+        mock_mal_anime.return_value = {
+            "media_id": "46569",
+            "title": "Split Cour Show",
+            "image": "https://example.com/anime.jpg",
+            "max_progress": 24,
+        }
+        mock_classify.return_value = GroupedAnimeMatch(
+            decision="move",
+            reason="exact_external_id_and_animation_genre",
+            tmdb_id="12345",
+            tvdb_id="402474",
+            mal_ids=("46569",),
+        )
+
+        anime_item = Item.objects.create(
+            media_id="46569",
+            source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title="Split Cour Show",
+            image="https://example.com/anime.jpg",
+        )
+        ItemProviderLink.objects.create(
+            item=anime_item,
+            provider=Sources.TMDB.value,
+            provider_media_type=MediaTypes.TV.value,
+            provider_media_id="12345",
+            season_number=1,
+            episode_offset=0,
+        )
+        anime = Anime.objects.create(
+            item=anime_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=12,
+        )
+
+        response = self.client.post(
+            self.url,
+            data=json.dumps(
+                {
+                    "Event": "Stop",
+                    "Item": {
+                        "Type": "Episode",
+                        "Name": "Episode 1",
+                        "ProviderIds": {"Tmdb": "12345", "Tvdb": "402474"},
+                        "UserData": {"Played": True},
+                        "SeriesName": "Split Cour Show",
+                        "ParentIndexNumber": 2,
+                        "IndexNumber": 1,
+                    },
+                },
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            TV.objects.filter(user=self.user).count(),
+            0,
+            "switching provider opened a second home for the same show",
+        )
+        anime.refresh_from_db()
+        self.assertEqual(anime.progress, 13)
+        self.assertEqual(
+            Anime.objects.filter(user=self.user).count(),
+            1,
+        )
+
+    @override_settings(TVDB_API_KEY="")
     @patch("integrations.webhooks.anime_mappings.fetch_mapping_data")
     @patch("app.providers.mal.anime")
     @patch("app.providers.tmdb.tv_with_seasons")

@@ -48,7 +48,7 @@
       <div class="bg-[var(--color-surface)] rounded-lg p-6">
         <h2 class="text-xl font-semibold mb-1">{% translate "Metadata Providers" %}</h2>
         <p class="text-[var(--color-text-muted)] text-sm mb-4">
-          {% translate "Which provider supplies metadata for each library." %}
+          {% translate "Choose where new titles come from. Existing titles keep the provider they were added with and keep receiving new plays until you move them." %}
         </p>
         <div class="space-y-3">
           {% for entry in provider_summary %}
@@ -70,9 +70,62 @@
                   </button>
                 </div>
               </div>
+
+              {% if entry.existing_count %}
+                <div class="border-t border-[var(--color-surface-border)] px-3 pb-3 pt-3 space-y-2">
+                  {% if entry.media_type == "tv" %}
+                    <p class="text-sm text-[var(--color-text-muted)]">
+                      {% blocktranslate count count=entry.existing_count with label=entry.current_label %}One show is still tracked on the other TV provider. It keeps its history and keeps receiving new episodes until you move it.{% plural %}{{ count }} shows are still tracked on the other TV provider. They keep their history and keep receiving new episodes until you move them.{% endblocktranslate %}
+                    </p>
+                    <form method="post" action="{% url 'convert_tv_library' %}">
+                      {% csrf_token %}
+                      <button type="submit"
+                              class="inline-flex items-center rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-muted)]">
+                        {% blocktranslate with label=entry.current_label %}Move them to {{ label }}{% endblocktranslate %}
+                      </button>
+                    </form>
+                    <p class="text-xs text-[var(--color-text-muted)]">
+                      {% translate "Moving keeps status, ratings, notes and watched episodes. Shows that cannot be moved safely are left exactly as they are. You can preview an individual show from its Match & Ordering tab." %}
+                    </p>
+                  {% elif entry.media_type == "anime" %}
+                    <p class="text-sm text-[var(--color-text-muted)]">
+                      {% blocktranslate count count=entry.existing_count %}One anime entry is still in the other format. It keeps its history and keeps receiving new plays until you convert it.{% plural %}{{ count }} anime entries are still in the other format. They keep their history and keep receiving new plays until you convert them.{% endblocktranslate %}
+                    </p>
+                    <form method="post" action="{% url 'convert_anime_library' %}">
+                      {% csrf_token %}
+                      <button type="submit"
+                              class="inline-flex items-center rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-muted)]">
+                        {% translate "Convert existing anime" %}
+                      </button>
+                    </form>
+                    <p class="text-xs text-[var(--color-text-muted)]">
+                      {% translate "Converting rebuilds these entries in the new format. Moving to MyAnimeList drops per-episode history, and titles that cannot be converted safely are left exactly as they are." %}
+                    </p>
+                  {% endif %}
+                </div>
+              {% endif %}
             </div>
           {% endfor %}
         </div>
+      </div>
+    {% endif %}
+
+    {% if duplicate_anime_count %}
+      <div class="bg-[var(--color-surface)] rounded-lg p-6">
+        <h2 class="text-xl font-semibold mb-1">{% translate "Duplicate anime libraries" %}</h2>
+        <p class="text-[var(--color-text-muted)] text-sm mb-4">
+          {% blocktranslate count count=duplicate_anime_count %}One show is tracked in both Anime and TV Shows. Repair folds the two entries together and keeps your history.{% plural %}{{ count }} shows are tracked in both Anime and TV Shows. Repair folds each pair together and keeps your history.{% endblocktranslate %}
+        </p>
+        <form method="post" action="{% url 'repair_duplicate_anime_libraries' %}">
+          {% csrf_token %}
+          <button type="submit"
+                  class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500">
+            {% translate "Repair duplicates" %}
+          </button>
+        </form>
+        <p class="mt-2 text-xs text-[var(--color-text-muted)]">
+          {% translate "Shows that cannot be merged safely are left untouched. Re-running is safe." %}
+        </p>
       </div>
     {% endif %}
 
@@ -105,92 +158,4 @@
     {% endfor %}
   </div>
 
-  {% if tv_provider_prompt %}
-    {% comment %}
-      Switching the TV provider only decides where new shows come from. Ask
-      before moving a library the user already has.
-    {% endcomment %}
-    <div x-data="{ open: true }"
-         x-cloak
-         x-show="open"
-         @keydown.escape.window="open = false"
-         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-         role="dialog"
-         aria-modal="true"
-         aria-labelledby="tv-provider-title">
-      <div @click.outside="open = false"
-           class="w-full max-w-lg rounded-2xl border border-[var(--color-surface-border)] bg-[var(--color-page-bg)] p-6 shadow-2xl">
-        <h2 id="tv-provider-title"
-            class="text-lg font-semibold text-[var(--color-text)]">
-          {% blocktranslate with label=tv_provider_prompt.label %}Move your tracked shows to {{ label }}?{% endblocktranslate %}
-        </h2>
-        <p class="mt-2 text-sm text-[var(--color-text-muted)]">
-          {% blocktranslate count count=tv_provider_prompt.count with label=tv_provider_prompt.label %}New shows will use {{ label }} straight away. You have {{ count }} show already tracked on the other provider.{% plural %}New shows will use {{ label }} straight away. You have {{ count }} shows already tracked on the other provider.{% endblocktranslate %}
-        </p>
-        <p class="mt-2 text-sm text-[var(--color-text-muted)]">
-          {% translate "Moving keeps your status, ratings, notes and watched episodes. Shows that cannot be moved safely are left exactly as they are, and you can still move any show from its Match & Ordering tab." %}
-        </p>
-
-        <div class="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button type="button"
-                  @click="open = false"
-                  class="inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
-            {% translate "Leave my library as it is" %}
-          </button>
-          <form method="post" action="{% url 'convert_tv_library' %}">
-            {% csrf_token %}
-            <button type="submit"
-                    class="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:w-auto">
-              {% translate "Move my tracked shows" %}
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  {% endif %}
-
-  {% if anime_shape_prompt_count %}
-    {% comment %}
-      Switching the Anime Provider only decides the shape of newly added
-      shows. Ask before touching a library the user already has, rather than
-      starting a bulk conversion they did not expect.
-    {% endcomment %}
-    <div x-data="{ open: true }"
-         x-cloak
-         x-show="open"
-         @keydown.escape.window="open = false"
-         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-         role="dialog"
-         aria-modal="true"
-         aria-labelledby="anime-shape-title">
-      <div @click.outside="open = false"
-           class="w-full max-w-lg rounded-2xl border border-[var(--color-surface-border)] bg-[var(--color-page-bg)] p-6 shadow-2xl">
-        <h2 id="anime-shape-title"
-            class="text-lg font-semibold text-[var(--color-text)]">
-          {% translate "Convert your existing anime?" %}
-        </h2>
-        <p class="mt-2 text-sm text-[var(--color-text-muted)]">
-          {% blocktranslate count count=anime_shape_prompt_count %}New shows will use your new Anime Provider straight away. You have {{ count }} show already tracked in the other format.{% plural %}New shows will use your new Anime Provider straight away. You have {{ count }} shows already tracked in the other format.{% endblocktranslate %}
-        </p>
-        <p class="mt-2 text-sm text-[var(--color-text-muted)]">
-          {% translate "Converting rebuilds them in the new format. Moving to MyAnimeList drops per-episode history, and titles that cannot be converted safely are left exactly as they are." %}
-        </p>
-
-        <div class="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button type="button"
-                  @click="open = false"
-                  class="inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
-            {% translate "Keep my library as it is" %}
-          </button>
-          <form method="post" action="{% url 'convert_anime_library' %}">
-            {% csrf_token %}
-            <button type="submit"
-                    class="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:w-auto">
-              {% translate "Convert my existing anime" %}
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  {% endif %}
 {% endblock settings_content %}
