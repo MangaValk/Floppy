@@ -1087,6 +1087,28 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     break
             return prefix
 
+        show_events = getattr(media, "prefetched_show_season_events", None)
+
+        def _season_events_for_show():
+            nonlocal show_events
+            if show_events is None:
+                show_events = self._season_events_by_show(
+                    [(item.media_id, item.source)],
+                ).get((item.media_id, item.source), [])
+            return show_events
+
+        def _ordered_show_events(season_number):
+            return sorted(
+                (
+                    event
+                    for event in _as_list(_season_events_for_show())
+                    if getattr(event, "content_number", None) is not None
+                    and getattr(getattr(event, "item", None), "season_number", None)
+                    == season_number
+                ),
+                key=lambda event: event.content_number,
+            )
+
         media_type = getattr(item, "media_type", None)
         progress_index = _progress_index()
 
@@ -1114,6 +1136,15 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 season_events = (
                     _ordered_events_for_item(season_item) if season_item else []
                 )
+                if not season_events and season_item is not None:
+                    # The library can hold the same season identity on more
+                    # than one Item row (different library buckets), and the
+                    # calendar writes events to whichever row it resolves.
+                    # Read the show's events by season number so a tracked row
+                    # without them still dates the show (#1531).
+                    season_events = _ordered_show_events(
+                        getattr(season_item, "season_number", None),
+                    )
                 if season_events:
                     candidates.extend(season_events)
                     continue
@@ -1130,14 +1161,9 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     for season in seasons
                     if getattr(season, "item", None) is not None
                 }
-                show_events = getattr(media, "prefetched_show_season_events", None)
-                if show_events is None:
-                    show_events = self._season_events_by_show(
-                        [(item.media_id, item.source)],
-                    ).get((item.media_id, item.source), [])
                 candidates.extend(
                     event
-                    for event in show_events
+                    for event in _season_events_for_show()
                     if event.item.season_number not in tracked_season_numbers
                 )
 

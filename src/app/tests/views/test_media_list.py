@@ -2654,6 +2654,66 @@ class MediaListViewTests(TestCase):
         air_date = BasicMedia.objects._next_episode_air_date_value(tv)
         self.assertEqual(air_date, season2_release)
 
+    def test_tv_next_episode_air_date_uses_events_on_a_duplicate_season_item(self):
+        """Events written to another Item for the same season still date the show.
+
+        The calendar attaches events to whichever Item row it resolves for a
+        show/season identity, and that can differ from the row a tracked
+        Season row points at (the library can hold the same identity in more
+        than one bucket). Reading only the tracked row's own events leaves the
+        TV page blank while the calendar still lists the episodes (#1531).
+        """
+        base_now = timezone.now().replace(hour=12, minute=0, second=0, microsecond=0)
+        season1_release = base_now - timedelta(days=30)
+        season2_premiere = base_now + timedelta(days=3)
+
+        tv, _season1 = self._create_tv_next_episode_air_date_entry(
+            "tv-next-episode-duplicate-row",
+            "Duplicate Row TV",
+            [season1_release, season1_release + timedelta(days=7)],
+            progress=2,
+        )
+        tracked_season2_item = Item.objects.create(
+            media_id="tv-next-episode-duplicate-row",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            library_media_type=MediaTypes.TV.value,
+            title="Duplicate Row TV Season 2",
+            image="http://example.com/tv-next-episode-season2.jpg",
+            season_number=2,
+        )
+        Season.objects.create(
+            item=tracked_season2_item,
+            user=self.user,
+            related_tv=tv,
+            status=Status.IN_PROGRESS.value,
+        )
+        event_season2_item = Item.objects.create(
+            media_id="tv-next-episode-duplicate-row",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            library_media_type=MediaTypes.SEASON.value,
+            title="Duplicate Row TV Season 2",
+            image="http://example.com/tv-next-episode-season2.jpg",
+            season_number=2,
+        )
+        Event.objects.create(
+            item=event_season2_item,
+            content_number=1,
+            datetime=season2_premiere,
+            notification_sent=False,
+        )
+
+        tv = BasicMedia.objects._apply_prefetch_related(
+            TV.objects.filter(pk=tv.pk),
+            MediaTypes.TV.value,
+            list_mode=True,
+        ).get()
+        self.assertEqual(
+            BasicMedia.objects._next_episode_air_date_value(tv),
+            season2_premiere,
+        )
+
     def test_tv_next_episode_air_date_ignores_a_dropped_season(self):
         """A dropped season is outside the show's progress, so outside its events too (#1531)."""
         base_now = timezone.now().replace(hour=12, minute=0, second=0, microsecond=0)
