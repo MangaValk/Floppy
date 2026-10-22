@@ -2477,18 +2477,22 @@ class BaseWebhookProcessor:
                 )
 
             if should_create:
-                # A real new play starts a planning show/season even if the
-                # episode save later cannot read metadata. Completed statuses
-                # are left for the episode save to derive, so a replay of an
+                # A real new play starts a planning show/season and reopens one
+                # the user had dropped or paused. Completed statuses are left
+                # for the episode save to derive, so a replay of an
                 # already-watched episode does not reopen them.
-                if season_instance.status == Status.PLANNING.value:
-                    season_instance.status = Status.IN_PROGRESS.value
-                    season_instance._change_reason = self._status_change_reason()
-                    season_instance.save()
-                elif tv_instance.status == Status.PLANNING.value:
+                resumable_statuses = {
+                    Status.PLANNING.value,
+                    *app.models.USER_HELD_STATUSES,
+                }
+                if tv_instance.status in resumable_statuses:
                     tv_instance.status = Status.IN_PROGRESS.value
                     tv_instance._change_reason = self._status_change_reason()
                     tv_instance.save()
+                if season_instance.status in resumable_statuses:
+                    season_instance.status = Status.IN_PROGRESS.value
+                    season_instance._change_reason = self._status_change_reason()
+                    season_instance.save()
 
                 # A manual check-in leaves an open play for this episode; the
                 # real play completes it rather than adding a second row.
