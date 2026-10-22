@@ -4304,3 +4304,110 @@ class MediaListRelativeCompletedDateTests(TestCase):
             "platform_mode",
         ):
             self.assertIn(f'name="{name}"', content, name)
+
+
+class GameGroupingViewTests(TestCase):
+    """The Games library can roll up tracked games by catalog relationship."""
+
+    def setUp(self):
+        cache.clear()
+        self.credentials = {"username": "grouping", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+        self.url = reverse("medialist", kwargs={"media_type": MediaTypes.GAME.value})
+
+    def _game(
+        self,
+        media_id,
+        title,
+        *,
+        status=Status.IN_PROGRESS.value,
+        progress=0,
+        collection=("", ""),
+        franchise=("", ""),
+    ):
+        item = Item.objects.create(
+            media_id=str(media_id),
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title=title,
+            provider_collection_id=collection[0],
+            provider_collection_name=collection[1],
+            provider_franchise_id=franchise[0],
+            provider_franchise_name=franchise[1],
+        )
+        Game.objects.create(
+            item=item,
+            user=self.user,
+            status=status,
+            progress=progress,
+            end_date=timezone.now() if status == Status.COMPLETED.value else None,
+        )
+        return item
+
+    def test_series_groups_use_igdb_collections(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            progress=120,
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "Mario Kart",
+            status=Status.COMPLETED.value,
+            progress=300,
+            collection=("2", "Mario Kart"),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "series"})
+
+        self.assertEqual(response.status_code, 200)
+        groups = response.context["media_groups"]
+        self.assertEqual(
+            [group["name"] for group in groups],
+            ["Mario Kart", "Super Mario"],
+        )
+        mario_kart = next(group for group in groups if group["name"] == "Mario Kart")
+        self.assertEqual(mario_kart["game_count"], 1)
+        self.assertEqual(mario_kart["played_count"], 1)
+        self.assertEqual(mario_kart["completed_count"], 1)
+        self.assertEqual(mario_kart["playtime_minutes"], 300)
+
+    def test_franchise_groups_merge_their_series(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "Mario Kart",
+            collection=("2", "Mario Kart"),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        groups = response.context["media_groups"]
+        self.assertEqual([group["name"] for group in groups], ["Mario"])
+        self.assertEqual(groups[0]["game_count"], 2)
+
+    def test_missing_provider_groups_render_as_ungrouped(self):
+        self._game(1, "Local Game")
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        groups = response.context["media_groups"]
+        self.assertEqual([group["name"] for group in groups], ["Ungrouped"])
+
+    def test_group_by_does_not_change_a_flat_library(self):
+        self._game(1, "Super Mario Bros.", collection=("1", "Super Mario"))
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.context["current_group_by"], "item")
+        self.assertEqual(response.context["media_groups"], [])

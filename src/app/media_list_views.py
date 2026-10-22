@@ -50,6 +50,7 @@ from app.models import (
     ItemTag,
     MediaTypes,
     Sources,
+    Status,
     Tag,
     prefill_episode_runtime_index,
 )
@@ -86,6 +87,79 @@ MEDIA_LIST_NO_STATUS_LABEL = "No Status"
 RECENTLY_NOT_RATED_KEY = "recently_not_rated"
 RECENTLY_NOT_RATED_LABEL = "Recently Played - Not Rated"
 RECENTLY_NOT_RATED_DAYS = 7
+
+
+GAME_GROUP_BY_CHOICES = (
+    ("item", "Item"),
+    ("series", "Collection/Series"),
+    ("franchise", "Franchise"),
+)
+
+
+def _build_game_groups(entries, group_by):
+    """Return the filtered Games library rolled up into catalog groups."""
+    groups = {}
+    for entry in entries:
+        item = entry.item
+        if group_by == "series":
+            provider_id = str(getattr(item, "provider_collection_id", "") or "").strip()
+            name = str(getattr(item, "provider_collection_name", "") or "").strip()
+        else:
+            provider_id = str(getattr(item, "provider_franchise_id", "") or "").strip()
+            name = str(getattr(item, "provider_franchise_name", "") or "").strip()
+        if provider_id:
+            key = f"id:{provider_id}"
+        elif name:
+            key = f"name:{name.casefold()}"
+        else:
+            key = "__ungrouped__"
+        group = groups.setdefault(
+            key,
+            {
+                "key": key,
+                "name": name or "Ungrouped",
+                "entries": [],
+                "played_count": 0,
+                "completed_count": 0,
+                "playtime_minutes": 0,
+                "last_played": None,
+                "ungrouped": not (provider_id or name),
+            },
+        )
+        group["entries"].append(entry)
+        media = entry.media
+        if media is None:
+            continue
+        progress = getattr(media, "aggregated_progress", None)
+        if progress is None:
+            progress = getattr(media, "progress", 0) or 0
+        status = getattr(media, "aggregated_status", None) or getattr(
+            media, "status", None
+        )
+        played = progress > 0 or status in {
+            Status.IN_PROGRESS.value,
+            Status.COMPLETED.value,
+        }
+        if played:
+            group["played_count"] += 1
+            activity = (
+                getattr(media, "aggregated_last_watched", None)
+                or getattr(media, "end_date", None)
+                or getattr(media, "progressed_at", None)
+            )
+            if activity and (
+                group["last_played"] is None or activity > group["last_played"]
+            ):
+                group["last_played"] = activity
+        if status == Status.COMPLETED.value:
+            group["completed_count"] += 1
+        group["playtime_minutes"] += progress
+    for group in groups.values():
+        group["game_count"] = len(group["entries"])
+    return sorted(
+        groups.values(),
+        key=lambda group: (group["ungrouped"], group["name"].casefold()),
+    )
 
 
 @dataclass
@@ -1418,6 +1492,10 @@ def media_list(request, media_type):
     except (ValueError, TypeError):
         page = 1
 
+    group_by = request.GET.get("group_by", "item")
+    if group_by not in dict(GAME_GROUP_BY_CHOICES) or media_type != MediaTypes.GAME.value:
+        group_by = "item"
+
     def apply_range_filters(media_items):
         """Keep entries whose item is inside the rating and date ranges.
 
@@ -1610,7 +1688,7 @@ def media_list(request, media_type):
     _skip_generic_media_list = media_type == MediaTypes.PODCAST.value or (
         media_type == MediaTypes.MUSIC.value and music_subview != "tracks"
     )
-    use_sql_media_pagination = not (
+    use_sql_media_pagination = group_by == "item" and not (
         entry_grouping_is_separate()
         or (sort_filter == "time_left" and media_type == MediaTypes.TV.value)
         or _skip_generic_media_list
@@ -1856,7 +1934,9 @@ def media_list(request, media_type):
     _time_left_active = sort_filter == "time_left" and media_type == MediaTypes.TV.value
     # Platform ordering is resolved from collection entries after the base query,
     # so cache only the database-backed sort orders.
-    _use_media_list_cache = not _time_left_active and sort_filter != "platform"
+    _use_media_list_cache = (
+        group_by == "item" and not _time_left_active and sort_filter != "platform"
+    )
     _include_untracked_entries = MEDIA_LIST_NO_STATUS in status_filter
 
     def _resolve_tag_count_source_items(filter_data_source_items, tracked_item_ids):
@@ -2732,8 +2812,11 @@ def media_list(request, media_type):
         )
         prefill_episode_runtime_index(media_page.object_list)
     else:
-        # Paginate results normally
-        items_per_page = 32
+        # Paginate results normally. A grouped Games view needs every filtered
+        # entry so each group's rollup covers the whole filtered library.
+        items_per_page = (
+            max(len(_media_list_full or []), 1) if group_by != "item" else 32
+        )
         if _sql_media_page is not None:
             media_page = _sql_media_page
         elif _cached_media_list_order is not None:
@@ -2810,6 +2893,13 @@ def media_list(request, media_type):
 
     if filter_data is not None:
         filter_data.setdefault("departments", [])
+        filter_data["show_group_by"] = group_by != "item" or media_type == MediaTypes.GAME.value
+
+    media_groups = (
+        _build_game_groups(media_page.object_list, group_by)
+        if group_by != "item"
+        else []
+    )
 
     if tag_values and not _skip_generic_media_list:
         _log_tag_filter_result(
@@ -2831,6 +2921,9 @@ def media_list(request, media_type):
         "layout_class": _layout_class,
         "media_list_url": reverse("medialist", args=[route_media_type]),
         "filter_hx_target": _layout_class if media_page else "#empty_list",
+        "current_group_by": group_by,
+        "group_by_choices": GAME_GROUP_BY_CHOICES,
+        "media_groups": media_groups,
         "current_sort": sort_filter,
         "current_direction": direction,
         "current_status": list(status_filter),
