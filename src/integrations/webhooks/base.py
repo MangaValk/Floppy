@@ -295,6 +295,8 @@ class BaseWebhookProcessor:
             allow_title_fallback=True,
             season_number=payload_season,
             episode_ids=self.TV_IDS_ARE_EPISODE_LEVEL,
+            user=user,
+            raise_transient=True,
         )
         if not media_id:
             logger.warning("No matching TMDB ID found for TV show")
@@ -351,6 +353,8 @@ class BaseWebhookProcessor:
                 fallback_media_id, alt_season, alt_episode = self._find_tv_media_id(
                     alt_ids,
                     episode_ids=self.TV_IDS_ARE_EPISODE_LEVEL,
+                    user=user,
+                    raise_transient=True,
                 )
 
                 if fallback_media_id:
@@ -414,6 +418,8 @@ class BaseWebhookProcessor:
                 allow_title_fallback=True,
                 season_number=season_number,
                 episode_ids=self.TV_IDS_ARE_EPISODE_LEVEL,
+                user=user,
+                raise_transient=True,
             )
             if fallback_media_id:
                 media_id = fallback_media_id
@@ -1219,6 +1225,68 @@ class BaseWebhookProcessor:
         logger.warning("No TMDB or IMDB ID found for movie, skipping processing")
         return None
 
+    def _find_local_tv_media_id(self, user, ids):
+        """Return a tracked show's TMDB id from its stored external IDs.
+
+        A webhook can know the show by TVDB/IMDb while TMDB is unreachable or
+        simply did not return it from ``find``. If the user already tracks the
+        show, its provider link is the answer and no provider request is needed.
+        """
+        tvdb_id = ids.get("tvdb_id")
+        imdb_id = ids.get("imdb_id")
+        if not tvdb_id and not imdb_id:
+            return None
+
+        filters = Q()
+        if tvdb_id:
+            filters |= Q(
+                provider=Sources.TVDB.value,
+                provider_media_id=str(tvdb_id),
+            )
+        if imdb_id:
+            filters |= Q(
+                provider=Sources.IMDB.value,
+                provider_media_id=str(imdb_id),
+            )
+
+        linked_item_ids = app.models.ItemProviderLink.objects.filter(
+            filters,
+            provider_media_type=MediaTypes.TV.value,
+            item__media_type=MediaTypes.TV.value,
+            item__tv__user=user,
+        ).values("item_id")
+
+        direct_filter = Q()
+        if imdb_id:
+            direct_filter = Q(provider_external_ids__imdb_id=str(imdb_id))
+
+        tmdb_item = (
+            app.models.Item.objects.filter(
+                Q(id__in=linked_item_ids) | direct_filter,
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.TV.value,
+                tv__user=user,
+            )
+            .order_by("id")
+            .first()
+        )
+        if tmdb_item:
+            return str(tmdb_item.media_id)
+
+        # A manually-tracked TVDB row can still carry the show's TMDB link.
+        tmdb_link = (
+            app.models.ItemProviderLink.objects.filter(
+                provider=Sources.TMDB.value,
+                provider_media_type=MediaTypes.TV.value,
+                item_id__in=linked_item_ids,
+                item__media_type=MediaTypes.TV.value,
+                item__tv__user=user,
+            )
+            .order_by("item_id")
+            .first()
+        )
+        return str(tmdb_link.provider_media_id) if tmdb_link else None
+
     def _find_tv_media_id(
         self,
         ids,
@@ -1227,6 +1295,8 @@ class BaseWebhookProcessor:
         year=None,
         season_number=None,
         episode_ids=False,
+        user=None,
+        raise_transient=False,
     ):
         """Find TV media ID from external IDs, with optional title search fallback.
 
@@ -1242,6 +1312,12 @@ class BaseWebhookProcessor:
                 equal an unrelated series' TVDB id (#876, #1312), so that hit
                 is ignored and lookup moves on to the TVDB episode / title
                 fallbacks.
+            user: User whose existing library can satisfy a TVDB/IMDb lookup
+                without a provider request.
+            raise_transient: Re-raise a provider outage from the title search
+                so a tracking caller retries instead of dropping the event.
+                Live-playback helpers leave this off so a UI lookup cannot
+                block the scrobble itself.
 
         Returns:
             tuple: (media_id, season_number, episode_number)
@@ -1262,6 +1338,18 @@ class BaseWebhookProcessor:
             if resolved:
                 ids["tvdb_id"] = resolved.get("tvdb_id")
                 ids["imdb_id"] = resolved.get("imdb_id")
+
+        # A show already in this user's library is known by its stored TVDB/IMDb
+        # link. Prefer that over a provider request, which may be unavailable or
+        # may not return a result even though the show is tracked (#1703).
+        if user is not None and not episode_ids and not ids.get("tmdb_id"):
+            local_media_id = self._find_local_tv_media_id(user, ids)
+            if local_media_id:
+                logger.info(
+                    "Resolved TV show %s from the user's existing library link",
+                    local_media_id,
+                )
+                return local_media_id, None, None
 
         # Prioritize TVDB/IMDB — TMDB find API resolves episode-level IDs to show IDs
         for ext_id, ext_type in [
@@ -1333,6 +1421,10 @@ class BaseWebhookProcessor:
                 season_number=season_number,
             )
         except Exception as exc:
+            if raise_transient and _is_transient_provider_error(exc):
+                # Let the webhook task retry instead of recording a successful
+                # run that silently dropped the scrobble.
+                raise
             logger.warning(
                 "Title search failed during TV resolution: %s",
                 exception_summary(exc),

@@ -332,7 +332,10 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
                 if ids.get("tvdb_id") or ids.get("imdb_id"):
                     alt_ids = dict(ids)
                     alt_ids["tmdb_id"] = None
-                    resolved_id, _, _ = super()._find_tv_media_id(alt_ids)
+                    resolved_id, _, _ = super()._find_tv_media_id(
+                        alt_ids,
+                        user=user,
+                    )
                     if resolved_id:
                         media_id = str(resolved_id)
                         logger.debug(
@@ -353,6 +356,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
                             series_title=series_title,
                             allow_title_fallback=True,
                             season_number=season_number,
+                            user=user,
                         )
                         if resolved_media_id:
                             media_id = str(resolved_media_id)

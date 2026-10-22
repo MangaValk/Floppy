@@ -231,6 +231,58 @@ class PlexWebhookTests(TestCase):
         response = self.client.post(url, data={}, content_type="application/json")
         self.assertEqual(response.status_code, 401)
 
+    def test_local_provider_link_resolves_show_when_tmdb_find_misses(self):
+        """A tracked show resolves by TVDB link without a fresh TMDB lookup.
+
+        Regression for #1703: Plex supplies TVDB/IMDb but no TMDB id, and a
+        TMDB find miss used to drop the scrobble even though the show was
+        already in the user's library.
+        """
+        tv_item = Item.objects.create(
+            media_id="81924",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Schooled",
+        )
+        TV.objects.create(
+            item=tv_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        ItemProviderLink.objects.create(
+            item=tv_item,
+            provider=Sources.TVDB.value,
+            provider_media_type=MediaTypes.TV.value,
+            provider_media_id="360289",
+        )
+
+        response = self._post_payload(
+            {
+                "event": "media.scrobble",
+                "Account": {"title": "testuser"},
+                "Metadata": {
+                    "type": "episode",
+                    "grandparentTitle": "Schooled",
+                    "title": "The Goldbergs",
+                    "parentIndex": 1,
+                    "index": 1,
+                    "Guid": [
+                        {"id": "tvdb://360289"},
+                        {"id": "imdb://tt6485512"},
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            Episode.objects.filter(
+                item__media_id="81924",
+                item__season_number=1,
+                item__episode_number=1,
+            ).exists(),
+        )
+
     def test_tv_episode_mark_played(self):
         """Test webhook handles TV episode mark played event."""
         payload = {
