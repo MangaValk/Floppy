@@ -260,6 +260,11 @@ def build_media_list_filter_cache_key(
 
 HOME_ROW_CACHE_PREFIX = "home_row_v2"
 HOME_ROW_CACHE_TTL = 60  # seconds — matches the media-list cache horizon
+# A Python-ordered shelf's id order is the expensive part. Keep it well past the
+# rendered section so a section expiry (or a warm visit minutes later) reloads
+# one page instead of re-ranking the shelf. Media writes invalidate it through
+# the same registry; only provider/event refreshes can lag.
+HOME_ROW_ORDER_CACHE_TTL = 1800
 _HOME_ROW_REGISTRY_TEMPLATE = f"{HOME_ROW_CACHE_PREFIX}_registry_{{user_id}}"
 
 

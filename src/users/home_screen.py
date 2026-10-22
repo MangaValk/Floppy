@@ -2940,7 +2940,8 @@ def _row_items(user, row, executor, offset, limit, *, seed):
     """Return (items, total) for one window of a shelf's query.
 
     A Python-ordered shelf ranks every candidate once; the compact id order is
-    cached for the row-cache lifetime so load-more requests fetch one page.
+    cached so load-more requests and later warm visits fetch one page. Random
+    shelves keep the row lifetime: each new seed is a different order.
     """
     from django.core.cache import cache
 
@@ -2957,7 +2958,12 @@ def _row_items(user, row, executor, offset, limit, *, seed):
     if ranked_ids is None:
         with boundary("home_rank"):
             ranked_ids = executor.ranked_ids()
-        cache.set(order_key, ranked_ids, cache_utils.HOME_ROW_CACHE_TTL)
+        ttl = (
+            cache_utils.HOME_ROW_CACHE_TTL
+            if row.sort_by == HomeSortChoices.RANDOM
+            else cache_utils.HOME_ROW_ORDER_CACHE_TTL
+        )
+        cache.set(order_key, ranked_ids, ttl)
         cache_utils.register_home_row_cache_key(user.id, order_key)
     window = ranked_ids[offset : offset + limit]
     by_id = Item.objects.defer(*HOME_CARD_UNREAD_ITEM_FIELDS).in_bulk(window)

@@ -214,14 +214,28 @@ class _EpisodeItemsAfterSelection(ImportScopedQuerySet):
     depth 1000 (#1450). in_bulk batches its IN lists, so any size loads.
     """
 
+    # Read-only ranking graphs ask for these columns from each episode's Item.
+    # Loading the rest (synopsis, artwork, provider blobs) was most of the
+    # per-build object graph on a large TV/anime shelf.
+    compact_item_fields: tuple[str, ...] | None = None
+
+    def _clone(self):
+        clone = super()._clone()
+        clone.compact_item_fields = self.compact_item_fields
+        return clone
+
     def _fetch_all(self):
         loading = self._result_cache is None
         super()._fetch_all()
         if loading:
             # Episode.item is nullable; leave those rows without an item.
-            items = Item.objects.defer("watch_providers").in_bulk(
-                {episode.item_id for episode in self._result_cache if episode.item_id},
-            )
+            item_ids = {
+                episode.item_id for episode in self._result_cache if episode.item_id
+            }
+            if self.compact_item_fields:
+                items = Item.objects.only(*self.compact_item_fields).in_bulk(item_ids)
+            else:
+                items = Item.objects.defer("watch_providers").in_bulk(item_ids)
             for episode in self._result_cache:
                 if episode.item_id:
                     episode.item = items[episode.item_id]
@@ -958,6 +972,14 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     "item__episode_number",
                     "item__release_datetime",
                 )
+                if isinstance(episode_qs, _EpisodeItemsAfterSelection):
+                    # `.only` narrows the episode columns; this narrows the
+                    # catalogue rows `_fetch_all` loads for them as well.
+                    episode_qs.compact_item_fields = (
+                        "id",
+                        "episode_number",
+                        "release_datetime",
+                    )
             return queryset.prefetch_related(
                 Prefetch(
                     "seasons",

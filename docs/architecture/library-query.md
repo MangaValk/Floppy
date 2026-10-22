@@ -76,8 +76,9 @@ needs Python. A sort's SQL form is either `sql` (one value) or `sql_order`
   - Memory is bounded by the batch and the page. Computing values in Python is
     still one pass over the narrowed candidates.
 
-Home caches a Python-ordered shelf's id order for the row-cache lifetime, so
-"load more" costs one page.
+Home caches a Python-ordered shelf's id order for longer than the rendered
+section, so "load more" and a warm revisit cost one page. A random shelf keeps
+the short row lifetime: each new seed is a different order.
 
 ## Where filters come from
 
