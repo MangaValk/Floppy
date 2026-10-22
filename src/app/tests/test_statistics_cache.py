@@ -25,7 +25,7 @@ from app.statistics_aggregator import (
     _build_platform_breakdown,
     _build_weekday_hour_charts,
 )
-from app.statistics_day_cache import _normalize_day_value
+from app.statistics_day_cache import STATISTICS_DAY_PREFIX, _normalize_day_value
 
 
 class StatisticsDayBatchingTests(SimpleTestCase):
@@ -1231,7 +1231,7 @@ class DayCacheContractTests(SimpleTestCase):
             with self.subTest(day=day):
                 self.assertEqual(
                     statistics_cache._day_cache_key(42, day),
-                    "stats:day:v8:42:2026-09-05",
+                    f"{STATISTICS_DAY_PREFIX}:42:2026-09-05",
                 )
         self.assertEqual(statistics_cache._day_cache_key(42, "invalid"), "")
 

@@ -878,6 +878,11 @@ class Anime(Media):
         otherwise leave its (provider-mapped) episode list showing unwatched. When
         it becomes COMPLETED we convert it into grouped TV-style tracking, which
         creates real Episode records for every watched episode.
+
+        The conversion changes the entry's library shape and metadata provider,
+        so it stays behind the same opt-in as a scrobble-driven conversion
+        (``group_scrobbled_anime``). Without it, completing a MAL entry keeps
+        its MAL identity and detail URL.
         """
         is_create = self._state.adding
         status_changed = self.tracker.has_changed("status")
@@ -896,6 +901,7 @@ class Anime(Media):
             and self.migrated_to_item_id is None
             and self.item.source == Sources.MAL.value
             and self.item.media_type == MediaTypes.ANIME.value
+            and getattr(self.user, "group_scrobbled_anime", False)
         ):
             self._auto_migrate_completed_flat_anime()
 
