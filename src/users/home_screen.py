@@ -3331,6 +3331,71 @@ def _cached_row_section(
     return cached
 
 
+def build_home_page_manifest(
+    user,
+    only_row_ids: set[int] | None = None,
+) -> list[dict]:
+    """Return enabled Home groups and rows in configured order, without sections.
+
+    Cheap enough to call on every Home render: the shell uses it to lay out
+    one deferred placeholder per row. Build sections with
+    ``build_home_page_groups(..., groups=manifest)`` instead of rebuilding the
+    configuration.
+    """
+    with boundary("home_config"):
+        rows = ensure_home_screen_rows(user)
+        enabled_media_types = get_home_configurable_media_types(user)
+    rows_by_media_type: dict[str, list[HomeScreenRow]] = defaultdict(list)
+    for row in rows:
+        if row.enabled and (only_row_ids is None or row.id in only_row_ids):
+            rows_by_media_type[row.media_type].append(row)
+
+    groups = []
+    for media_type in enabled_media_types:
+        media_rows = rows_by_media_type.get(media_type, [])
+        if not media_rows:
+            continue
+        groups.append(
+            {
+                "media_type": media_type,
+                "label": _media_type_group_label(media_type),
+                "icon_svg": str(
+                    app_tags.icon(
+                        _media_type_group_icon_name(media_type),
+                        False,
+                        "w-6 h-6 text-gray-300",
+                    ),
+                ),
+                "rows": media_rows,
+            },
+        )
+    return groups
+
+
+def build_home_row(
+    user,
+    row_id: int,
+    items_limit: int,
+    *,
+    refresh: bool = False,
+) -> dict | None:
+    """Build one enabled Home row for a deferred fragment request."""
+    row = (
+        HomeScreenRow.objects.filter(user=user, id=row_id, enabled=True)
+        .select_related("custom_list")
+        .first()
+    )
+    if row is None or row.media_type not in get_home_configurable_media_types(user):
+        return None
+    return _cached_row_section(
+        user,
+        row,
+        row.media_type,
+        items_limit,
+        refresh=refresh,
+    )
+
+
 def build_home_page_groups(
     user,
     items_limit: int,
@@ -3343,22 +3408,21 @@ def build_home_page_groups(
     only_row_ids: set[int] | None = None,
     refresh_row_cache: bool = False,
     first_group_only: bool = False,
+    groups: list[dict] | None = None,
 ) -> list[dict]:
     """Build grouped home sections from persisted Home rows."""
     if only_row_id is not None:
         only_row_ids = (only_row_ids or set()) | {only_row_id}
-    with boundary("home_config"):
-        rows = ensure_home_screen_rows(user)
-        enabled_media_types = get_home_configurable_media_types(user)
-    rows_by_media_type: dict[str, list[HomeScreenRow]] = defaultdict(list)
-    for row in rows:
-        if row.enabled and (only_row_ids is None or row.id in only_row_ids):
-            rows_by_media_type[row.media_type].append(row)
+    if groups is None:
+        groups = build_home_page_manifest(user, only_row_ids)
 
-    groups = []
-    for media_type in enabled_media_types:
+    built_groups = []
+    for group in groups:
+        media_type = group["media_type"]
         row_sections = []
-        for row in rows_by_media_type.get(media_type, []):
+        for row in group["rows"]:
+            if only_row_ids is not None and row.id not in only_row_ids:
+                continue
             if load_row_id == row.id and append_only:
                 # Offset pagination ("load more") bypasses the row cache.
                 section = _build_row_section(
@@ -3381,20 +3445,14 @@ def build_home_page_groups(
                 continue
             row_sections.append(section)
         if row_sections:
-            groups.append(
+            built_groups.append(
                 {
                     "media_type": media_type,
-                    "label": _media_type_group_label(media_type),
-                    "icon_svg": str(
-                        app_tags.icon(
-                            _media_type_group_icon_name(media_type),
-                            False,
-                            "w-6 h-6 text-gray-300",
-                        ),
-                    ),
+                    "label": group["label"],
+                    "icon_svg": group["icon_svg"],
                     "rows": row_sections,
                 },
             )
             if first_group_only:
                 break
-    return groups
+    return built_groups

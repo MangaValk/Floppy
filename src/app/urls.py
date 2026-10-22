@@ -357,7 +357,11 @@ urlpatterns = [
         views.home_rows_artwork_refresh,
         name="home_rows_artwork_refresh",
     ),
-    path("home/rest/", views.home_rest_fragment, name="home_rest_fragment"),
+    path(
+        "home/row/<int:row_id>/",
+        views.home_row_fragment,
+        name="home_row_fragment",
+    ),
     path(
         "music/artist/<int:artist_id>/update-score/",
         views.update_artist_score,

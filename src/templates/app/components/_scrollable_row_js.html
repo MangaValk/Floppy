@@ -280,6 +280,22 @@
   if (!window.__floppyHomeRowEventsBound) {
   window.__floppyHomeRowEventsBound = true;
 
+  function retryDeferredHomeRow(event) {
+    const slot = event.detail.elt;
+    if (!slot || !slot.matches('[data-home-row-slot]')) return;
+    const retries = Number.parseInt(slot.dataset.retries || '0', 10);
+    if (retries >= 2) {
+      slot.classList.remove('animate-pulse');
+      slot.removeAttribute('aria-busy');
+      slot.textContent = slot.dataset.homeRowErrorLabel || 'Unable to load this row.';
+      return;
+    }
+    slot.dataset.retries = String(retries + 1);
+    setTimeout(() => htmx.trigger(slot, 'load'), 2000 * (retries + 1));
+  }
+  document.body.addEventListener('htmx:responseError', retryDeferredHomeRow);
+  document.body.addEventListener('htmx:sendError', retryDeferredHomeRow);
+
   document.body.addEventListener('htmx:beforeRequest', function(event) {
     const row = event.detail.elt;
     if (row && row.id === 'active-playback-container') {

@@ -31,7 +31,7 @@
   out-of-band swaps can target them.
 {% endcomment %}
 {% if row.poll_for_covers or force_artwork_anchor %}
-<div id="home-music-row-artwork-{{ row.row_id }}" data-home-row-wrapper="true"{% if oob_swap %} hx-swap-oob="outerHTML"{% endif %}>
+<div id="home-music-row-artwork-{{ row.row_id }}" data-home-row-wrapper="true"{% if row.poll_for_covers %} data-home-row-poll-id="{{ row.row_id }}"{% endif %}{% if oob_swap %} hx-swap-oob="outerHTML"{% endif %}>
 {% else %}
 <div data-home-row-wrapper="true">
 {% endif %}
