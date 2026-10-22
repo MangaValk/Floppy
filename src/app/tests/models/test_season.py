@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -529,6 +529,14 @@ class SeasonStatusTests(TestCase):
                 {"episode_number": 1, "image": "img1.jpg"},
             ],
             "image": "season_img.jpg",
+            "related": {
+                "seasons": [
+                    {
+                        "season_number": 2,
+                        "first_air_date": datetime(2020, 1, 1, tzinfo=UTC),
+                    },
+                ],
+            },
         }
 
         self.season.status = Status.COMPLETED.value
@@ -539,6 +547,51 @@ class SeasonStatusTests(TestCase):
 
         self.tv.refresh_from_db()
         self.assertEqual(self.tv.status, Status.IN_PROGRESS.value)
+
+    @patch("app.models.providers.services.get_media_metadata")
+    def test_completed_status_does_not_start_a_future_season(self, mock_get_metadata):
+        """A planning season with an unaired premiere stays planning."""
+        next_season_item = Item.objects.create(
+            media_id="123",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Test Show",
+            image="http://example.com/image2.jpg",
+            season_number=2,
+        )
+        next_season = Season.objects.create(
+            item=next_season_item,
+            user=self.user,
+            related_tv=self.tv,
+            status=Status.PLANNING.value,
+        )
+
+        future_air_date = timezone.now() + timedelta(days=365)
+        mock_get_metadata.return_value = {
+            "episodes": [
+                {"episode_number": 1, "image": "img1.jpg"},
+            ],
+            "image": "season_img.jpg",
+            "details": {"status": "Returning Series"},
+            "related": {
+                "seasons": [
+                    {"season_number": 1, "first_air_date": datetime(2020, 1, 1, tzinfo=UTC)},
+                    {"season_number": 2, "first_air_date": future_air_date},
+                ],
+            },
+        }
+        TV.objects.filter(pk=self.tv.pk).update(status=Status.IN_PROGRESS.value)
+
+        self.season.status = Status.COMPLETED.value
+        self.season.save()
+
+        next_season.refresh_from_db()
+        self.assertEqual(next_season.status, Status.PLANNING.value)
+        self.tv.refresh_from_db()
+        self.assertEqual(self.tv.status, Status.IN_PROGRESS.value)
+        self.assertFalse(
+            Season.objects.filter(related_tv=self.tv, item__season_number=3).exists(),
+        )
 
     @patch("app.models.providers.services.get_media_metadata")
     def test_completed_last_season_completes_tv_show(self, mock_get_metadata):
