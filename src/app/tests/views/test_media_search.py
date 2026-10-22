@@ -379,6 +379,26 @@ class MediaSearchViewTests(TestCase):
         self.assertIn("Hardcover", str(messages[0]))
         self.assertIn("unavailable", str(messages[0]))
 
+    @patch("app.providers.services.search")
+    def test_search_not_configured_provider_explains_setup(self, mock_search):
+        """A missing key must not read as a transient outage."""
+        mock_search.side_effect = services.ProviderNotConfiguredError(
+            Sources.IGDB.value,
+            "IGDB is not configured. Add your Twitch application's client ID "
+            "and secret in Settings → Metadata providers.",
+        )
+
+        response = self.client.get(
+            reverse("search") + "?media_type=game&q=test",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = list(response.context["messages"])
+        self.assertEqual(len(messages), 1)
+        self.assertIn("not configured", str(messages[0]))
+        self.assertIn("Settings", str(messages[0]))
+        self.assertNotIn("unavailable", str(messages[0]))
+
 
 class CollectedItemSearchTests(TestCase):
     """Search covers items in the user's Collection, not only tracked ones (#1270)."""

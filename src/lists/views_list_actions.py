@@ -387,6 +387,12 @@ def lists_modal(
         media_type,
         source=source,
     )
+    if tracking_media_type == MediaTypes.PODCAST.value:
+        from app.services.podcast_import import resolve_show_for_media_id
+
+        show = resolve_show_for_media_id(media_id, source=source)
+        if show is not None:
+            media_id = show.podcast_uuid
     lookup = {
         "media_id": media_id,
         "source": source,

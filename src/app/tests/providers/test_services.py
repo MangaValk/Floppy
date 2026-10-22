@@ -779,6 +779,31 @@ class ServicesTests(TestCase):
         self.assertEqual(result["details"]["show_title"], show.title)
         self.assertEqual(result["details"]["duration"], episode.duration)
 
+    @patch("app.services.podcast_import.import_show_from_itunes_id")
+    def test_get_media_metadata_podcast_itunes_search_id_resolves_show(
+        self, mock_import
+    ):
+        """Search results carry an iTunes id; resolve it to the show catalog row."""
+        show = PodcastShow.objects.create(
+            podcast_uuid="itunes:1532744254",
+            source=Sources.POCKETCASTS.value,
+            title="Sternstunde Philosophie",
+            author="SRF",
+            image="https://example.com/show.jpg",
+        )
+        mock_import.return_value = show
+
+        result = services.get_media_metadata(
+            MediaTypes.PODCAST.value,
+            "1532744254",
+            Sources.POCKETCASTS.value,
+        )
+
+        self.assertEqual(result["media_id"], show.podcast_uuid)
+        self.assertEqual(result["title"], show.title)
+        self.assertEqual(result["details"]["show_uuid"], show.podcast_uuid)
+        mock_import.assert_called_once_with("1532744254")
+
     def test_get_media_metadata_podcast_deleted_episode_is_not_found(self):
         """Deleted podcast episodes should not resolve as generic media."""
         show = PodcastShow.objects.create(

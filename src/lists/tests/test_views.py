@@ -22,6 +22,7 @@ from app.models import (
     Item,
     MediaTypes,
     Movie,
+    PodcastShow,
     Season,
     Sources,
     Status,
@@ -3387,6 +3388,39 @@ class ListsModalViewTests(TestCase):
         self.assertIn("item", response.context)
         self.assertIn("custom_lists", response.context)
         self.assertIn("list_tags", response.context)
+
+    @patch("app.services.podcast_import.import_show_from_itunes_id")
+    def test_lists_modal_resolves_podcast_itunes_search_result(self, mock_import):
+        """A podcast search result's iTunes id adds the show under its uuid."""
+        show = PodcastShow.objects.create(
+            podcast_uuid="itunes:1532744254",
+            title="Sternstunde Philosophie",
+            image="http://example.com/podcast.jpg",
+            rss_feed_url="",
+        )
+        mock_import.return_value = show
+
+        response = self.client.get(
+            reverse(
+                "lists_modal",
+                args=[
+                    Sources.POCKETCASTS.value,
+                    MediaTypes.PODCAST.value,
+                    "1532744254",
+                ],
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "lists/components/fill_lists.html")
+        item = Item.objects.get(
+            media_id=show.podcast_uuid,
+            source=Sources.POCKETCASTS.value,
+            media_type=MediaTypes.PODCAST.value,
+        )
+        self.assertEqual(response.context["item"], item)
+        self.assertEqual(item.title, "Sternstunde Philosophie")
+        mock_import.assert_called_once_with("1532744254")
 
     @patch("app.providers.services.get_media_metadata")
     @patch("lists.models.CustomList.objects.get_user_lists_with_item")

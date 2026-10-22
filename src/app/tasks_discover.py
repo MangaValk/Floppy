@@ -16,6 +16,7 @@ from django.utils import timezone
 from app import cache_safety, history_cache
 from app.interactive_requests import interactive_request_active
 from app.models import MediaTypes
+from app.providers import credentials
 from app.task_cooperation import CooperativeRun
 
 logger = logging.getLogger(__name__)
@@ -85,9 +86,13 @@ def _refresh_rows(user_id, media_type, row_keys, show_more):
         )
         return {"refreshed": 0, "reason": "disabled_media_type", "user_id": user_id}
 
-    refreshed = refresh_rows_for_user(
-        user, requested_media_type, row_keys, show_more=show_more
-    )
+    with credentials.current_user_scope(user):
+        refreshed = refresh_rows_for_user(
+            user,
+            requested_media_type,
+            row_keys,
+            show_more=show_more,
+        )
     return {
         "refreshed": refreshed,
         "user_id": user_id,
@@ -101,7 +106,10 @@ def _rebuild_tab_after_rows(user, media_type, show_more):
     from app.discover.service import stale_refresh_suppressed
     from app.discover.tab_cache import refresh_tab_cache
 
-    with stale_refresh_suppressed():
+    with (
+        credentials.current_user_scope(user),
+        stale_refresh_suppressed(),
+    ):
         refresh_tab_cache(
             user,
             media_type,
@@ -172,13 +180,14 @@ def refresh_discover_tab_cache(
         )
         return {"refreshed": False, "reason": "already_fresh", "user_id": user_id}
 
-    rows = refresh_tab_cache(
-        user,
-        requested_media_type,
-        show_more=show_more,
-        force=force,
-        clear_provider_cache=clear_provider_cache,
-    )
+    with credentials.current_user_scope(user):
+        rows = refresh_tab_cache(
+            user,
+            requested_media_type,
+            show_more=show_more,
+            force=force,
+            clear_provider_cache=clear_provider_cache,
+        )
     return {
         "refreshed": True,
         "row_count": len(rows),

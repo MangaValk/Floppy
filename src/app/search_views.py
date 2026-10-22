@@ -523,6 +523,15 @@ def media_search(request):
                     user=request.user,
                     language=metadata_resolution.metadata_language_default(request.user),
                 )
+    except services.ProviderNotConfiguredError as exc:
+        logger.warning(
+            "Search skipped for media_type=%s query=%s: %s",
+            media_type,
+            query,
+            exception_summary(exc),
+        )
+        messages.error(request, str(exc))
+        data = {"page": 1, "total_results": 0, "total_pages": 0, "results": []}
     except services.ProviderAPIError as exc:
         logger.warning(
             "Search failed for media_type=%s query=%s: %s",
