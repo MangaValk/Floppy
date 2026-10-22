@@ -14,6 +14,7 @@ from app import (
 from app.media_list_filters import media_list_entries_for_items
 from app.media_list_views import build_filter_data_from_items
 from app.models import (
+    TV,
     BasicMedia,
     Book,
     Comic,
@@ -24,6 +25,7 @@ from app.models import (
     MediaTypes,
     Movie,
     Sources,
+    Status,
     Studio,
 )
 from app.providers import (
@@ -290,7 +292,11 @@ def person_detail(request, source, person_id, name):
                     item__person_credits__person__source=source,
                     item__person_credits__person__source_person_id=person_id_str,
                 )
-                .filter(Q(start_date__isnull=False) | Q(end_date__isnull=False))
+                .filter(
+                    Q(start_date__isnull=False)
+                    | Q(end_date__isnull=False)
+                    | Q(status=Status.COMPLETED.value)
+                )
                 .select_related("item")
                 .distinct()
             )
@@ -355,7 +361,7 @@ def person_detail(request, source, person_id, name):
                 item__source=source,
                 item__media_type=MediaTypes.MOVIE.value,
                 item__media_id__in=watched_movie_media_ids,
-            ).exclude(start_date__isnull=True, end_date__isnull=True)
+            ).filter(Q(end_date__isnull=False) | Q(status=Status.COMPLETED.value))
             watched_media_keys.update(
                 (media_type, str(media_id))
                 for media_type, media_id in watched_movies.values_list(
@@ -367,16 +373,29 @@ def person_detail(request, source, person_id, name):
         if watched_tv_media_ids:
             watched_tv = Episode.all_objects.filter(
                 related_season__user=request.user,
-                end_date__isnull=False,
                 related_season__related_tv__item__source=source,
                 related_season__related_tv__item__media_type=MediaTypes.TV.value,
                 related_season__related_tv__item__media_id__in=watched_tv_media_ids,
-            )
+            ).filter(Q(end_date__isnull=False) | Q(status=Status.COMPLETED.value))
             watched_media_keys.update(
                 (media_type, str(media_id))
                 for media_type, media_id in watched_tv.values_list(
                     "related_season__related_tv__item__media_type",
                     "related_season__related_tv__item__media_id",
+                ).distinct()
+            )
+            completed_tv = TV.objects.filter(
+                user=request.user,
+                item__source=source,
+                item__media_type=MediaTypes.TV.value,
+                item__media_id__in=watched_tv_media_ids,
+                status=Status.COMPLETED.value,
+            )
+            watched_media_keys.update(
+                (media_type, str(media_id))
+                for media_type, media_id in completed_tv.values_list(
+                    "item__media_type",
+                    "item__media_id",
                 ).distinct()
             )
 
@@ -386,7 +405,11 @@ def person_detail(request, source, person_id, name):
                 item__source=source,
                 item__media_type=MediaTypes.BOOK.value,
                 item__media_id__in=watched_book_media_ids,
-            ).filter(Q(start_date__isnull=False) | Q(end_date__isnull=False))
+            ).filter(
+                Q(start_date__isnull=False)
+                | Q(end_date__isnull=False)
+                | Q(status=Status.COMPLETED.value)
+            )
             watched_media_keys.update(
                 (media_type, str(media_id))
                 for media_type, media_id in watched_books.values_list(
@@ -401,7 +424,11 @@ def person_detail(request, source, person_id, name):
                 item__source=source,
                 item__media_type=MediaTypes.COMIC.value,
                 item__media_id__in=watched_comic_media_ids,
-            ).filter(Q(start_date__isnull=False) | Q(end_date__isnull=False))
+            ).filter(
+                Q(start_date__isnull=False)
+                | Q(end_date__isnull=False)
+                | Q(status=Status.COMPLETED.value)
+            )
             watched_media_keys.update(
                 (media_type, str(media_id))
                 for media_type, media_id in watched_comics.values_list(
@@ -416,7 +443,11 @@ def person_detail(request, source, person_id, name):
                 item__source=source,
                 item__media_type=MediaTypes.MANGA.value,
                 item__media_id__in=watched_manga_media_ids,
-            ).filter(Q(start_date__isnull=False) | Q(end_date__isnull=False))
+            ).filter(
+                Q(start_date__isnull=False)
+                | Q(end_date__isnull=False)
+                | Q(status=Status.COMPLETED.value)
+            )
             watched_media_keys.update(
                 (media_type, str(media_id))
                 for media_type, media_id in watched_manga.values_list(
