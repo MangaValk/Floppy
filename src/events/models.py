@@ -430,9 +430,7 @@ class Event(models.Model):
 
     item = models.ForeignKey(Item, on_delete=models.CASCADE)
     content_number = models.IntegerField(null=True)
-    # The calendar filters a single month out of every event ever stored.
-    # Without this index SQLite scans the whole table (EXPLAIN: SCAN events_event).
-    datetime = models.DateTimeField(db_index=True)
+    datetime = models.DateTimeField()
     # Blank for the item's main release date. Digital and physical dates differ
     # per country, so those events also carry the region they apply to and only
     # show for users whose watch provider region matches.
@@ -458,6 +456,11 @@ class Event(models.Model):
         """Meta class for Event model."""
 
         ordering = ["-datetime"]
+        # The calendar filters one month out of every event ever stored.
+        # Without this index SQLite scans the whole table (SCAN events_event).
+        indexes = [
+            models.Index(fields=["datetime"], name="events_event_datetime_idx"),
+        ]
         constraints = [
             UniqueConstraint(
                 fields=["item", "content_number"],
