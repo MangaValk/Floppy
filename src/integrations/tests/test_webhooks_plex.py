@@ -1416,6 +1416,60 @@ class PlexWebhookTests(TestCase):
         self.assertEqual(season.status, Status.IN_PROGRESS.value)
         self.assertEqual(season.related_tv.status, Status.IN_PROGRESS.value)
 
+    def test_duplicate_scrobble_does_not_reopen_completed_season(self):
+        """A re-delivered final scrobble must not undo season/show completion."""
+        self.user.anime_enabled = False
+        processor = PlexWebhookProcessor()
+
+        def payload(episode_number):
+            return {
+                "event": "media.scrobble",
+                "Metadata": {
+                    "type": "episode",
+                    "grandparentTitle": "Friends",
+                    "parentTitle": "Season 1",
+                    "index": episode_number,
+                    "parentIndex": 1,
+                    "duration": 1440000,
+                },
+            }
+
+        for episode_number in (1, 2):
+            processor._handle_tv_episode(
+                "1668",
+                1,
+                episode_number,
+                payload(episode_number),
+                self.user,
+            )
+
+        season = Season.objects.get(
+            item__media_id="1668",
+            item__season_number=1,
+            user=self.user,
+        )
+        self.assertEqual(season.status, Status.COMPLETED.value)
+        self.assertEqual(season.related_tv.status, Status.COMPLETED.value)
+
+        processor._handle_tv_episode(
+            "1668",
+            1,
+            2,
+            payload(2),
+            self.user,
+        )
+
+        season.refresh_from_db()
+        self.assertEqual(season.status, Status.COMPLETED.value)
+        self.assertEqual(season.related_tv.status, Status.COMPLETED.value)
+        self.assertEqual(
+            Episode.objects.filter(
+                related_season=season,
+                item__episode_number=2,
+            ).count(),
+            1,
+        )
+
     @patch("app.providers.tmdb.search", return_value={"results": []})
     @patch(
         "app.providers.tmdb.find",

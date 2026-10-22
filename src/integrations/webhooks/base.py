@@ -2300,7 +2300,10 @@ class BaseWebhookProcessor:
                 tv_instance.status,
                 item_tv_metadata["title"],
             )
-        elif tv_instance.status != Status.IN_PROGRESS.value:
+        elif not played and tv_instance.status != Status.IN_PROGRESS.value:
+            # A completed show is only reopened by a play that is actually
+            # recorded; reopening it here would strand it in progress when the
+            # scrobble below turns out to be a duplicate.
             tv_instance.status = Status.IN_PROGRESS.value
             tv_instance._change_reason = self._status_change_reason()
             tv_instance.save()
@@ -2423,7 +2426,11 @@ class BaseWebhookProcessor:
             )
         elif not played and season_instance.status in start_keeps:
             pass
-        elif season_instance.status != Status.IN_PROGRESS.value:
+        elif not played and season_instance.status != Status.IN_PROGRESS.value:
+            # Played events leave the status alone until the duplicate check
+            # below decides whether a play is really being added. The episode
+            # save derives the correct season status from the resulting
+            # history; a duplicate scrobble must not reopen a completed season.
             season_instance.status = Status.IN_PROGRESS.value
             season_instance._change_reason = self._status_change_reason()
             season_instance.save()
@@ -2470,6 +2477,19 @@ class BaseWebhookProcessor:
                 )
 
             if should_create:
+                # A real new play starts a planning show/season even if the
+                # episode save later cannot read metadata. Completed statuses
+                # are left for the episode save to derive, so a replay of an
+                # already-watched episode does not reopen them.
+                if season_instance.status == Status.PLANNING.value:
+                    season_instance.status = Status.IN_PROGRESS.value
+                    season_instance._change_reason = self._status_change_reason()
+                    season_instance.save()
+                elif tv_instance.status == Status.PLANNING.value:
+                    tv_instance.status = Status.IN_PROGRESS.value
+                    tv_instance._change_reason = self._status_change_reason()
+                    tv_instance.save()
+
                 # A manual check-in leaves an open play for this episode; the
                 # real play completes it rather than adding a second row.
                 open_play = app.models.Episode.objects.filter(
