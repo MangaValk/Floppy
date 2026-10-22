@@ -6,16 +6,18 @@ then group by franchise or collection/series without a live provider call.
 """
 
 import logging
+from collections import defaultdict
 
 from celery import shared_task
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import Q
 
 from app import backfill_queue, metadata_utils
 from app.log_safety import exception_summary
-from app.models import Item, MediaTypes, MetadataBackfillField, Sources
-from app.providers import services
+from app.models import Game, Item, MediaTypes, MetadataBackfillField, Sources
+from app.providers import credentials, services
 from app.task_cooperation import CooperativeRun
 from app.tasks_backfill_state import (
     _apply_backfill_state_filters,
@@ -63,17 +65,52 @@ def count_game_group_backfill_items() -> int:
     return _game_group_items_queryset().count()
 
 
+def _users_by_item(items):
+    """Return the tracking users that can scope each item's provider keys."""
+    item_ids = [item.id for item in items]
+    user_ids_by_item = defaultdict(list)
+    for item_id, user_id in Game.objects.filter(item_id__in=item_ids).values_list(
+        "item_id", "user_id"
+    ):
+        if user_id not in user_ids_by_item[item_id]:
+            user_ids_by_item[item_id].append(user_id)
+    users = {
+        user.pk: user
+        for user in get_user_model().objects.filter(
+            pk__in={user_id for ids in user_ids_by_item.values() for user_id in ids}
+        )
+    }
+    configured = {}
+
+    def scoped_user(item):
+        candidates = [
+            users[user_id]
+            for user_id in user_ids_by_item.get(item.id, ())
+            if user_id in users
+        ]
+        for user in candidates:
+            if user.pk not in configured:
+                configured[user.pk] = credentials.is_configured("igdb", user)
+            if configured[user.pk]:
+                return user
+        return candidates[0] if candidates else None
+
+    return scoped_user
+
+
 def _populate_game_groups_for_items(items):
     updated_count = 0
     error_count = 0
     run = CooperativeRun("game_groups_backfill")
+    scoped_user = _users_by_item(items)
     for item in run.iter(items):
         try:
-            metadata = services.get_media_metadata(
-                item.media_type,
-                item.media_id,
-                item.source,
-            )
+            with credentials.current_user_scope(scoped_user(item)):
+                metadata = services.get_media_metadata(
+                    item.media_type,
+                    item.media_id,
+                    item.source,
+                )
             if not isinstance(metadata, dict):
                 error_count += 1
                 _record_backfill_failure(

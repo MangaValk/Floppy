@@ -1,9 +1,11 @@
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from app.models import Item, MediaTypes, Sources
+from app.models import Game, Item, MediaTypes, Sources, Status
 from app.tasks_game_groups import (
+    _users_by_item,
     count_game_group_backfill_items,
     populate_game_group_data_for_items,
     reconcile_game_groups_backfill,
@@ -19,6 +21,28 @@ class GameGroupBackfillTests(TestCase):
             title=f"Game {media_id}",
             **fields,
         )
+
+    @patch("app.tasks_game_groups.credentials.is_configured")
+    def test_group_backfill_prefers_a_user_with_igdb_credentials(
+        self,
+        mock_configured,
+    ):
+        item = self._game()
+        other = get_user_model().objects.create_user(username="other")
+        owner = get_user_model().objects.create_user(username="owner")
+        Game.objects.create(
+            item=item,
+            user=other,
+            status=Status.IN_PROGRESS.value,
+        )
+        Game.objects.create(
+            item=item,
+            user=owner,
+            status=Status.COMPLETED.value,
+        )
+        mock_configured.side_effect = lambda slug, user: user.username == "owner"
+
+        self.assertEqual(_users_by_item([item])(item), owner)
 
     @patch("app.tasks_game_groups.services.get_media_metadata")
     def test_backfill_populates_franchise_and_collection(self, mock_metadata):
