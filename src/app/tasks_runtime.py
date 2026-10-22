@@ -74,6 +74,10 @@ def _reset_stale_give_up_episode_runtimes():
 
     Episodes aired within the last 30 days (or with no known air date) are eligible.
     Items must have been last attempted more than 7 days ago to avoid immediate re-triggering.
+
+    A terminal verdict (the provider said this id does not exist) is not stale
+    interest - re-asking the same id gets the same 404. Those stay given up
+    until a manual recheck or an identity change clears the state.
     """
     from datetime import timedelta
 
@@ -84,6 +88,7 @@ def _reset_stale_give_up_episode_runtimes():
         MetadataBackfillState.objects.filter(
             field=MetadataBackfillField.RUNTIME,
             give_up=True,
+            terminal=False,
             last_attempt_at__lt=attempt_cutoff,
             item__media_type=MediaTypes.EPISODE.value,
             item__runtime_minutes__isnull=True,
@@ -97,6 +102,7 @@ def _reset_stale_give_up_episode_runtimes():
             give_up=False,
             fail_count=0,
             next_retry_at=None,
+            terminal=False,
         )
     )
     if count:

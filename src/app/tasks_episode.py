@@ -64,7 +64,10 @@ def populate_episode_runtime_data(season_keys: list[str] | None = None):
     )
 
     # Deferred to avoid circular import: tasks.py re-exports this module.
-    from app.tasks_backfill_state import METADATA_BACKFILL_EMPTY_ANSWER_DELAY_SECONDS
+    from app.tasks_backfill_state import (
+        METADATA_BACKFILL_EMPTY_ANSWER_DELAY_SECONDS,
+        is_terminal_backfill_error,
+    )
 
     normalized_seasons = _normalize_season_keys(season_keys)
 
@@ -100,6 +103,7 @@ def populate_episode_runtime_data(season_keys: list[str] | None = None):
         )
 
     for media_id, source, season_number in seasons_to_process:
+        eligible_missing = []
         try:
             if not media_id or season_number is None:
                 continue
@@ -281,12 +285,33 @@ def populate_episode_runtime_data(season_keys: list[str] | None = None):
             time.sleep(0.1)
 
         except Exception as e:
-            logger.exception(
-                "Episode runtime backfill failed source=%s season=%s error=%s",
-                source,
-                season_number,
-                exception_summary(e),  # noqa: TRY401  # exception_summary() is the project's sanitised rendering
-            )
+            error_summary = exception_summary(e)
+            terminal = is_terminal_backfill_error(e)
+            if terminal:
+                # A dead provider id fails the same way every night. One line,
+                # no traceback, and the per-item state below keeps the season
+                # out of future runs.
+                logger.warning(
+                    "Episode runtime backfill failed source=%s season=%s error=%s terminal=%s",
+                    source,
+                    season_number,
+                    error_summary,
+                    terminal,
+                )
+            else:
+                logger.exception(
+                    "Episode runtime backfill failed source=%s season=%s error=%s",
+                    source,
+                    season_number,
+                    error_summary,
+                )
+            for episode_item in eligible_missing:
+                _record_backfill_failure(
+                    episode_item,
+                    MetadataBackfillField.RUNTIME,
+                    f"exception: {error_summary}",
+                    terminal=terminal,
+                )
             error_count += 1
             continue
 

@@ -186,6 +186,10 @@ class MetadataBackfillState(models.Model):
     last_success_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default="")
     give_up = models.BooleanField(default=False)
+    # True when the last failure was the provider saying this identifier will
+    # never resolve (400/404/410/422), as opposed to an outage or an empty
+    # answer that a later retry might fill in.
+    terminal = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
