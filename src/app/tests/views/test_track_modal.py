@@ -1958,6 +1958,34 @@ class PodcastTrackModalViewTests(TestCase):
         self.assertContains(response, 'name="notes"', html=False)
         self.assertContains(response, 'name="score"', html=False)
 
+    @patch("app.services.podcast_import.import_show_from_itunes_id")
+    def test_podcast_track_modal_resolves_itunes_search_result(self, mock_import):
+        """A podcast search result's iTunes id opens the show editor."""
+        show = PodcastShow.objects.create(
+            podcast_uuid="itunes:1532744254",
+            title="Sternstunde Philosophie",
+            image="http://example.com/show.jpg",
+            rss_feed_url="",
+        )
+        mock_import.return_value = show
+
+        response = self.client.get(
+            reverse(
+                "track_modal",
+                kwargs={
+                    "source": Sources.POCKETCASTS.value,
+                    "media_type": MediaTypes.PODCAST.value,
+                    "media_id": "1532744254",
+                },
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "app/components/fill_track.html")
+        self.assertContains(response, "Sternstunde Philosophie")
+        self.assertContains(response, 'name="show_id"', html=False)
+        mock_import.assert_called_once_with("1532744254")
+
     def test_podcast_show_track_modal_renders_episode_plays_tab(self):
         """Podcast show modal should expose bulk episode plays instead of mark-all CTA."""
         show = PodcastShow.objects.create(

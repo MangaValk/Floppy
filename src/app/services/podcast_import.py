@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from app.log_safety import exception_summary
-from app.models import PodcastShow
+from app.models import PodcastEpisode, PodcastShow, Sources
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,30 @@ def find_existing_show(itunes_id: str, rss_feed_url: str) -> PodcastShow | None:
         if existing:
             return existing
     return PodcastShow.objects.filter(podcast_uuid=f"itunes:{itunes_id}").first()
+
+
+def resolve_show_for_media_id(
+    media_id: str,
+    source: str = Sources.POCKETCASTS.value,
+) -> PodcastShow | None:
+    """Return the show a podcast route's media_id names, importing iTunes ids.
+
+    Podcast search results carry iTunes collection ids, while imported shows
+    are stored under ``itunes:<id>``. Both forms therefore have to resolve to
+    the same show before the track and list modals can act on it.
+    """
+    media_id = str(media_id)
+    show = PodcastShow.objects.filter(podcast_uuid=media_id).first()
+    if show is not None:
+        return show
+    if source != Sources.POCKETCASTS.value or not media_id.isdigit():
+        return None
+    if PodcastEpisode.objects.filter(
+        episode_uuid=media_id,
+        show__source=source,
+    ).exists():
+        return None
+    return import_show_from_itunes_id(media_id)
 
 
 def import_show_from_itunes_id(itunes_id: str) -> PodcastShow:

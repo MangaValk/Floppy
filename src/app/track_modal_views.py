@@ -1208,10 +1208,12 @@ def track_modal(
             Sources.AUDIOBOOKSHELF.value,
         }
     ):
-        from app.models import PodcastEpisode, PodcastShow
+        from app.models import PodcastEpisode
+        from app.services.podcast_import import resolve_show_for_media_id
 
-        # Check if this is a show (podcast_uuid) or an episode (episode_uuid)
-        show = PodcastShow.objects.filter(podcast_uuid=media_id).first()
+        # Check if this is a show (podcast_uuid or an iTunes search id) or an
+        # episode (episode_uuid).
+        show = resolve_show_for_media_id(media_id, source=source)
         if show:
             return _render_podcast_show_track_modal(request, show)
 

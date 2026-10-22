@@ -1079,6 +1079,19 @@ def _resolve_podcast_metadata(media_id, source, user=None):
     if show is not None:
         return _podcast_show_metadata(show)
 
+    if source == Sources.POCKETCASTS.value and str(media_id).isdigit():
+        from app.services.podcast_import import (
+            PodcastImportError,
+            resolve_show_for_media_id,
+        )
+
+        try:
+            show = resolve_show_for_media_id(media_id, source=source)
+        except PodcastImportError:
+            show = None
+        if show is not None:
+            return _podcast_show_metadata(show)
+
     raise_not_found_error(source, media_id, "podcast episode")
     return None  # unreachable: raise_not_found_error always raises
 
