@@ -880,7 +880,11 @@ class TV(Media):
                 season_number = season_data.get("season_number")
                 if season_number is None:
                     continue
-                related_by_number.setdefault(int(season_number), season_data)
+                try:
+                    season_number = int(season_number)
+                except (TypeError, ValueError):
+                    continue
+                related_by_number.setdefault(season_number, season_data)
 
         if next_unwatched_season is None and unaired_candidates:
             # A planning season with no local history is only promoted when
@@ -922,7 +926,10 @@ class TV(Media):
                 season_number = season_data.get("season_number")
                 if season_number is None:
                     continue
-                season_number = int(season_number)
+                try:
+                    season_number = int(season_number)
+                except (TypeError, ValueError):
+                    continue
                 if (
                     season_number <= min_season_number
                     or season_number in existing_season_numbers
