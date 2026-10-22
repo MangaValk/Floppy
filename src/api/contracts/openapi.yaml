@@ -901,6 +901,7 @@ paths:
           - ended
           - id
           - itemid
+          - last_watched
           - mediaid
           - next_episode_air_date
           - platform
@@ -1208,6 +1209,7 @@ paths:
           - ended
           - id
           - itemid
+          - last_watched
           - mediaid
           - next_episode_air_date
           - platform

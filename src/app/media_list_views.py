@@ -29,7 +29,10 @@ from app.columns import (
     sanitize_column_prefs,
 )
 from app.library_query import FilterValues, LibraryQuery, LibraryQueryExecutor
-from app.library_query.adapters import from_media_list_filters
+from app.library_query.adapters import (
+    from_media_list_filters,
+    last_watched_sort_key,
+)
 from app.media_list_entry_grouping import entry_grouping_is_separate
 from app.media_list_filters import (
     apply_media_list_collection_filter,
@@ -1565,7 +1568,7 @@ def media_list(request, media_type):
         "title"
         if sort_filter
         in {"author", "runtime", "time_to_beat", "platform", "time_watched"}
-        else sort_filter
+        else last_watched_sort_key(sort_filter)
     )
 
     list_sql_filters = {
@@ -1595,7 +1598,7 @@ def media_list(request, media_type):
         progress=progress_filter,
         implied_genre=implied_genre_filter,
         pinned_providers=tuple(request.user.pinned_watch_providers or ()),
-        sort=sort_filter,
+        sort=last_watched_sort_key(sort_filter),
         direction=direction,
         exclude=(),
         media_type=media_type,
@@ -2519,8 +2522,11 @@ def media_list(request, media_type):
                     )
                     return (_sortable_dt(start_dt), title.lower())
                 if sort_filter == "end_date":
-                    end_dt = getattr(media, "aggregated_end_date", None) or getattr(
-                        media, "end_date", None
+                    end_dt = (
+                        getattr(media, "aggregated_last_watched", None)
+                        or getattr(media, "aggregated_end_date", None)
+                        or getattr(media, "end_date", None)
+                        or getattr(media, "progressed_at", None)
                     )
                     return (_sortable_dt(end_dt), title.lower())
                 if sort_filter == "next_episode_air_date":

@@ -177,6 +177,7 @@ MEDIA_EXISTING_SORTS = [
     "score",
     "start_date",
     "end_date",
+    "last_watched",
 ] + [f.name for f in Item._meta.fields]
 
 MEDIA_SEASONS_ADDITIONAL_SORTS = [
@@ -932,6 +933,11 @@ def apply_manual_sort_for_type(results, sort):
 _AGGREGATED_SORT_KEYS = {
     "added": lambda media: _sort_nullable(getattr(media, "created_at", None)),
     "ended": lambda media: _sort_nullable(getattr(media, "end_date", None)),
+    "last_watched": lambda media: _sort_nullable(
+        getattr(media, "aggregated_last_watched", None)
+        or getattr(media, "end_date", None)
+        or getattr(media, "progressed_at", None),
+    ),
     "id": lambda media: int(media.id),
     "itemid": itemid_key_compare,
     "mediaid": _sort_mediaid,

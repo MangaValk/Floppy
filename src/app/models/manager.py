@@ -48,7 +48,16 @@ SEASON_MAX_PROGRESS_RETRY_SECONDS = 10 * 60
 # _aggregate_item_data does; ``_aggregated_sort_subquery`` expresses them in
 # SQL for the library-query engine's sort registry.
 SQL_SORTABLE_AGGREGATED_KEYS = frozenset(
-    {"start_date", "started", "end_date", "ended", "score", "progress", "plays"},
+    {
+        "start_date",
+        "started",
+        "end_date",
+        "ended",
+        "last_watched",
+        "score",
+        "progress",
+        "plays",
+    },
 )
 
 _MEDIA_LIST_DEFERRED_ITEM_FIELDS = (
@@ -660,6 +669,19 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
         if sort_key in ("end_date", "ended"):
             inner = base.order_by().values("item_id").annotate(agg=Max("end_date"))
             return Subquery(inner.values("agg")[:1])
+        if sort_key == "last_watched":
+            concrete = {field.attname for field in model._meta.concrete_fields}
+            if "progressed_at" in concrete:
+                activity = Case(
+                    When(end_date__isnull=False, then=F("end_date")),
+                    When(progressed_at__isnull=False, then=F("progressed_at")),
+                    default=None,
+                    output_field=models.DateTimeField(),
+                )
+            else:
+                activity = F("end_date")
+            inner = base.order_by().values("item_id").annotate(agg=Max(activity))
+            return Subquery(inner.values("agg")[:1])
         if sort_key in ("progress", "plays"):
             if media_type == MediaTypes.MOVIE.value:
                 expr = Count(
@@ -796,6 +818,25 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             display_media.aggregated_end_date = max(end_dates)
         else:
             display_media.aggregated_end_date = None
+
+        # Last watched is the latest activity across rows: the completion date
+        # when there is one, otherwise the last progress update. TV and Season
+        # already derive end_date from their episodes, so progressed_at is only
+        # read where the model stores it.
+        has_progressed_at = any(
+            field.attname == "progressed_at"
+            for field in type(display_media)._meta.concrete_fields
+        )
+        last_watched_dates = []
+        for entry in all_media_entries:
+            activity = entry.end_date
+            if activity is None and has_progressed_at:
+                activity = entry.progressed_at
+            if activity is not None:
+                last_watched_dates.append(activity)
+        display_media.aggregated_last_watched = (
+            max(last_watched_dates) if last_watched_dates else None
+        )
 
         # Aggregate status (most recent status by activity)
         latest_status = None
@@ -965,6 +1006,13 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
     def _sort_media_list(self, queryset, sort_filter, media_type=None, direction=None):
         """Sort media list using SQL sorting with annotations for calculated fields."""
         direction = self.resolve_direction(sort_filter, direction)
+        if sort_filter == "last_watched" and media_type in (
+            MediaTypes.TV.value,
+            MediaTypes.SEASON.value,
+        ):
+            # These models derive end_date from their watched episodes, which
+            # is already the last watched value.
+            sort_filter = "end_date"
         if media_type == MediaTypes.TV.value:
             return self._sort_tv_media_list(queryset, sort_filter, direction)
         if media_type == MediaTypes.SEASON.value:
@@ -1380,6 +1428,15 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 ),
                 reverse=(direction == "desc"),
             )
+
+        if sort_filter == "last_watched":
+            activity = models.functions.Coalesce("end_date", "progressed_at")
+            order = (
+                activity.asc(nulls_last=True)
+                if direction == "asc"
+                else activity.desc(nulls_last=True)
+            )
+            return queryset.order_by(order, models.functions.Lower("item__title"))
 
         # Handle sorting by date fields with special null handling
         if sort_filter in ("start_date", "end_date", "date_added"):

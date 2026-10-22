@@ -22,7 +22,11 @@ from django.utils import timezone
 from django.utils.translation import gettext
 
 from app.library_query import FilterValues, LibraryQuery, LibraryQueryExecutor, SortSpec
-from app.library_query.adapters import from_home_row_filters, home_engine_direction
+from app.library_query.adapters import (
+    from_home_row_filters,
+    home_engine_direction,
+    last_watched_sort_key,
+)
 from app.library_query.filters import NEEDS_MAX_PROGRESS, NEEDS_MEDIA
 from app.library_query.sorts import RANDOM_MODULUS, SortDef
 from app.library_query.sorts import register as register_sort
@@ -2443,12 +2447,20 @@ def _entry_start_timestamp(entry: HomeRowEntry):
     return dt_value.timestamp() if dt_value else None
 
 
-def _entry_end_timestamp(entry: HomeRowEntry):
+def _entry_last_watched_timestamp(entry: HomeRowEntry):
+    """Return the last activity for the "Last Watched" sort.
+
+    A completed entry is dated by its end_date; an in-progress one by its
+    last progress update. No activity stays null and sorts last.
+    """
     media = _entry_media(entry)
     if not media:
         return None
-    candidate = getattr(media, "aggregated_end_date", None) or getattr(
-        media, "end_date", None
+    candidate = (
+        getattr(media, "aggregated_last_watched", None)
+        or getattr(media, "aggregated_end_date", None)
+        or getattr(media, "end_date", None)
+        or getattr(media, "progressed_at", None)
     )
     dt_value = _coerce_datetime(candidate)
     return dt_value.timestamp() if dt_value else None
@@ -2713,7 +2725,7 @@ def sort_home_entries(
     if sort_by == MediaSortChoices.START_DATE:
         return _sort_numeric(entries, _entry_start_timestamp, direction)
     if sort_by == MediaSortChoices.END_DATE:
-        return _sort_numeric(entries, _entry_end_timestamp, direction)
+        return _sort_numeric(entries, _entry_last_watched_timestamp, direction)
     if sort_by == MediaSortChoices.TIME_LEFT:
 
         def time_left(entry):
@@ -2976,7 +2988,7 @@ def _custom_list_row_executor(user, row, *, seed: int):
         media_types=(row.media_type,),
         filters=FilterValues(status_match=STATUS_MATCH_ANY),
         sort=SortSpec(
-            key=sort_key or "title",
+            key=last_watched_sort_key(sort_key) or "title",
             direction=home_engine_direction(
                 row.sort_by,
                 resolve_home_row_direction(row.sort_by, row.direction),

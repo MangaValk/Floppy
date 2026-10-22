@@ -114,6 +114,21 @@ class MediaCoreTests(FloppyApiTestCase):
                 },
             )
 
+    def test_media_list_accepts_last_watched_sort(self):
+        """The opt-in activity sort is a valid media-list sort."""
+        response = self.call_api(
+            "get",
+            "api_media_list",
+            params={
+                "media_type": MediaTypes.MOVIE.value,
+                "sort": "last_watched",
+            },
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("results", response.json())
+
     def test_tv_media_list_reports_released_and_total_remaining_episodes(self):
         """TV list responses expose released and provider-total remaining counts."""
         self._prepare_tv_progress_fixture(future_episode_number=3)

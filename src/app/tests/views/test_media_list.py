@@ -2894,6 +2894,57 @@ class MediaListViewTests(TestCase):
         self.assertContains(response, "Nintendo Switch")
         self.assertContains(response, "PlayStation 5")
 
+    def test_game_last_played_sort_includes_in_progress_items_by_activity(self):
+        """The Last Played sort follows progress, not only completion dates."""
+        finished_item = Item.objects.create(
+            media_id="game-last-played-finished",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="Finished Long Ago",
+            image="http://example.com/game.jpg",
+        )
+        playing_item = Item.objects.create(
+            media_id="game-last-played-playing",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="Playing Now",
+            image="http://example.com/game.jpg",
+        )
+        Game.objects.bulk_create(
+            [
+                Game(
+                    item=finished_item,
+                    user=self.user,
+                    status=Status.DROPPED.value,
+                    progress=60,
+                    end_date=timezone.now() - timedelta(days=10),
+                ),
+                Game(
+                    item=playing_item,
+                    user=self.user,
+                    status=Status.IN_PROGRESS.value,
+                    progress=60,
+                ),
+            ],
+        )
+        Game.objects.filter(item=playing_item, user=self.user).update(
+            progressed_at=timezone.now(),
+        )
+
+        response = self.client.get(
+            reverse("medialist", args=[MediaTypes.GAME.value])
+            + "?layout=grid&sort=end_date&direction=desc",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [
+                media.item.title
+                for media in response.context["media_list"].object_list
+            ],
+            ["Playing Now", "Finished Long Ago"],
+        )
+
     def test_game_platform_filter_uses_latest_aggregated_status(self):
         """Status filtering should honor latest aggregated status for duplicate sessions."""
         stale_item = Item.objects.create(
