@@ -1454,8 +1454,20 @@ msgid "Collected"
 msgstr "Gesammelt"
 
 #: static/js/libraryFilterState.js
+msgid "Collection/Series"
+msgstr "Sammlung/Serie"
+
+#: static/js/libraryFilterState.js
+msgid "Franchise"
+msgstr "Franchise"
+
+#: static/js/libraryFilterState.js
 msgid "Implied: "
 msgstr "Abgeleitet: "
+
+#: static/js/libraryFilterState.js
+msgid "Item"
+msgstr "Eintrag"
 
 #: static/js/libraryFilterState.js
 msgid "No Types"

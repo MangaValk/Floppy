@@ -1370,6 +1370,18 @@ msgstr "Rilasciato"
 msgid "Not Released"
 msgstr "Non rilasciato"
 
+#: static/js/libraryFilterState.js
+msgid "Item"
+msgstr "Elemento"
+
+#: static/js/libraryFilterState.js
+msgid "Collection/Series"
+msgstr "Collezione/Serie"
+
+#: static/js/libraryFilterState.js
+msgid "Franchise"
+msgstr "Franchise"
+
 #: static/js/libraryFilterState.js:150
 msgid "All Types"
 msgstr "Tutti i tipi"
