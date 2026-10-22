@@ -346,6 +346,14 @@ if ENABLE_DEBUG_TOOLBAR:
 PERF_LOG_ENABLED = config("PERF_LOG_ENABLED", default=True, cast=bool)
 PERF_LOG_SLOW_REQUEST_MS = config("PERF_LOG_SLOW_REQUEST_MS", default=500, cast=int)
 PERF_LOG_SLOW_TASK_MS = config("PERF_LOG_SLOW_TASK_MS", default=5000, cast=int)
+# A transaction open longer than this is logged with its request/task and
+# duration. SQLite has one writer, so a long transaction is the usual reason
+# every other writer waits out busy_timeout (#1609).
+PERF_LOG_SLOW_TRANSACTION_MS = config(
+    "PERF_LOG_SLOW_TRANSACTION_MS",
+    default=1000,
+    cast=int,
+)
 PERF_LOG_QUERY_COUNT_THRESHOLD = config(
     "PERF_LOG_QUERY_COUNT_THRESHOLD",
     default=75,

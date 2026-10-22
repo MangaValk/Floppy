@@ -80,6 +80,12 @@ class AppConfig(AppConfig):
         from app.memory_envelope import connect_celery_signals
 
         connect_celery_signals()
+        # Task identity is cheap to keep and is what turns a lock error into a
+        # correlatable record (#1609). Transaction timing itself stays inside
+        # the performance instrumentation.
+        from app.db_diagnostics import connect_celery_signals as connect_db_signals
+
+        connect_db_signals()
         if _is_management_command_process():
             # One-off manage.py commands (migrate, shell, check, ...) must
             # not enqueue startup tasks or consume the once-per-day startup
