@@ -21,6 +21,7 @@ class CardSurface:
     show_episode_identity: bool = False
     hover_action_mode: str = "standard"
     is_recommend_mode: bool = False
+    rating_read_only: bool = False
     secondary_color: bool = False
 
 
@@ -44,6 +45,14 @@ SURFACES = {
     # A person's or studio's titles: the shared card plus what that person did
     # on each one (role line, watched runtime).
     "credit": CardSurface(),
+    # A game franchise/series tile: the poster and subtitle come from the group,
+    # not one tracked game, so there is no status chip or hover action.
+    "group": CardSurface(
+        show_status_chip=False,
+        show_release_year_placeholder=False,
+        hover_action_mode="none",
+        rating_read_only=True,
+    ),
     # Provider results are not saved items, so there is no release year to load.
     "search": CardSurface(show_release_year_placeholder=False),
     # Picking an item inside a modal: a click previews it, no hover actions.

@@ -53,6 +53,7 @@ and untracked items keep the plain read-only rating. `update_media_score` return
 | `list` | S01E02 subtitle on episodes | A list can hold single episodes |
 | `credit` | Role line and watched-runtime chip from the `credit` value | A person's or studio's titles show what that person did on each one |
 | `tier` | No status chip, no hover actions, no release-year placeholder | A tile on a list's tier board: the board owns clicks and drags |
+| `group` | No status chip, no hover actions, no release-year placeholder | A game franchise/series tile shows a group, not one tracked game |
 | `search` | No release-year placeholder | Provider results are not saved items |
 | `search_modal` | Click previews, no hover actions, darker surface | Picking an item inside a modal |
 | `discover` | No status chip, Discover hover actions | Candidates are untracked by definition |

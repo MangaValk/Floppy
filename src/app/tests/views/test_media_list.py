@@ -4323,14 +4323,19 @@ class GameGroupingViewTests(TestCase):
         *,
         status=Status.IN_PROGRESS.value,
         progress=0,
+        score=None,
+        release_datetime=None,
         collection=("", ""),
         franchise=("", ""),
+        image="",
     ):
         item = Item.objects.create(
             media_id=str(media_id),
             source=Sources.IGDB.value,
             media_type=MediaTypes.GAME.value,
             title=title,
+            image=image,
+            release_datetime=release_datetime,
             provider_collection_id=collection[0],
             provider_collection_name=collection[1],
             provider_franchise_id=franchise[0],
@@ -4341,6 +4346,7 @@ class GameGroupingViewTests(TestCase):
             user=self.user,
             status=status,
             progress=progress,
+            score=score,
             end_date=timezone.now() if status == Status.COMPLETED.value else None,
         )
         return item
@@ -4452,6 +4458,73 @@ class GameGroupingViewTests(TestCase):
             [group["name"] for group in response.context["media_groups"]],
             ["Big Franchise", "Small Franchise"],
         )
+
+    def test_group_rating_is_the_average_of_rated_games(self):
+        self._game(1, "Mario 1", score=8, franchise=("10", "Mario"))
+        self._game(2, "Mario 2", score=6, franchise=("10", "Mario"))
+        self._game(3, "Unrated", franchise=("10", "Mario"))
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertEqual(group["average_score"], 7.0)
+        self.assertNotIn("media-card-rate-button", response.content.decode())
+
+    def test_group_release_subtitle_is_a_year_range(self):
+        self._game(
+            1,
+            "Old Game",
+            release_datetime=datetime(2007, 1, 1, tzinfo=UTC),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "New Game",
+            release_datetime=datetime(2024, 1, 1, tzinfo=UTC),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertEqual(group["release_range"], "2007-2024")
+        self.assertEqual(group["display_item"].display_release_year, "2007-2024")
+
+    def test_grouped_count_is_groups_plus_ungrouped_games(self):
+        self._game(1, "Mario 1", franchise=("10", "Mario"))
+        self._game(2, "Mario 2", franchise=("10", "Mario"))
+        self._game(3, "Zelda", franchise=("20", "Zelda"))
+        self._game(4, "Local Game")
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        self.assertEqual(response.context["result_count"], 3)
+
+    def test_group_drilldown_count_is_games_in_that_group(self):
+        self._game(1, "Mario 1", franchise=("10", "Mario"))
+        self._game(2, "Mario 2", franchise=("10", "Mario"))
+        self._game(3, "Zelda", franchise=("20", "Zelda"))
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "group": "id:10"},
+        )
+
+        self.assertEqual(response.context["result_count"], 2)
+
+    def test_group_card_uses_a_member_game_poster(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            franchise=("10", "Mario"),
+            image="https://example.com/mario.jpg",
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertEqual(group["image"], "https://example.com/mario.jpg")
+        self.assertContains(response, "https://example.com/mario.jpg")
 
     def test_group_cards_link_to_that_group(self):
         self._game(

@@ -34,11 +34,7 @@
       <h1 class="text-3xl font-bold">{{ media_type|media_type_readable_plural }}</h1>
       <div data-result-count
            class="result-count-badge result-count-mobile px-4 py-2 bg-[var(--color-surface)] rounded-md text-[var(--color-text-secondary)] text-sm font-semibold">
-        {% if media_list.paginator %}
-          {{ media_list.paginator.count }}
-        {% else %}
-          {{ media_list|length }}
-        {% endif %}
+        {{ result_count }}
       </div>
       {% include "app/components/media_settings_menu.html" with menu_class="ml-auto media-settings-menu-mobile" %}
     </div>

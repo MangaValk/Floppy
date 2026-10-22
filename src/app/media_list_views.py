@@ -3,6 +3,7 @@ import logging
 import math
 import time
 from collections import Counter, defaultdict
+from copy import copy
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -118,6 +119,15 @@ def _game_group_name_for_item(item, group_by):
     return str(getattr(item, "provider_franchise_name", "") or "").strip()
 
 
+def _release_year(value):
+    """Return the display year for one release datetime."""
+    if value is None:
+        return ""
+    if timezone.is_aware(value):
+        value = timezone.localtime(value)
+    return str(value.year)
+
+
 def _build_game_groups(entries, group_by, *, sort_key, direction):
     """Return the filtered Games library rolled up into catalog groups."""
     groups = {}
@@ -139,8 +149,18 @@ def _build_game_groups(entries, group_by, *, sort_key, direction):
                 "completed_count": 0,
                 "playtime_minutes": 0,
                 "last_played": None,
+                "first_release": None,
                 "last_release": None,
-                "image": settings.IMG_NONE,
+                "first_added": None,
+                "first_started": None,
+                "last_ended": None,
+                "genres": [],
+                "platforms": [],
+                "runtime_minutes": 0,
+                "status_counts": Counter(),
+                # TODO: use a franchise/series-level poster when one exists;
+                # until then a tracked member game's poster is the fallback.
+                "image": "",
                 "scores": [],
             },
         )
@@ -148,13 +168,38 @@ def _build_game_groups(entries, group_by, *, sort_key, direction):
         if not group["image"] and getattr(item, "image", ""):
             group["image"] = item.image
         release = getattr(item, "release_datetime", None)
-        if release and (
-            group["last_release"] is None or release > group["last_release"]
-        ):
-            group["last_release"] = release
+        if release:
+            if group["first_release"] is None or release < group["first_release"]:
+                group["first_release"] = release
+            if group["last_release"] is None or release > group["last_release"]:
+                group["last_release"] = release
+        for genre in getattr(item, "genres", None) or []:
+            if genre not in group["genres"]:
+                group["genres"].append(genre)
+        for platform in getattr(item, "platforms", None) or []:
+            if platform not in group["platforms"]:
+                group["platforms"].append(platform)
+        group["runtime_minutes"] += getattr(item, "runtime_minutes", 0) or 0
         media = entry.media
         if media is None:
             continue
+        created = getattr(media, "aggregated_created_at", None) or getattr(
+            media, "created_at", None
+        )
+        if created and (group["first_added"] is None or created < group["first_added"]):
+            group["first_added"] = created
+        started = getattr(media, "aggregated_start_date", None) or getattr(
+            media, "start_date", None
+        )
+        if started and (
+            group["first_started"] is None or started < group["first_started"]
+        ):
+            group["first_started"] = started
+        ended = getattr(media, "aggregated_end_date", None) or getattr(
+            media, "end_date", None
+        )
+        if ended and (group["last_ended"] is None or ended > group["last_ended"]):
+            group["last_ended"] = ended
         progress = getattr(media, "aggregated_progress", None)
         if progress is None:
             progress = getattr(media, "progress", 0) or 0
@@ -176,6 +221,8 @@ def _build_game_groups(entries, group_by, *, sort_key, direction):
                 group["last_played"] is None or activity > group["last_played"]
             ):
                 group["last_played"] = activity
+        if status:
+            group["status_counts"][status] += 1
         if status == Status.COMPLETED.value:
             group["completed_count"] += 1
         group["playtime_minutes"] += progress
@@ -186,15 +233,86 @@ def _build_game_groups(entries, group_by, *, sort_key, direction):
             group["scores"].append(float(score))
     for group in groups.values():
         group["game_count"] = len(group["entries"])
+        group["image"] = group["image"] or settings.IMG_NONE
         group["average_score"] = (
             sum(group["scores"]) / len(group["scores"]) if group["scores"] else None
         )
+        first_year = _release_year(group["first_release"])
+        last_year = _release_year(group["last_release"])
+        group["release_range"] = (
+            ""
+            if not first_year
+            else first_year
+            if first_year == last_year
+            else f"{first_year}-{last_year}"
+        )
+        status_labels = []
+        for status, count in group["status_counts"].items():
+            try:
+                label = str(Status(status).label)
+            except ValueError:
+                label = status
+            status_labels.append(f"{label} ({count})")
+        group["status_label"] = ", ".join(status_labels)
+        group["average_score"] = (
+            round(group["average_score"], 1)
+            if group["average_score"] is not None
+            else None
+        )
+
+        representative_entry = next(
+            (entry for entry in group["entries"] if entry.media is not None),
+            group["entries"][0],
+        )
+        display_item = copy(representative_entry.item)
+        display_item.title = group["name"]
+        display_item.original_title = ""
+        display_item.localized_title = ""
+        display_item.release_datetime = None
+        display_item.display_release_year = group["release_range"] or None
+        display_item.genres = group["genres"]
+        display_item.platforms = group["platforms"]
+        display_item.runtime = (
+            helpers.minutes_to_hhmm(group["runtime_minutes"])
+            if group["runtime_minutes"]
+            else ""
+        )
+        display_item.synopsis = ""
+        group["display_item"] = display_item
+        if representative_entry.media is not None:
+            display_media = copy(representative_entry.media)
+        else:
+            display_media = SimpleNamespace(
+                card_tile_url="",
+                progress=0,
+                aggregated_progress=None,
+                max_progress=None,
+                repeats=0,
+                play_count=0,
+            )
+        display_media.item = display_item
+        display_media.score = group["average_score"]
+        display_media.aggregated_score = group["average_score"]
+        display_media.status = group["status_label"]
+        display_media.aggregated_status = group["status_label"]
+        display_media.last_played_at = group["last_played"]
+        display_media.aggregated_created_at = group["first_added"]
+        display_media.aggregated_start_date = group["first_started"]
+        display_media.aggregated_end_date = group["last_ended"]
+        display_media.progress = group["playtime_minutes"]
+        display_media.aggregated_progress = group["playtime_minutes"]
+        display_media.max_progress = None
+        group["display_media"] = display_media
 
     def _value(group):
         if sort_key in {"progress", "plays", "time_watched"}:
             return group["playtime_minutes"]
-        if sort_key in {"start_date", "end_date", "date_added"}:
-            return group["last_played"]
+        if sort_key == "start_date":
+            return group["first_started"]
+        if sort_key == "date_added":
+            return group["first_added"]
+        if sort_key == "end_date":
+            return group["last_ended"] or group["last_played"]
         if sort_key == "release_date":
             return group["last_release"]
         if sort_key in {"score", "critic_rating"}:
@@ -2992,6 +3110,7 @@ def media_list(request, media_type):
                 f"{reverse('medialist', args=[route_media_type])}"
                 f"?{group_params.urlencode()}"
             )
+            group["display_media"].card_tile_url = group["href"]
         group_params.pop("group", None)
 
     ungrouped_entries = [
@@ -3017,6 +3136,15 @@ def media_list(request, media_type):
             f"?{ungrouped_params.urlencode()}"
         )
 
+    if grouped_game_overview:
+        result_count = sum(
+            1 for group in media_groups if not group["ungrouped"]
+        ) + len(ungrouped_entries)
+    elif getattr(media_page, "paginator", None) is not None:
+        result_count = media_page.paginator.count
+    else:
+        result_count = len(media_page)
+
     if tag_values and not _skip_generic_media_list:
         _log_tag_filter_result(
             request,
@@ -3033,6 +3161,7 @@ def media_list(request, media_type):
         "media_type": route_media_type,
         "media_type_plural": app_tags.media_type_readable_plural(media_type).lower(),
         "media_list": media_page,
+        "result_count": result_count,
         "current_layout": layout,
         "layout_class": _layout_class,
         "media_list_url": reverse("medialist", args=[route_media_type]),
