@@ -691,6 +691,14 @@ class SliceBoundTests(StatisticsSyncTestCase):
                 cache.get(statistics_sync._range_cost_key(self.user.id, range_name))
             )
 
+    def test_a_range_summary_says_how_much_was_day_building(self):
+        with self.assertLogs("app.statistics_sync", level="INFO") as logs:
+            self.full_sync()
+
+        line = next(row for row in logs.output if "stats_range_summary" in row)
+        self.assertIn("missing_days=", line)
+        self.assertIn("days_ms=", line)
+
     def test_a_sync_far_past_its_budget_names_its_slowest_range(self):
         with (
             patch.object(statistics_sync, "OVERRUN_WARNING_SECONDS", -1000),

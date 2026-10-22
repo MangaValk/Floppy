@@ -973,21 +973,28 @@ def _aggregate_range(
     credit_hints: int,
     deadline=None,
     lease_token: str | None = None,
+    timings: dict | None = None,
 ) -> dict:
     from app.statistics_aggregator import _aggregate_statistics_from_days
     from app.statistics_highlights import normalize_highlight_images
     from app.statistics_refresh import _get_predefined_range_dates, _resolve_day_list
 
+    timings = {} if timings is None else timings
     start_date, end_date = _get_predefined_range_dates(range_name)
     day_list = _resolve_day_list(user, start_date, end_date)
     # A bounded range walks every calendar day, and a day never built (most
     # are empty) would otherwise be built one at a time inside the aggregate,
     # ~13 queries each. Build them first with one prefetch per slice.
     missing = sorted(_missing_days(user.id, day_list), reverse=True)
+    timings["missing_days"] = len(missing)
     if missing:
-        credit_hints += _build_days(
-            user, missing, deadline, {}, lease_token=lease_token
-        )
+        build_started = time.monotonic()
+        try:
+            credit_hints += _build_days(
+                user, missing, deadline, {}, lease_token=lease_token
+            )
+        finally:
+            timings["days_ms"] = (time.monotonic() - build_started) * 1000
     data = _aggregate_statistics_from_days(
         user,
         day_list,
@@ -1176,8 +1183,14 @@ def run_sync(
             if not only_ranges:
                 _check_range_fits(user_id, range_name, deadline, bool(published))
             range_started = time.monotonic()
+            range_timings: dict[str, float] = {}
             data = _aggregate_range(
-                user, range_name, credit_hints, deadline, lease_token=lease_token
+                user,
+                range_name,
+                credit_hints,
+                deadline,
+                lease_token=lease_token,
+                timings=range_timings,
             )
             publish_snapshot(
                 user_id, range_name, data, generation, lease_token=lease_token
@@ -1192,11 +1205,14 @@ def run_sync(
                 timeout=RANGE_COST_TIMEOUT,
             )
             logger.info(
-                "stats_range_summary user_id=%s range=%s generation=%s elapsed_ms=%.2f",
+                "stats_range_summary user_id=%s range=%s generation=%s elapsed_ms=%.2f "
+                "missing_days=%s days_ms=%.2f",
                 user_id,
                 range_name,
                 generation,
                 range_seconds * 1000,
+                range_timings.get("missing_days", 0),
+                range_timings.get("days_ms", 0.0),
             )
 
         # Cleared only once the pass completes: a continuation must still see

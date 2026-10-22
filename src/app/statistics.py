@@ -523,6 +523,7 @@ from app.stats_reading import (  # noqa: E402,F401
     _format_reading_unit,
     _normalize_item_author_names,
     _reading_entry_in_range,
+    _reading_entry_range_filter,
     get_reading_consumption_stats,
 )
 from app.stats_score import (  # noqa: E402,F401

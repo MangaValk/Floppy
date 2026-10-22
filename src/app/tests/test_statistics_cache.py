@@ -1153,6 +1153,31 @@ class HighlightArtworkRequestPathTests(TestCase):
         mock_cached.assert_not_called()
         mock_resolve.assert_not_called()
 
+    def test_today_release_candidates_are_scanned_once_per_window(self):
+        """Every range and media type of a sync pass shares one library scan.
+
+        The scan cannot use a date index (it matches a month/day across all
+        years), so repeating it per range is what made range rebuilds slow.
+        """
+        release = timezone.now().replace(year=2001)
+        item = Item.objects.create(
+            media_id="release-cache-1",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Released today once",
+            release_datetime=release,
+        )
+        Movie.objects.create(
+            user=self.user, item=item, status=Status.COMPLETED.value
+        )
+
+        statistics_cache._get_today_release_entry(self.user)
+        with self.assertNumQueries(0):
+            entry, year = statistics_cache._get_today_release_entry(self.user)
+
+        self.assertEqual(year, 2001)
+        self.assertEqual(entry["item"].pk, item.pk)
+
 
 class RequestPathDayBuildTests(TestCase):
     """Custom-range statistics never build day caches inline in a request."""

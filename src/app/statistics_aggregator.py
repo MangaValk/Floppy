@@ -1854,7 +1854,13 @@ def _aggregate_statistics_from_days(
         model = apps.get_model("app", media_type)
         completed_queryset = model.objects.filter(
             user=user, status=Status.COMPLETED.value
-        ).select_related("item")
+        )
+        # This scans a large library for every range; let the database drop the
+        # entries the date predicate would reject instead of loading them.
+        range_filter = stats._reading_entry_range_filter(start_date, end_date)
+        if range_filter is not None:
+            completed_queryset = completed_queryset.filter(range_filter)
+        completed_queryset = completed_queryset.select_related("item")
         for entry in completed_queryset.iterator(chunk_size=500):
             if not stats._reading_entry_in_range(entry, start_date, end_date):
                 continue

@@ -112,11 +112,20 @@ looks at the broker and yields when a webhook-priority (0) task is queued: the
 worker cannot be preempted, so this is the only way a scrobble waits for one
 slice instead of one task. The worst case is therefore the budget plus one range.
 A sync more than 5 s over budget logs `stats_sync_overrun` naming its slowest
-range; `stats_sync` carries `days` and `days_ms` for the day-building phase.
+range; `stats_sync` carries `days` and `days_ms` for the day-building phase,
+and each `stats_range_summary` carries `missing_days` and `days_ms` so the
+range's own day-building can be told apart from its aggregation. A range that
+is slow with `missing_days=0` is aggregation work, not a cold cache.
 
 The highlights ("on this day") read the History day cache and keep any day they
 had to build, so a History cache that keeps losing days (see the coverage repair
-reasons in the log) also makes every Statistics range slower.
+reasons in the log) also makes every Statistics range slower. The "today in
+history" release candidate scan cannot use a date index - it matches a
+month/day across every year - and a range asks for it once per media type, so
+its handful of matching items is cached for
+`statistics_highlights.TODAY_RELEASE_CACHE_TIMEOUT` (5 min). Every range and
+media type of a sync pass then shares one scan; the random card choice is still
+made per range.
 
 ## Lease fencing — an expired worker is inert
 
@@ -250,7 +259,7 @@ above has no message whose loss matters, and polling never touches it.
 | --- | --- |
 | `stats_mark user_id days reason` | a change was recorded |
 | `stats_sync user_id status ranges elapsed_ms` | a sync pass ended (`done`, `continued`, `busy`, `lost_lease`) |
-| `stats_range_summary user_id range generation elapsed_ms` | one range published |
+| `stats_range_summary user_id range generation elapsed_ms missing_days days_ms` | one range published (`days_ms` is the day-building part of `elapsed_ms`) |
 | `stats_snapshot_superseded user_id range generation` | a publish was skipped: a newer generation is already out |
 | `stats_reconcile candidates queued` | the reconciler found unfinished work |
 | `stats_sync_enqueue_failed` | the broker refused a sync; the reconciler will retry |
