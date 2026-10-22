@@ -11,7 +11,8 @@
   <head>
     {# Required meta tags #}
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="keywords" content="Floppy, Media Tracker">
     <meta name="description" content="Search and track media on Floppy.">
     <meta name="mobile-web-app-capable" content="yes">
@@ -226,13 +227,13 @@
                        height="48"
                        class="h-9 w-[158px] object-cover object-center">
                 {% else %}
-                <img src="{% static 'img/floppy-logo.png' %}"
-                     srcset="{% static 'img/floppy-logo.png' %} 1x,
-                             {% static 'img/floppy-logo@2x.png' %} 2x"
-                     alt="Floppy"
-                     width="158"
-                     height="48"
-                     class="h-9 w-auto">
+                  <img src="{% static 'img/floppy-logo.png' %}"
+                       srcset="{% static 'img/floppy-logo.png' %} 1x,
+                               {% static 'img/floppy-logo@2x.png' %} 2x"
+                       alt="Floppy"
+                       width="158"
+                       height="48"
+                       class="h-9 w-auto">
                 {% endif %}
               </h1>
             </div>
@@ -540,7 +541,8 @@
                                 @click="isOpen = !isOpen"
                                 @click.away="isOpen = false"
                                 class="flex items-center justify-between shrink-0 px-3 sm:px-4 py-2 text-sm text-[var(--color-text-secondary)] bg-[var(--color-panel)] rounded-r-md focus:outline-none focus:ring-2 focus:ring-(--color-accent) focus:ring-inset hover:bg-[var(--color-surface)] transition-colors duration-200 cursor-pointer">
-                          <span class="whitespace-nowrap max-[24rem]:sr-only" x-text="selectedType.display"></span>
+                          <span class="whitespace-nowrap max-[24rem]:sr-only"
+                                x-text="selectedType.display"></span>
                           {% include "app/icons/chevron-down.svg" with classes="w-4 h-4 ml-2" %}
 
                         </button>
