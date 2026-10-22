@@ -288,12 +288,16 @@ def _store_playback_progress(
     duration_seconds: int | None,
     item: Item | None = None,
     provider_completed: bool | None = None,
+    event_at: int | None = None,
 ) -> None:
     """Mirror a webhook position into the durable progress store.
 
     ``item`` is supplied after webhook media processing for first-session and
     cold-cache stops.  When it is absent, only an exact existing Item lookup
     is allowed; no provider or title-based guess is made.
+
+    ``event_at`` is when the webhook request arrived, so a queued event that is
+    processed after a newer one cannot overwrite that newer progress.
     """
     if event_type not in PLAYBACK_PROGRESS_EVENTS:
         return
@@ -333,6 +337,7 @@ def _store_playback_progress(
                 completed=True,
                 preserve_position=True,
                 fill_missing_duration=True,
+                event_at=event_at,
             )
             return
 
@@ -360,6 +365,7 @@ def _store_playback_progress(
             completed=completion,
             preserve_duration=duration is None,
             preserve_completed=preserve_completion,
+            event_at=event_at,
         )
     except Exception:
         logger.warning("Webhook playback-progress update failed", exc_info=True)
@@ -374,6 +380,7 @@ def store_playback_progress(
     duration_seconds: int | None,
     item: Item,
     provider_completed: bool | None = None,
+    event_at: int | None = None,
 ) -> None:
     """Persist a stop position against an Item resolved by webhook processing."""
     _store_playback_progress(
@@ -384,6 +391,7 @@ def store_playback_progress(
         duration_seconds=duration_seconds,
         item=item,
         provider_completed=provider_completed,
+        event_at=event_at,
     )
 
 
@@ -416,6 +424,7 @@ def apply_playback_event(
     image: str | None = None,
     checkin_token: str | None = None,
     ends_at_ts: int | None = None,
+    event_ts: int | None = None,
 ) -> None:
     """Update live playback cache state from a webhook event.
 
@@ -434,6 +443,10 @@ def apply_playback_event(
     ``app.checkin``); any later event for the title rebuilds the state without
     it, which is how a real scrobble takes the card over. ``ends_at_ts`` closes
     the card at an assumed end.
+
+    ``event_ts`` is when the request arrived, not when it was processed. A
+    queued play can otherwise overtake the scrobble that finished after it and
+    leave the card (or progress row) showing an earlier state.
     """
     if playback_media_type not in (
         MediaTypes.MOVIE.value,
@@ -452,16 +465,38 @@ def apply_playback_event(
     key = _cache_key(user_id)
     existing_state = cache.get(key)
     now_ts = _now_ts()
+    event_ts = _coerce_int(event_ts)
+    effective_ts = event_ts if event_ts is not None else now_ts
+    out_of_order = bool(
+        event_ts is not None
+        and existing_state
+        and _state_matches(
+            existing_state,
+            rating_key=rating_key,
+            media_id=media_id,
+            playback_media_type=playback_media_type,
+        )
+        and event_ts < _coerce_int(existing_state.get("updated_at_ts"), 0)
+    )
+    if out_of_order:
+        logger.info(
+            "Ignoring out-of-order playback event: event_ts=%s state_ts=%s",
+            event_ts,
+            existing_state.get("updated_at_ts"),
+        )
 
     if event_type == "media.stop":
-        if existing_state and (
-            _state_matches(
-                existing_state,
-                rating_key=rating_key,
-                media_id=media_id,
-                playback_media_type=playback_media_type,
+        if not out_of_order and (
+            existing_state
+            and (
+                _state_matches(
+                    existing_state,
+                    rating_key=rating_key,
+                    media_id=media_id,
+                    playback_media_type=playback_media_type,
+                )
+                or not rating_key
             )
-            or not rating_key
         ):
             _release_checkin_card(user_id, existing_state)
             # Grace period instead of immediate deletion — keeps the
@@ -481,11 +516,13 @@ def apply_playback_event(
             existing_state["progress_percent"] = (
                 progress_percent if stop_offset is None else None
             )
-            existing_state["updated_at_ts"] = now_ts
+            existing_state["updated_at_ts"] = effective_ts
             existing_state["pause_expires_at_ts"] = None
             existing_state["scrobble_expires_at_ts"] = None
             existing_state["status"] = PLAYBACK_STATUS_STOPPED
-            existing_state["stop_expires_at_ts"] = now_ts + PLAYBACK_STOP_GRACE_SECONDS
+            existing_state["stop_expires_at_ts"] = (
+                effective_ts + PLAYBACK_STOP_GRACE_SECONDS
+            )
             set_user_playback_state(user_id, existing_state)
         if store_progress:
             stop_media_id, stop_season, stop_episode = _identifiers_from_state(
@@ -506,10 +543,35 @@ def apply_playback_event(
                 view_offset_seconds=view_offset_seconds,
                 duration_seconds=duration_seconds,
                 provider_completed=provider_completed,
+                event_at=event_ts,
             )
         return
 
     if event_type not in ("media.play", "media.pause", "media.scrobble"):
+        return
+
+    if out_of_order:
+        if store_progress:
+            store_media_id, store_season, store_episode = _identifiers_from_state(
+                existing_state,
+                rating_key=rating_key,
+                media_id=media_id,
+                season_number=season_number,
+                episode_number=episode_number,
+            )
+            _store_playback_progress(
+                user_id,
+                event_type=source_event_type,
+                playback_media_type=playback_media_type,
+                media_id=store_media_id,
+                source=source,
+                season_number=store_season,
+                episode_number=store_episode,
+                view_offset_seconds=view_offset_seconds,
+                duration_seconds=duration_seconds,
+                provider_completed=provider_completed,
+                event_at=event_ts,
+            )
         return
 
     if not checkin_token:
@@ -562,14 +624,14 @@ def apply_playback_event(
             # Taking the estimate keeps what playing had already established,
             # and is a no-op when the event does carry an offset, since this
             # branch only runs when it does not.
-            offset_seconds = _estimate_progress_seconds(existing_state, now_ts)
+            offset_seconds = _estimate_progress_seconds(existing_state, effective_ts)
         if dur_seconds is None:
             dur_seconds = _coerce_int(
                 existing_state.get("duration_seconds"),
                 0,
             )
 
-    started_at_ts = now_ts
+    started_at_ts = effective_ts
     if _state_matches(
         existing_state,
         rating_key=rating_key,
@@ -604,8 +666,8 @@ def apply_playback_event(
         "progress_percent": percent_unplaced,
         "started_at_ts": started_at_ts,
         "status": status,
-        "updated_at_ts": now_ts,
-        "expires_at_ts": now_ts + PLAYBACK_HARD_STALE_SECONDS,
+        "updated_at_ts": effective_ts,
+        "expires_at_ts": effective_ts + PLAYBACK_HARD_STALE_SECONDS,
         "pause_expires_at_ts": None,
         "scrobble_expires_at_ts": None,
     }
@@ -615,7 +677,7 @@ def apply_playback_event(
         state["scrobble_expires_at_ts"] = ends_at_ts
 
     if event_type == "media.pause":
-        state["pause_expires_at_ts"] = now_ts + PLAYBACK_PAUSE_STALE_SECONDS
+        state["pause_expires_at_ts"] = effective_ts + PLAYBACK_PAUSE_STALE_SECONDS
     elif event_type == "media.scrobble":
         dur = dur_seconds or 0
         off = offset_seconds or 0
@@ -630,11 +692,11 @@ def apply_playback_event(
                 state["view_offset_seconds"] = off
             remaining = max(0, dur - off)
             state["scrobble_expires_at_ts"] = (
-                now_ts + remaining + PLAYBACK_SCROBBLE_BUFFER_SECONDS
+                effective_ts + remaining + PLAYBACK_SCROBBLE_BUFFER_SECONDS
             )
         else:
             state["scrobble_expires_at_ts"] = (
-                now_ts + PLAYBACK_SCROBBLE_FALLBACK_SECONDS
+                effective_ts + PLAYBACK_SCROBBLE_FALLBACK_SECONDS
             )
 
     if _state_matches(
@@ -683,6 +745,7 @@ def apply_playback_event(
             view_offset_seconds=view_offset_seconds,
             duration_seconds=duration_seconds,
             provider_completed=provider_completed,
+            event_at=event_ts,
         )
 
 
@@ -697,6 +760,7 @@ def apply_plex_event(
     episode_number: int | None = None,
     store_progress: bool = True,
     provider_completed: bool | None = None,
+    event_ts: int | None = None,
 ) -> None:
     """Plex-specific wrapper: extract fields and delegate."""
     event_type = payload.get("event")
@@ -730,6 +794,7 @@ def apply_plex_event(
         duration_seconds=_extract_duration_seconds(payload),
         store_progress=store_progress,
         provider_completed=provider_completed,
+        event_ts=event_ts,
     )
 
 

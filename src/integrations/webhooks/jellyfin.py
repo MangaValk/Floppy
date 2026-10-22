@@ -947,6 +947,7 @@ class JellyfinWebhookProcessor(BaseWebhookProcessor):
             duration_seconds=duration_seconds,
             store_progress=event_type != "media.stop",
             provider_completed=provider_completed,
+            event_ts=getattr(self, "_event_ts", None),
         )
         return {
             "event_type": event_type,

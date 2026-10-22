@@ -18,6 +18,7 @@ from app.models import (
     ItemProviderLink,
     MediaTypes,
     Movie,
+    PlaybackProgress,
     ProviderMetadataStatus,
     Season,
     Sources,
@@ -25,6 +26,7 @@ from app.models import (
 )
 from app.providers import tmdb
 from app.providers.services import ProviderAPIError
+from integrations import tasks
 from integrations.models import (
     ExternalReference,
     ExternalReferenceReviewStatus,
@@ -540,6 +542,45 @@ class PlexWebhookTests(TestCase):
         self.assertEqual(movie.status, Status.COMPLETED.value)
         self.assertEqual(movie.start_date, started)
         self.assertGreater(movie.end_date, movie.start_date)
+
+    def test_late_queued_play_does_not_clear_a_scrobble(self):
+        """A play received before the scrobble but processed after it loses (#1708)."""
+        metadata = {
+            "type": "movie",
+            "title": "The Matrix",
+            "ratingKey": "rk-movie-order",
+            "duration": 8100000,
+            "Guid": [{"id": "tmdb://603"}],
+        }
+        base = {"Account": {"title": "testuser"}, "Metadata": metadata}
+        now = timezone.now()
+
+        tasks.process_webhook(
+            "plex",
+            {**base, "event": "media.scrobble", "Metadata": {**metadata, "viewOffset": 8000000}},
+            self.user.id,
+            received_at=(now - timedelta(seconds=2)).isoformat(),
+            event_id="scrobble-1",
+        )
+        tasks.process_webhook(
+            "plex",
+            {**base, "event": "media.play", "Metadata": {**metadata, "viewOffset": 0}},
+            self.user.id,
+            received_at=(now - timedelta(seconds=3)).isoformat(),
+            event_id="play-1",
+        )
+
+        movie = Movie.objects.get(item__media_id="603", user=self.user)
+        self.assertEqual(movie.status, Status.COMPLETED.value)
+        progress = PlaybackProgress.objects.get(
+            user=self.user,
+            item__media_id="603",
+        )
+        self.assertTrue(progress.completed)
+        self.assertGreater(progress.position_seconds, 0)
+        state = live_playback.get_user_playback_state(self.user.id)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["event_type"], "media.scrobble")
 
     def test_movie_scrobble_with_cold_cache_does_not_invent_a_start_date(self):
         """No earlier Play (e.g. after a restart) leaves the start date unset."""

@@ -65,9 +65,18 @@ class BaseWebhookProcessor:
     # (Jellyfin, Emby). See `_find_tv_media_id(episode_ids=...)`.
     TV_IDS_ARE_EPISODE_LEVEL = False
 
+    # Structured result of this run, logged by the worker so a delayed event
+    # can be followed from receipt to persisted row. Subclasses overwrite it
+    # at each decision point; see docs/architecture/webhook-delivery.md.
+    outcome = "skipped"
+
     def process_payload(self, payload, user):
         """Process webhook payload."""
         raise NotImplementedError
+
+    def _set_outcome(self, outcome):
+        """Record this run's structured outcome for the worker's log line."""
+        self.outcome = outcome
 
     def _get_played_at(self, payload):
         """Extract played-at timestamp if provided by the payload."""

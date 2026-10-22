@@ -90,7 +90,11 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
         )
         self._source_plex_libraries = source_libraries
         event_type = payload.get("event")
-        logger.info("Received Plex webhook event: %s", event_type)
+        logger.info(
+            "Received Plex webhook event: %s event_id=%s",
+            event_type,
+            getattr(self, "_event_id", None),
+        )
         logger.debug(
             "Received Plex webhook payload keys=%s metadata_keys=%s",
             mapping_keys(payload),
@@ -98,6 +102,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
         )
 
         if not self._is_supported_event(payload.get("event")):
+            self._set_outcome("ignored")
             logger.debug("Ignoring Plex webhook event type: %s", event_type)
             return None
 
@@ -106,6 +111,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
         )
         rejection_reason = self._get_user_rejection_reason(payload_user, payload, user)
         if rejection_reason is not None:
+            self._set_outcome("ignored")
             metadata = payload.get("Metadata", {}) or {}
             media_label = (
                 self._get_media_title(payload) or metadata.get("title") or "<unknown>"
@@ -135,10 +141,12 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
         )
         self._active_match_reference = reference
         if reference and reference.review_status == external_references.ExternalReferenceReviewStatus.IGNORED.value:
+            self._set_outcome("ignored")
             return None
         target = external_references.reference_target(reference)
         if media_type == MediaTypes.MUSIC.value:
             if event_type not in ("media.play", "media.resume", "media.scrobble"):
+                self._set_outcome("ignored")
                 logger.debug(
                     "Ignoring Plex music webhook event type: %s",
                     event_type,
@@ -150,6 +158,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
                 return self._process_audiobook_scrobble(payload, user)
 
             if not getattr(user, "music_enabled", False):
+                self._set_outcome("ignored")
                 logger.debug(
                     "Ignoring Plex music webhook because music tracking is disabled"
                 )
@@ -163,11 +172,13 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
                 music_event.defer_cover_prefetch = True
             music_entry = music_scrobble.record_music_playback(music_event)
             if music_entry is None:
+                self._set_outcome("unmatched")
                 logger.info(
                     "Processed Plex music %s event (tracking deferred)",
                     "scrobble" if music_event.completed else "play",
                 )
                 return None
+            self._set_outcome("persisted")
             logger.info(
                 "Processed Plex music %s event (status=%s progress=%s)",
                 "scrobble" if music_event.completed else "play",
@@ -190,7 +201,9 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
 
         # Handle rating events separately
         if event_type == "media.rate":
-            return self._process_rating(payload, user, reference=reference)
+            result = self._process_rating(payload, user, reference=reference)
+            self._set_outcome("persisted")
+            return result
 
         ids = self.resolve_external_ids(
             payload,
@@ -204,8 +217,9 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             ids = dict(ids)
             ids["tmdb_id"] = str(target.media_id)
         logger.info(
-            "Extracted Plex ID presence from payload: %s",
+            "Extracted Plex ID presence from payload: %s event_id=%s",
             presence_map(ids, ("tmdb_id", "imdb_id", "tvdb_id", "anidb_id")),
+            getattr(self, "_event_id", None),
         )
 
         playback_media_type = self._get_live_playback_media_type(payload)
@@ -214,6 +228,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             user,
             ids,
             playback_media_type,
+            event_ts=getattr(self, "_event_ts", None),
         )
 
         # Plex omits viewOffset at position 0, so a missing offset is a known
@@ -225,6 +240,8 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             position_seconds=view_offset_ms / 1000,
             duration_seconds=live_playback._extract_duration_seconds(payload),
         ):
+            # Play/resume/pause still updated the Now Playing card above.
+            self._set_outcome("live")
             return None
 
         if not any(
@@ -236,6 +253,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
                 matched_item=None,
                 needs_review=True,
             )
+            self._set_outcome("unmatched")
             logger.warning("Ignoring Plex webhook call because no ID was found.")
             return None
 
@@ -253,6 +271,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             needs_review=processed_item is None
             and bool(self._unresolved_series_title),
         )
+        self._set_outcome("persisted" if processed_item else "unmatched")
         if (
             event_type in ("media.stop", "media.scrobble")
             and processed_item
@@ -287,6 +306,8 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
         user,
         ids,
         playback_media_type,
+        *,
+        event_ts=None,
     ):
         """Update cache-backed live playback state for home-page UI."""
         if playback_media_type not in (
@@ -375,6 +396,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             season_number=season_number,
             episode_number=episode_number,
             store_progress=event_type not in ("media.stop", "media.scrobble"),
+            event_ts=event_ts,
         )
         return {
             "event_type": event_type,
@@ -382,6 +404,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             "view_offset_seconds": live_playback._extract_offset_seconds(payload),
             "duration_seconds": live_playback._extract_duration_seconds(payload),
             "provider_completed": None,
+            "event_at": event_ts,
         }
 
     def resolve_external_ids(self, payload, allow_title_search=True):

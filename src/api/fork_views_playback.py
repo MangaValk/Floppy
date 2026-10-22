@@ -180,12 +180,17 @@ def upsert_playback_progress(
     preserve_duration=False,
     fill_missing_duration=False,
     preserve_completed=False,
+    event_at=None,
 ):
     """Store playback progress while serializing updates for one item.
 
     The optional preservation flags are used by webhook events whose payload
     intentionally omits one field.  The row lock keeps those field-specific
     updates from becoming a stale read-modify-write race.
+
+    ``event_at`` is when the source event happened. An older event processed
+    after a newer one (a queued play overtaking a scrobble) must not overwrite
+    the newer row, so the stale write is dropped.
     """
     position = 0 if position_seconds is None else position_seconds
     with transaction.atomic():
@@ -205,6 +210,17 @@ def upsert_playback_progress(
                 position_seconds=progress.position_seconds,
                 duration_seconds=progress.duration_seconds,
                 completed=progress.completed,
+            )
+            return progress
+
+        if event_at is not None and progress.updated_at > datetime.fromtimestamp(
+            event_at,
+            tz=UTC,
+        ):
+            logger.info(
+                "Dropping out-of-order playback progress: event_at=%s row_updated_at=%s",
+                event_at,
+                progress.updated_at,
             )
             return progress
 
