@@ -1227,6 +1227,7 @@ def _card_preview_stand_in(media_type):
         "media_id": "card-preview",
         "year": 2024,
         "genres": ["Drama", "Thriller"],
+        "platforms": ["PC"],
         "runtime": "42 min",
         "synopsis": "A short sample line so this field has something to show.",
         "season_number": 1,

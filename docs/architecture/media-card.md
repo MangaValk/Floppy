@@ -132,7 +132,11 @@ The first eight resolved index covers are eager even on a full document load.
 
 Subtitle lines come from `User.card_metadata`, one profile per media type plus `person`.
 `src/users/card_metadata.py` is the registry. `card_context` resolves the profile for the
-shared card. Hand-rolled cards call `{% card_lines %}`. `display` is `hover` or `always`.
+shared card. The picker's properties are generated per type: a card-only field declares
+its types, and a field that reads item metadata is offered for every type whose
+`app.custom_metadata.MEDIA_TYPE_FIELD_ORDER` entry contains that metadata field. Platform
+is therefore a game card property without a second per-type list to maintain.
+Hand-rolled cards call `{% card_lines %}`. `display` is `hover` or `always`.
 Rows (episode rows, calendar rows) have no hover state, so their hover lines are always
 visible. Hand-rolled poster cards add the saved title treatment with `{% card_title_classes %}`,
 and only once the user has changed a title option, so unchanged cards keep their own clamps.
