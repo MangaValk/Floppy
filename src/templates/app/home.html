@@ -71,12 +71,6 @@
         flex-shrink: 0;
       }
     }
-
-    /* A deferred group's header appears with its first ready row and the
-       whole group disappears when every row resolved to empty. */
-    [data-home-deferred-group]:not(:has([data-home-row-slot])):not(:has([data-home-row-wrapper])) {
-      display: none;
-    }
   </style>
   <div class="space-y-4 sm:space-y-8">
     <div id="active-playback-container"

@@ -190,6 +190,13 @@
     });
   }
 
+  function syncEmptyHomeGroups() {
+    document.querySelectorAll('[data-home-deferred-group]').forEach(group => {
+      const hasContent = group.querySelector('[data-home-row-slot], [data-home-row-wrapper], [data-home-row-failed]');
+      group.toggleAttribute('hidden', !hasContent);
+    });
+  }
+
   function formatPlaybackClock(totalSeconds) {
     const clamped = Math.max(0, Math.floor(totalSeconds || 0));
     const hours = Math.floor(clamped / 3600);
@@ -288,6 +295,9 @@
       slot.classList.remove('animate-pulse');
       slot.removeAttribute('aria-busy');
       slot.textContent = slot.dataset.homeRowErrorLabel || 'Unable to load this row.';
+      // Stop counting a failed row as pending so the artwork poller can settle.
+      slot.removeAttribute('data-home-row-slot');
+      slot.setAttribute('data-home-row-failed', '');
       return;
     }
     slot.dataset.retries = String(retries + 1);
@@ -342,6 +352,7 @@
   });
 
   document.body.addEventListener('htmx:afterSwap', function(event) {
+    syncEmptyHomeGroups();
     const row = event.detail.target;
     if (row && row.matches('[data-home-row="true"]')) {
       const isFullReload = row.dataset.fullReload === 'true';
@@ -378,6 +389,7 @@
       });
     }
     setTimeout(() => {
+      syncEmptyHomeGroups();
       loadVisibleReleaseYears();
       initHomeRowInfiniteScroll();
       initActivePlaybackTicker();

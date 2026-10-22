@@ -561,7 +561,7 @@ def home_row_fragment(request, row_id: int):
         return HttpResponse(status=503)
     if row is None:
         return HttpResponse("")
-    response = render(
+    return render(
         request,
         "app/components/_scrollable_row.html",
         {
@@ -572,17 +572,6 @@ def home_row_fragment(request, row_id: int):
             "return_url": reverse("home"),
         },
     )
-    if row.get("poll_for_covers"):
-        # Re-arm the shared poller in case the shell's poll already stopped
-        # before this row finished loading.
-        response.write(
-            render_to_string(
-                "app/components/home_artwork_poller.html",
-                {"poll_row_ids": [row["row_id"]], "oob": True, "initial": True},
-                request=request,
-            ),
-        )
-    return response
 
 
 def _queue_missing_cover_prefetch(user):
@@ -661,11 +650,20 @@ def home_rows_artwork_refresh(request):
     """
     raw_ids = request.GET.get("ids", "")
     row_ids = {int(part) for part in raw_ids.split(",") if part.strip().isdigit()}
+    # Deferred rows can still be loading after the first poll. Keep polling
+    # cheaply until they settle instead of re-arming the poller from each
+    # row fragment (which would replace the poller and re-render rows).
+    raw_pending = request.GET.get("pending", "")
+    rows_pending = raw_pending.isdigit() and int(raw_pending) > 0
     if not row_ids:
         return render(
             request,
             "app/components/home_artwork_poller.html",
-            {"poll_row_ids": []},
+            {
+                "poll_row_ids": [],
+                "active": rows_pending,
+                "retry_soon": rows_pending,
+            },
         )
 
     cover_state = _artwork_cover_fingerprint(request.user)
@@ -678,7 +676,11 @@ def home_rows_artwork_refresh(request):
         return render(
             request,
             "app/components/home_artwork_poller.html",
-            {"poll_row_ids": sorted(row_ids)},
+            {
+                "poll_row_ids": sorted(row_ids),
+                "active": rows_pending,
+                "retry_soon": rows_pending,
+            },
         )
 
     home_groups = build_home_page_groups(
@@ -713,6 +715,8 @@ def home_rows_artwork_refresh(request):
             "poll_row_ids": sorted(
                 row["row_id"] for row in rows if row.get("poll_for_covers")
             ),
+            "active": rows_pending,
+            "retry_soon": rows_pending,
         },
         request=request,
     )

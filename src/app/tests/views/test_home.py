@@ -1101,6 +1101,16 @@ class HomeArtworkPollTests(TestCase):
         self.assertIn(b'id="home-artwork-poller"', response.content)
         self.assertNotIn(b"every 30s", response.content)
 
+    def test_pending_deferred_rows_keep_poller_armed(self):
+        """Rows still loading must not stop the poller before they finish."""
+        response = self.client.get(
+            reverse("home_rows_artwork_refresh") + "?ids=&pending=3",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"every 30s", response.content)
+        self.assertIn(b"load delay:1s", response.content)
+
     def test_rows_return_as_oob_swaps_and_poller_stops_when_covered(self):
         # A music-family row with artwork present should not keep polling.
         from users.home_screen import ensure_home_screen_rows
