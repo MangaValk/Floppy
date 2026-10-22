@@ -706,6 +706,12 @@ class OpenAPIArtifactTests(SimpleTestCase):
                 {"200", "400", "401", "403"},
             ),
             (
+                "/apis/listenbrainz/1/user/{username}/listens/",
+                "get",
+                "getListenBrainzUserListens",
+                {"200", "400", "401", "404"},
+            ),
+            (
                 "/apis/listenbrainz/1/validate-token/",
                 "get",
                 "validateListenBrainzToken",
