@@ -72,6 +72,7 @@ def _provider_summary(user):
                         "label": source.label,
                         "configured": metadata_resolution.provider_is_enabled(
                             source.value,
+                            user,
                         ),
                     }
                     for source in all_sources

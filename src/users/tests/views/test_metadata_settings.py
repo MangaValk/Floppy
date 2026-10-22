@@ -120,6 +120,27 @@ class MetadataSettingsPageTests(TestCase):
             "my-token",
         )
 
+    @override_settings(IGDB_SECRET="")
+    def test_a_personal_key_marks_the_provider_configured_in_the_summary(self, _probe):
+        credentials.set_user(
+            "igdb",
+            self.user,
+            {"client_id": "personal-id", "client_secret": "personal-secret"},
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("metadata_settings"))
+
+        game = next(
+            entry
+            for entry in response.context["provider_summary"]
+            if entry["media_type"] == "game"
+        )
+        igdb = next(
+            choice for choice in game["choices"] if choice["value"] == "igdb"
+        )
+        self.assertTrue(igdb["configured"])
+
     def test_an_unknown_provider_slug_is_a_404(self, _probe):
         self.client.force_login(self.user)
 
