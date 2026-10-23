@@ -139,15 +139,20 @@ class StatisticsLayoutTests(SerialStaticLiveServerTestCase):
             self.credentials["password"],
         )
         page.get_by_role("button", name="Sign in").click()
-        # Wait for the post-login document before marking it, otherwise the
-        # login navigation can finish after the marker is set and drop it.
+        # Wait for the post-login document and its deferred Home rows, otherwise
+        # the login/navigation can finish after the marker is set or the boosted
+        # request can queue behind them on the serial test server.
         expect(page.locator("#sidebar-nav")).to_be_visible()
+        page.wait_for_load_state("networkidle")
 
         # A full page load would drop this marker; a boosted swap keeps it.
         page.evaluate("window.__floppyBoostMarker = 'home'")
         page.locator("#sidebar-nav a[href$='/statistics']").click()
 
-        expect(page.locator(".stats-hero-title").nth(1)).to_contain_text("4 titles")
+        expect(page.locator(".stats-hero-title").nth(1)).to_contain_text(
+            "4 titles",
+            timeout=15000,
+        )
         expect(page.locator(".stats-range-button .stats-button-title")).not_to_be_empty()
         expect(
             page.locator(".stats-summary-row").get_by_text("Wednesday"),
