@@ -139,6 +139,9 @@ class StatisticsLayoutTests(SerialStaticLiveServerTestCase):
             self.credentials["password"],
         )
         page.get_by_role("button", name="Sign in").click()
+        # Wait for the post-login document before marking it, otherwise the
+        # login navigation can finish after the marker is set and drop it.
+        expect(page.locator("#sidebar-nav")).to_be_visible()
 
         # A full page load would drop this marker; a boosted swap keeps it.
         page.evaluate("window.__floppyBoostMarker = 'home'")
