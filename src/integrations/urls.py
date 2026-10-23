@@ -13,6 +13,11 @@ urlpatterns = [
         plex_push_views.plex_push_preview,
         name="plex_push_preview",
     ),
+    path(
+        "plex/push/send",
+        plex_push_views.plex_push_send,
+        name="plex_push_send",
+    ),
     path("tmdb/connect", tmdb_views.tmdb_connect, name="tmdb_connect"),
     path("tmdb/callback", tmdb_views.tmdb_callback, name="tmdb_callback"),
     path("tmdb/settings", tmdb_views.tmdb_settings, name="tmdb_settings"),

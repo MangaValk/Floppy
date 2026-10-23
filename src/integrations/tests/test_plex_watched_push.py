@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -8,7 +9,8 @@ from django.urls import reverse
 from app.models import Item, Sources, WatchState
 from integrations import plex as plex_api
 from integrations import plex_watched_push
-from integrations.models import ExternalReference, PlexAccount
+from integrations.imports.plex import PlexHistoryImporter
+from integrations.models import ExternalReference, PlexAccount, PlexWatchedPush
 
 
 def _response(status=200, payload=None):
@@ -454,23 +456,18 @@ class PlexPushViewTests(TestCase):
             warning=warning,
         )
 
-    def test_page_row_follows_the_plex_connection(self):
-        def state():
-            page = self.client.get(reverse("mal_export"))
-            services = {s["slug"]: s for s in page.context["outbound_services"]}
-            return services["plex"]["state"], page
-
-        status, page = state()
-        self.assertEqual(status, "off")
-        self.assertContains(page, "Connect Plex on the")
+    def test_integrations_card_follows_the_plex_connection(self):
+        page = self.client.get(reverse("integrations"))
+        self.assertContains(page, "Send Watched to Plex")
+        self.assertNotContains(page, reverse("plex_push_targets"))
 
         self._connect()
         with patch("integrations.plex.list_home_users") as users:
-            status, page = state()
+            page = self.client.get(reverse("integrations"))
         # Opening the page never calls plex.tv; users load on request.
         users.assert_not_called()
-        self.assertEqual(status, "connected")
         self.assertContains(page, reverse("plex_push_targets"))
+        self.assertNotContains(self.client.get(reverse("mal_export")), "plex_push")
 
     @patch(
         "integrations.plex_watched_push.list_targets",
@@ -492,7 +489,7 @@ class PlexPushViewTests(TestCase):
         self.assertContains(self.client.get(reverse("plex_push_targets")), "Connect Plex first.")
 
     @patch("integrations.plex.mark_watched")
-    def test_preview_lists_writes_and_cannot_send(self, mark):
+    def test_preview_lists_writes_and_sends_only_the_previewed_user(self, mark):
         self._connect()
         plan = plex_watched_push.PushPlan(
             writes=[self._write("m1"), self._write("m2", warning="Titles differ")],
@@ -506,7 +503,7 @@ class PlexPushViewTests(TestCase):
         ):
             response = self.client.post(
                 reverse("plex_push_preview"),
-                {"user_uuid": "kid", "machine_identifier": "srv"},
+                {"user_uuid": "kid", "machine_identifier": "srv", "pin": "1234"},
             )
 
         content = response.content.decode()
@@ -516,8 +513,12 @@ class PlexPushViewTests(TestCase):
         self.assertIn("4 already watched in Plex", content)
         self.assertIn("Could not read: Kids", content)
         self.assertIn("Anime S01E01", content)
-        self.assertIn("disabled", content)
-        self.assertNotIn("hx-post", content)
+        self.assertIn(reverse("plex_push_send"), content)
+        self.assertIn('name="user_uuid" value="kid"', content)
+        self.assertIn('name="machine_identifier" value="srv"', content)
+        self.assertIn("for Kid?", content)
+        # The PIN is re-read from its field at send time, never echoed.
+        self.assertNotIn("1234", content)
         mark.assert_not_called()
 
     def test_preview_reports_a_missing_pin(self):
@@ -532,14 +533,242 @@ class PlexPushViewTests(TestCase):
 
     def test_preview_runs_one_check_at_a_time(self):
         self._connect()
-        cache.add(f"plex_push_preview:{self.user.pk}", 1)
+        cache.add(f"plex_push:{self.user.pk}", 1)
         with patch("integrations.plex_watched_push.open_session") as session:
             response = self.client.post(reverse("plex_push_preview"), {})
 
         session.assert_not_called()
-        self.assertContains(response, "A check is already running")
-        cache.delete(f"plex_push_preview:{self.user.pk}")
+        self.assertContains(response, "is already running")
+        cache.delete(f"plex_push:{self.user.pk}")
 
     def test_preview_is_post_only(self):
         self._connect()
         self.assertEqual(self.client.get(reverse("plex_push_preview")).status_code, 405)
+
+
+def _plan_with(*writes):
+    return plex_watched_push.PushPlan(writes=list(writes))
+
+
+class SendTests(TestCase):
+    """send() writes only confirmed, still-unwatched items, one read at a time."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="s", password="p")
+        self.account = PlexAccount.objects.create(
+            user=self.user, plex_token="owner-token", plex_username="owner",
+        )
+        self.item = Item.objects.create(
+            media_id="603", source=Sources.TMDB.value, media_type="movie", title="M",
+        )
+        self.session = plex_watched_push.PushSession(
+            target=plex_watched_push.PushTarget("kid", "Kid", False, False),
+            server=plex_watched_push.PushServer("srv", "Home"),
+            uri="http://plex.local",
+            token="kid-srv",
+        )
+        self.remote = {}
+
+    def _write(self, rating_key):
+        return plex_watched_push.PlannedWrite(
+            rating_key=rating_key, item_id=self.item.id, media_type="movie",
+            library="Movies", plex_title=f"Title {rating_key}", floppy_title="M",
+        )
+
+    def _fetch(self, _token, _uri, rating_key, **_kwargs):
+        return self.remote.get(rating_key)
+
+    def _mark(self, _token, _uri, rating_key):
+        # The echo record must exist before Plex is told anything.
+        self.assertTrue(
+            PlexWatchedPush.objects.filter(rating_key=rating_key).exists(),
+        )
+        self.remote[rating_key] = {**self.remote[rating_key], "viewCount": 1}
+
+    def _send(self, plan, selected, mark=None):
+        with (
+            patch("integrations.plex_watched_push.build_plan", return_value=plan),
+            patch("integrations.plex.fetch_metadata", side_effect=self._fetch),
+            patch("integrations.plex.mark_watched", side_effect=mark or self._mark) as m,
+        ):
+            result = plex_watched_push.send(
+                self.user, self.account, self.session, selected,
+            )
+        return result, m
+
+    def test_writes_only_ticked_items_the_fresh_plan_still_has(self):
+        self.remote = {"m1": {"type": "movie", "viewCount": 0}}
+        selected = {("m1", self.item.id), ("gone", self.item.id)}
+
+        result, mark = self._send(
+            _plan_with(self._write("m1"), self._write("m2")), selected,
+        )
+
+        mark.assert_called_once_with("kid-srv", "http://plex.local", "m1")
+        self.assertEqual(result.sent, ["Title m1"])
+        self.assertEqual(result.stale, 1)
+        push = PlexWatchedPush.objects.get()
+        self.assertEqual(
+            (push.machine_identifier, push.rating_key, push.item_id, push.plex_user_uuid),
+            ("srv", "m1", self.item.id, "kid"),
+        )
+
+    def test_item_watched_since_the_preview_is_not_written(self):
+        self.remote = {"m1": {"type": "movie", "viewCount": 3}}
+
+        result, mark = self._send(_plan_with(self._write("m1")), {("m1", self.item.id)})
+
+        mark.assert_not_called()
+        self.assertEqual(result.skipped, [("Title m1", "Already watched in Plex")])
+        self.assertFalse(PlexWatchedPush.objects.exists())
+
+    def test_item_of_another_type_is_not_written(self):
+        self.remote = {"m1": {"type": "episode", "viewCount": 0}}
+
+        result, mark = self._send(_plan_with(self._write("m1")), {("m1", self.item.id)})
+
+        mark.assert_not_called()
+        self.assertEqual(result.skipped[0][1], "No longer found in Plex")
+
+    def test_unconfirmed_write_is_reported(self):
+        self.remote = {"m1": {"type": "movie", "viewCount": 0}}
+
+        result, _mark = self._send(
+            _plan_with(self._write("m1")),
+            {("m1", self.item.id)},
+            mark=lambda *_args: None,
+        )
+
+        self.assertEqual(result.sent, [])
+        self.assertIn("does not show it as watched", result.skipped[0][1])
+
+    def test_plex_error_stops_and_keeps_what_was_sent(self):
+        self.remote = {
+            "m1": {"type": "movie", "viewCount": 0},
+            "m2": {"type": "movie", "viewCount": 0},
+            "m3": {"type": "movie", "viewCount": 0},
+        }
+
+        def mark(token, uri, rating_key):
+            if rating_key == "m2":
+                msg = "down"
+                raise plex_api.PlexClientError(msg)
+            self._mark(token, uri, rating_key)
+
+        result, mock = self._send(
+            _plan_with(self._write("m1"), self._write("m2"), self._write("m3")),
+            {("m1", self.item.id), ("m2", self.item.id), ("m3", self.item.id)},
+            mark=mark,
+        )
+
+        self.assertEqual(result.sent, ["Title m1"])
+        self.assertTrue(result.stopped)
+        self.assertEqual(mock.call_count, 2)
+
+
+class SendViewTests(TestCase):
+    """The send view validates the selection before touching Plex."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="w", password="p")
+        self.client.force_login(self.user)
+        PlexAccount.objects.create(user=self.user, plex_token="t", plex_username="o")
+
+    @patch("integrations.plex_watched_push.open_session")
+    def test_nothing_ticked_is_refused(self, session):
+        response = self.client.post(reverse("plex_push_send"), {"user_uuid": "kid"})
+
+        session.assert_not_called()
+        self.assertContains(response, "Tick at least one item.")
+
+    @patch("integrations.plex_watched_push.open_session")
+    def test_too_many_ticked_is_refused(self, session):
+        writes = [f"rk{i}:{i}" for i in range(plex_watched_push.MAX_WRITES_PER_SEND + 1)]
+
+        response = self.client.post(reverse("plex_push_send"), {"write": writes})
+
+        session.assert_not_called()
+        self.assertContains(response, "Tick at most")
+
+    def test_sends_the_parsed_selection_and_renders_the_result(self):
+        session = plex_watched_push.PushSession(
+            target=plex_watched_push.PushTarget("kid", "Kid", False, False),
+            server=plex_watched_push.PushServer("srv", "Home"),
+            uri="http://plex.local",
+            token="kid-srv",
+        )
+        result = plex_watched_push.PushResult(sent=["A"], stale=1)
+        with (
+            patch("integrations.plex_watched_push.open_session", return_value=session),
+            patch("integrations.plex_watched_push.send", return_value=result) as send,
+        ):
+            response = self.client.post(
+                reverse("plex_push_send"),
+                {"user_uuid": "kid", "machine_identifier": "srv",
+                 "write": ["m1:5", "bad", "m:2:7"]},
+            )
+
+        self.assertEqual(send.call_args.args[3], {("m1", 5), ("m:2", 7)})
+        self.assertContains(response, "1 item marked watched in Plex for Kid.")
+        self.assertContains(response, "1 ticked item changed since the check")
+
+    def test_demo_account_cannot_send(self):
+        self.user.is_demo = True
+        self.user.save(update_fields=["is_demo"])
+        with patch("integrations.plex_watched_push.send") as send:
+            self.client.post(
+                reverse("plex_push_send"),
+                {"write": ["m1:5"]},
+                HTTP_HX_REQUEST="true",
+            )
+
+        send.assert_not_called()
+
+
+class PushEchoImportTests(TestCase):
+    """The history importer skips the marks Floppy pushed itself."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="e", password="p")
+        self.account = PlexAccount.objects.create(
+            user=self.user, plex_token="t", plex_username="o",
+        )
+        self.pushed_at = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+        PlexWatchedPush.objects.create(
+            user=self.user, machine_identifier="srv", rating_key="m1",
+            pushed_at=self.pushed_at,
+        )
+        self.importer = PlexHistoryImporter(
+            user=self.user, account=self.account, mode="new", library="srv::1",
+        )
+        self.importer._current_section_machine_id = "srv"
+
+    def _entry(self, rating_key="m1", offset=timedelta(0)):
+        return {
+            "type": "movie",
+            "ratingKey": rating_key,
+            "viewedAt": int((self.pushed_at + offset).timestamp()),
+        }
+
+    def test_mark_within_the_window_is_an_echo(self):
+        echo = self.importer._is_floppy_push_echo
+        self.assertTrue(echo(self._entry()))
+        self.assertTrue(echo(self._entry(offset=timedelta(minutes=9))))
+
+    def test_real_plays_are_not_echoes(self):
+        echo = self.importer._is_floppy_push_echo
+        self.assertFalse(echo(self._entry(offset=timedelta(minutes=11))))
+        self.assertFalse(echo(self._entry(offset=-timedelta(days=1))))
+        self.assertFalse(echo(self._entry(rating_key="m2")))
+        self.importer._current_section_machine_id = "other"
+        self.assertFalse(echo(self._entry()))
+
+    def test_process_entry_skips_and_counts_the_echo(self):
+        with (
+            patch.object(self.importer, "_is_allowed_history_user", return_value=True),
+            patch.object(self.importer, "_normalize_guid_list") as normalize,
+        ):
+            self.importer._process_entry(self._entry(), "http://plex", "movie")
+
+        normalize.assert_not_called()
+        self.assertEqual(self.importer.summary_counts["skipped_floppy_push"], 1)

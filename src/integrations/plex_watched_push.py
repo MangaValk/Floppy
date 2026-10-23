@@ -1,8 +1,9 @@
 """Push Floppy watched state to one chosen Plex user, on request.
 
 Manual only: nothing here runs from the delivery engine, so no write reaches
-Plex without a person confirming it. This module picks *who* is written to;
-a token that acts as a Home user is built per request and never stored.
+Plex without a person confirming it. This module picks *who* is written to,
+plans what would change, and sends only what was confirmed. A token that acts
+as a Home user is built per request and never stored.
 """
 
 import re
@@ -12,9 +13,21 @@ from dataclasses import dataclass, field
 from app.models import Item, MediaTypes, Sources, WatchState
 from integrations import external_references
 from integrations import plex as plex_api
-from integrations.models import ExternalReference, ExternalReferenceReviewStatus
+from integrations.models import (
+    ExternalReference,
+    ExternalReferenceReviewStatus,
+    PlexWatchedPush,
+)
+from integrations.safe_fetch import UnsafeUrlError
 
 PLEX_EPISODE_TYPE = 4
+# Keeps one send well inside the web worker's timeout: a fresh plan plus three
+# Plex requests per item.
+MAX_WRITES_PER_SEND = 250
+_PLEX_TYPE_BY_MEDIA_TYPE = {
+    MediaTypes.MOVIE.value: "movie",
+    MediaTypes.EPISODE.value: "episode",
+}
 
 _SOURCE_BY_ID_KEY = {
     "tmdb_id": Sources.TMDB.value,
@@ -161,6 +174,78 @@ class PushPlan:
     #: (Plex title, reason) for Floppy-watched items deliberately left alone.
     not_matched: list[tuple[str, str]] = field(default_factory=list)
     failed_libraries: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PushResult:
+    """What a send did, item by item."""
+
+    sent: list[str] = field(default_factory=list)
+    #: (Plex title, reason) for selected items that were not written.
+    skipped: list[tuple[str, str]] = field(default_factory=list)
+    #: Selected items a fresh plan no longer contains.
+    stale: int = 0
+    #: Set when a Plex error stopped the send; what was sent before it stays.
+    stopped: str = ""
+
+
+def send(user, account, session, selected):
+    """Mark the selected (rating key, item id) pairs watched for the session's user.
+
+    Only pairs a fresh plan still contains are written, so anything that
+    changed since the preview is dropped. Each item is read right before its
+    write, because ``/:/scrobble`` adds a play every time it is called.
+    """
+    plan = build_plan(user, account, session)
+    planned = [
+        write for write in plan.writes if (write.rating_key, write.item_id) in selected
+    ]
+    result = PushResult(stale=len(selected) - len(planned))
+
+    for write in planned:
+        try:
+            current = plex_api.fetch_metadata(session.token, session.uri, write.rating_key)
+            if (
+                current is None
+                or current.get("type") != _PLEX_TYPE_BY_MEDIA_TYPE[write.media_type]
+            ):
+                result.skipped.append((write.plex_title, "No longer found in Plex"))
+                continue
+            if _is_watched(current):
+                result.skipped.append((write.plex_title, "Already watched in Plex"))
+                continue
+
+            # Recorded before the write: a write that lands while its response
+            # is lost must still be recognized as Floppy's echo on import.
+            PlexWatchedPush.objects.create(
+                user=user,
+                item_id=write.item_id,
+                machine_identifier=session.server.machine_identifier,
+                rating_key=write.rating_key,
+                plex_user_uuid=session.target.uuid,
+                plex_user_title=session.target.title,
+            )
+            plex_api.mark_watched(session.token, session.uri, write.rating_key)
+
+            readback = plex_api.fetch_metadata(
+                session.token,
+                session.uri,
+                write.rating_key,
+            )
+            if readback is None or not _is_watched(readback):
+                result.skipped.append(
+                    (write.plex_title, "Sent, but Plex does not show it as watched"),
+                )
+                continue
+            result.sent.append(write.plex_title)
+        except plex_api.PlexAuthError:
+            result.stopped = "Plex refused access. Nothing after this item was sent."
+            break
+        except (plex_api.PlexClientError, UnsafeUrlError):
+            result.stopped = "Plex stopped responding. Nothing after this item was sent."
+            break
+
+    return result
 
 
 def build_plan(user, account, session):

@@ -1,12 +1,22 @@
 {% load i18n %}
-{# What a Plex push would change. Rows with a warning start unticked. Sending is not enabled yet: this page only reads. #}
+{# What a Plex push would change. Rows with a warning start unticked. The send posts the previewed user and server, never the pickers' current values. #}
 {% if error %}
   <div class="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-[var(--color-warning-text)]">{{ error }}</div>
 {% else %}
-  <form x-data="{ selected: 0, count() { this.selected = $root.querySelectorAll('input[name=write]:checked').length }, setAll(on) { $root.querySelectorAll('input[name=write]').forEach((box) => { box.checked = on }); this.count() } }"
+  <form x-data="{ selected: 0, max: {{ max_writes }}, count() { this.selected = $root.querySelectorAll('input[name=write]:checked').length }, setAll(on) { $root.querySelectorAll('input[name=write]').forEach((box) => { box.checked = on }); this.count() } }"
         x-init="count()"
         @change="count()"
+        hx-post="{% url 'plex_push_send' %}"
+        hx-target="#plex-push-preview"
+        hx-swap="innerHTML"
+        hx-include="#plex-push-pin"
+        hx-disabled-elt="find button[type=submit]"
+        hx-indicator="#plex-push-sending"
+        hx-confirm="{% blocktranslate with user=session.target.title %}Mark the ticked items as watched in Plex for {{ user }}? Floppy cannot undo this.{% endblocktranslate %}"
         class="space-y-3 border-t border-[var(--color-border)] pt-3">
+    {% csrf_token %}
+    <input type="hidden" name="user_uuid" value="{{ session.target.uuid }}">
+    <input type="hidden" name="machine_identifier" value="{{ session.server.machine_identifier }}">
     <p class="text-sm text-[var(--color-text)]">
       {% blocktranslate with user=session.target.title server=session.server.name %}For {{ user }} on {{ server }}:{% endblocktranslate %}
     </p>
@@ -46,11 +56,17 @@
         {% endfor %}
       </div>
       <p class="text-sm text-[var(--color-text-muted)]"><span x-text="selected"></span> {% translate "selected" %}</p>
-      <button type="button" disabled
-              class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm opacity-50 cursor-not-allowed">
+      <p x-show="selected > max" x-cloak class="text-xs text-[var(--color-warning-text)]">
+        {% blocktranslate %}Tick at most {{ max_writes }} items per send, then send the rest afterwards.{% endblocktranslate %}
+      </p>
+      <button type="submit"
+              :disabled="selected === 0 || selected > max"
+              class="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         {% translate "Mark selected as watched in Plex" %}
       </button>
-      <p class="text-xs text-[var(--color-text-muted)]">{% translate "Sending to Plex is not enabled yet. This preview changes nothing." %}</p>
+      <p id="plex-push-sending" class="htmx-indicator text-xs text-[var(--color-text-muted)]">
+        {% translate "Sending to Plex. Each item is checked again before it is marked." %}
+      </p>
     {% else %}
       <p class="text-sm text-[var(--color-text)]">{% translate "Nothing to send: Plex already agrees with Floppy for every matched item." %}</p>
     {% endif %}

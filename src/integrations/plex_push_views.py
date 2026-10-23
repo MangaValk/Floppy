@@ -1,7 +1,7 @@
-"""The Plex modal on Sync to Trackers: choose a Plex user and preview a push.
+"""The Send Watched to Plex modal: choose a Plex user, preview, then send.
 
-Both views only read. The Home user token and PIN live for one request; the
-preview is rendered straight from the plan and nothing about it is stored.
+The Home user token and PIN live for one request; the preview is rendered
+straight from the plan and nothing about it is stored. Only the send writes.
 """
 
 from django.contrib.auth.decorators import login_required
@@ -16,13 +16,49 @@ from integrations.safe_fetch import UnsafeUrlError
 
 TARGETS_TEMPLATE = "users/components/plex_push_targets.html"
 PREVIEW_TEMPLATE = "users/components/plex_push_preview.html"
-# Long enough to cover a dry run that hits the web worker's timeout.
-PREVIEW_LOCK_SECONDS = 300
+RESULT_TEMPLATE = "users/components/plex_push_result.html"
+# Long enough to cover a request that hits the web worker's timeout.
+PUSH_LOCK_SECONDS = 300
 
 
 def _account(user):
     account = PlexAccount.objects.filter(user=user).first()
     return account if account and account.plex_token else None
+
+
+def _with_session(request, template, action):
+    """Open a Plex session for the posted user and render ``action``'s context.
+
+    One preview or send runs at a time per user, so a double click cannot
+    send twice.
+    """
+    account = _account(request.user)
+    if account is None:
+        return render(request, template, {"error": "Connect Plex first."})
+
+    lock = f"plex_push:{request.user.pk}"
+    if not cache.add(lock, 1, timeout=PUSH_LOCK_SECONDS):
+        error = "A check or send is already running. Wait for it to finish."
+        return render(request, template, {"error": error})
+    try:
+        session = plex_watched_push.open_session(
+            account,
+            request.POST.get("user_uuid", ""),
+            request.POST.get("machine_identifier", ""),
+            request.POST.get("pin") or None,
+        )
+        context = action(account, session)
+    except plex_watched_push.PlexPushError as error:
+        return render(request, template, {"error": str(error)})
+    except plex_api.PlexAuthError:
+        error = "Plex refused access. Check the PIN, or reconnect Plex."
+        return render(request, template, {"error": error})
+    except (plex_api.PlexClientError, UnsafeUrlError):
+        error = "Plex could not be reached. Try again."
+        return render(request, template, {"error": error})
+    finally:
+        cache.delete(lock)
+    return render(request, template, {"session": session, **context})
 
 
 @login_required
@@ -47,35 +83,38 @@ def plex_push_targets(request):
 @require_POST
 def plex_push_preview(request):
     """Render what a push would change for the chosen Plex user. Writes nothing."""
-    account = _account(request.user)
-    if account is None:
-        return render(request, PREVIEW_TEMPLATE, {"error": "Connect Plex first."})
-
-    lock = f"plex_push_preview:{request.user.pk}"
-    if not cache.add(lock, 1, timeout=PREVIEW_LOCK_SECONDS):
-        error = "A check is already running. Wait for it to finish."
-        return render(request, PREVIEW_TEMPLATE, {"error": error})
-    try:
-        session = plex_watched_push.open_session(
-            account,
-            request.POST.get("user_uuid", ""),
-            request.POST.get("machine_identifier", ""),
-            request.POST.get("pin") or None,
-        )
-        plan = plex_watched_push.build_plan(request.user, account, session)
-    except plex_watched_push.PlexPushError as error:
-        return render(request, PREVIEW_TEMPLATE, {"error": str(error)})
-    except plex_api.PlexAuthError:
-        error = "Plex refused access. Check the PIN, or reconnect Plex."
-        return render(request, PREVIEW_TEMPLATE, {"error": error})
-    except (plex_api.PlexClientError, UnsafeUrlError):
-        error = "Plex could not be reached. Try again."
-        return render(request, PREVIEW_TEMPLATE, {"error": error})
-    finally:
-        cache.delete(lock)
-
-    return render(
+    return _with_session(
         request,
         PREVIEW_TEMPLATE,
-        {"session": session, "plan": plan},
+        lambda account, session: {
+            "plan": plex_watched_push.build_plan(request.user, account, session),
+            "max_writes": plex_watched_push.MAX_WRITES_PER_SEND,
+        },
+    )
+
+
+@login_required
+@require_POST
+def plex_push_send(request):
+    """Mark the ticked preview rows watched in Plex for the chosen user."""
+    selected = set()
+    for value in request.POST.getlist("write"):
+        rating_key, _, item_id = value.rpartition(":")
+        if rating_key and item_id.isdigit():
+            selected.add((rating_key, int(item_id)))
+    if not selected:
+        return render(request, RESULT_TEMPLATE, {"error": "Tick at least one item."})
+    if len(selected) > plex_watched_push.MAX_WRITES_PER_SEND:
+        error = (
+            f"Tick at most {plex_watched_push.MAX_WRITES_PER_SEND} items per send. "
+            "Send the rest afterwards."
+        )
+        return render(request, RESULT_TEMPLATE, {"error": error})
+
+    return _with_session(
+        request,
+        RESULT_TEMPLATE,
+        lambda account, session: {
+            "result": plex_watched_push.send(request.user, account, session, selected),
+        },
     )
