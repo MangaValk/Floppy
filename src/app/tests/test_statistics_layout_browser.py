@@ -128,6 +128,13 @@ class StatisticsLayoutTests(SerialStaticLiveServerTestCase):
     def test_boosted_sidebar_navigation_initialises_the_page(self):
         # hx-boost swaps the body, and Alpine used to run before the externally
         # loaded date-range.js, leaving the whole component uninitialised (#1667).
+        # Build the snapshot through the test client first: a cold Statistics
+        # response can take longer than the boosted swap's timeout on CI, and
+        # this test is about the swap, not the first build.
+        self.client.force_login(
+            get_user_model().objects.get(username=self.credentials["username"]),
+        )
+        self.assertEqual(self.client.get("/statistics").status_code, 200)
         context = self.browser.new_context(viewport={"width": 1280, "height": 800})
         self.addCleanup(context.close)
         page = context.new_page()
