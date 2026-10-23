@@ -6,6 +6,9 @@ For browser journeys, mobile viewports, LCP, long tasks and polling, use the
 For request/SQL timers, opt-in EXPLAIN and controlled SQLite lock attribution,
 use the [BENCH-04 server harness](server-benchmarks.md).
 
+For schedule inventory, task attempts, retries, queue delay and worker overlap,
+use the [BENCH-05 Celery harness](celery-benchmarks.md).
+
 From the repository root, with locked development dependencies installed:
 
 ```bash
