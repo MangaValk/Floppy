@@ -11,6 +11,7 @@ from integrations import plex as plex_api
 from integrations import plex_watched_push
 from integrations.imports.plex import PlexHistoryImporter
 from integrations.models import ExternalReference, PlexAccount, PlexWatchedPush
+from integrations.tasks import _plex_push as push_task
 
 
 def _response(status=200, payload=None):
@@ -667,9 +668,10 @@ class SendTests(TestCase):
 
 
 class SendViewTests(TestCase):
-    """The send view validates the selection before touching Plex."""
+    """The send view validates the selection, then the task does the writing."""
 
     def setUp(self):
+        cache.clear()
         self.user = get_user_model().objects.create_user(username="w", password="p")
         self.client.force_login(self.user)
         PlexAccount.objects.create(user=self.user, plex_token="t", plex_username="o")
@@ -681,14 +683,94 @@ class SendViewTests(TestCase):
         session.assert_not_called()
         self.assertContains(response, "Tick at least one item.")
 
-    @patch("integrations.plex_watched_push.open_session")
-    def test_too_many_ticked_is_refused(self, session):
-        writes = [f"rk{i}:{i}" for i in range(plex_watched_push.MAX_WRITES_PER_SEND + 1)]
+    def test_a_large_selection_is_sent_in_the_background(self):
+        session = plex_watched_push.PushSession(
+            target=plex_watched_push.PushTarget("kid", "Kid", False, True),
+            server=plex_watched_push.PushServer("srv", "Home"),
+            uri="http://plex.local",
+            token="kid-srv",
+        )
+        writes = ",".join(f"rk{i}:{i}" for i in range(5000))
+        with (
+            patch(
+                "integrations.plex_watched_push.open_session",
+                return_value=session,
+            ) as open_session,
+            patch(
+                "integrations.plex_watched_push.send",
+                return_value=plex_watched_push.PushResult(sent=["A"]),
+            ) as send,
+            patch(
+                "integrations.tasks._plex_push.send_plex_watched_push.delay",
+                wraps=push_task.send_plex_watched_push.delay,
+            ) as delay,
+        ):
+            response = self.client.post(
+                reverse("plex_push_send"),
+                {"user_uuid": "kid", "machine_identifier": "srv", "pin": "1234",
+                 "writes": writes},
+            )
 
-        response = self.client.post(reverse("plex_push_send"), {"write": writes})
+        self.assertEqual(len(send.call_args.args[3]), 5000)
+        # The PIN reaches the task through the cache, never its stored arguments.
+        self.assertEqual(delay.call_args.args[:3], (self.user.pk, "kid", "srv"))
+        self.assertEqual(len(delay.call_args.args), 4)
+        self.assertEqual(delay.call_args.kwargs, {})
+        self.assertEqual(open_session.call_args_list[-1].args[3], "1234")
+        self.assertIsNone(cache.get(plex_watched_push.pin_key(self.user.pk)))
+        self.assertIsNone(cache.get(plex_watched_push.lock_key(self.user.pk)))
+        self.assertContains(response, "1 item marked watched in Plex for Kid.")
 
-        session.assert_not_called()
-        self.assertContains(response, "Tick at most")
+    def test_status_shows_progress_while_running(self):
+        cache.set(
+            plex_watched_push.status_key(self.user.pk),
+            {"done": False, "current": 3, "total": 10},
+        )
+
+        response = self.client.get(reverse("plex_push_status"))
+
+        self.assertContains(response, "3 of 10 done")
+        self.assertContains(response, 'hx-trigger="every 2s"')
+
+    def test_wrong_pin_is_refused_before_queueing(self):
+        with (
+            patch(
+                "integrations.plex_watched_push.open_session",
+                side_effect=plex_api.PlexAuthError("no"),
+            ),
+            patch("integrations.tasks._plex_push.send_plex_watched_push.delay") as delay,
+        ):
+            response = self.client.post(
+                reverse("plex_push_send"),
+                {"user_uuid": "kid", "pin": "0000", "writes": "m1:5"},
+            )
+
+        delay.assert_not_called()
+        self.assertContains(response, "Check the PIN")
+        self.assertIsNone(cache.get(plex_watched_push.lock_key(self.user.pk)))
+
+    def test_a_failed_send_releases_the_lock_and_reports(self):
+        session = plex_watched_push.PushSession(
+            target=plex_watched_push.PushTarget("kid", "Kid", False, False),
+            server=plex_watched_push.PushServer("srv", "Home"),
+            uri="http://plex.local",
+            token="kid-srv",
+        )
+        with (
+            patch("integrations.plex_watched_push.open_session", return_value=session),
+            patch(
+                "integrations.plex_watched_push.send",
+                side_effect=plex_api.PlexClientError("down"),
+            ),
+        ):
+            response = self.client.post(
+                reverse("plex_push_send"),
+                {"user_uuid": "kid", "machine_identifier": "srv", "writes": "m1:5"},
+            )
+
+        self.assertContains(response, "Plex could not be reached")
+        self.assertIsNone(cache.get(plex_watched_push.lock_key(self.user.pk)))
+        self.assertNotIn("kid-srv", str(cache.get(plex_watched_push.status_key(self.user.pk))))
 
     def test_sends_the_parsed_selection_and_renders_the_result(self):
         session = plex_watched_push.PushSession(
@@ -705,7 +787,7 @@ class SendViewTests(TestCase):
             response = self.client.post(
                 reverse("plex_push_send"),
                 {"user_uuid": "kid", "machine_identifier": "srv",
-                 "write": ["m1:5", "bad", "m:2:7"]},
+                 "writes": "m1:5,bad,m:2:7"},
             )
 
         self.assertEqual(send.call_args.args[3], {("m1", 5), ("m:2", 7)})
@@ -718,7 +800,7 @@ class SendViewTests(TestCase):
         with patch("integrations.plex_watched_push.send") as send:
             self.client.post(
                 reverse("plex_push_send"),
-                {"write": ["m1:5"]},
+                {"writes": "m1:5"},
                 HTTP_HX_REQUEST="true",
             )
 

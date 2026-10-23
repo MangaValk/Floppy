@@ -10,6 +10,8 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.models import Item, MediaTypes, Sources, WatchState
 from integrations import external_references
 from integrations import plex as plex_api
@@ -21,9 +23,6 @@ from integrations.models import (
 from integrations.safe_fetch import UnsafeUrlError
 
 PLEX_EPISODE_TYPE = 4
-# Keeps one send well inside the web worker's timeout: a fresh plan plus three
-# Plex requests per item.
-MAX_WRITES_PER_SEND = 250
 _PLEX_TYPE_BY_MEDIA_TYPE = {
     MediaTypes.MOVIE.value: "movie",
     MediaTypes.EPISODE.value: "episode",
@@ -43,6 +42,37 @@ class PlexPushError(Exception):
 
 class PinRequiredError(PlexPushError):
     """The chosen Home user is PIN protected and no PIN was given."""
+
+
+# A send runs in a background task that shares these cache keys with the views.
+# The lock covers the wait in the queue; a running send renews it after every item.
+LOCK_SECONDS = 30 * 60
+# The result stays readable for a while after the popup stops polling.
+STATUS_SECONDS = 60 * 60
+
+
+def lock_key(user_id):
+    """Held while a check or send runs, so only one runs per user."""
+    return f"plex_push:{user_id}"
+
+
+def status_key(user_id):
+    """Progress, then the result, of the user's latest send."""
+    return f"plex_push_status:{user_id}"
+
+
+def pin_key(user_id):
+    """Hand the Home user PIN to the task, which deletes it on first read."""
+    return f"plex_push_pin:{user_id}"
+
+
+def describe_error(error):
+    """Return the message shown for an error that stops a check or send."""
+    if isinstance(error, PlexPushError):
+        return str(error)
+    if isinstance(error, plex_api.PlexAuthError):
+        return "Plex refused access. Check the PIN, or reconnect Plex."
+    return "Plex could not be reached. Try again."
 
 
 @dataclass(frozen=True)
@@ -189,12 +219,13 @@ class PushResult:
     stopped: str = ""
 
 
-def send(user, account, session, selected):
+def send(user, account, session, selected, progress=None):
     """Mark the selected (rating key, item id) pairs watched for the session's user.
 
     Only pairs a fresh plan still contains are written, so anything that
     changed since the preview is dropped. Each item is read right before its
     write, because ``/:/scrobble`` adds a play every time it is called.
+    ``progress(done, total)`` is called after each item.
     """
     plan = build_plan(user, account, session)
     planned = [
@@ -202,7 +233,9 @@ def send(user, account, session, selected):
     ]
     result = PushResult(stale=len(selected) - len(planned))
 
-    for write in planned:
+    for done, write in enumerate(planned):
+        if progress:
+            progress(done, len(planned))
         try:
             current = plex_api.fetch_metadata(session.token, session.uri, write.rating_key)
             if (
@@ -243,6 +276,9 @@ def send(user, account, session, selected):
             break
         except (plex_api.PlexClientError, UnsafeUrlError):
             result.stopped = "Plex stopped responding. Nothing after this item was sent."
+            break
+        except SoftTimeLimitExceeded:
+            result.stopped = "The send ran out of time. Check again to send the rest."
             break
 
     return result

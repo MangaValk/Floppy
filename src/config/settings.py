@@ -1608,6 +1608,7 @@ else:
         "integrations.tasks._mal_sync",
         "integrations.tasks._media_imports",
         "integrations.tasks._plex_collection",
+        "integrations.tasks._plex_push",
         "integrations.tasks._plex_sections",
         "integrations.tasks._receipts",
         "integrations.tasks._ratings",

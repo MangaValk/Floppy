@@ -1,9 +1,9 @@
 {% load i18n %}
-{# What a Plex push would change. Rows with a warning start unticked. The send posts the previewed user and server, never the pickers' current values. #}
+{# What a Plex push would change. Rows with a warning start unticked. The send posts the previewed user and server, never the pickers' current values, and the ticked rows as one field so a large selection stays under Django's form field limit. #}
 {% if error %}
   <div class="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-[var(--color-warning-text)]">{{ error }}</div>
 {% else %}
-  <form x-data="{ selected: 0, max: {{ max_writes }}, count() { this.selected = $root.querySelectorAll('input[name=write]:checked').length }, setAll(on) { $root.querySelectorAll('input[name=write]').forEach((box) => { box.checked = on }); this.count() } }"
+  <form x-data="{ selected: 0, writes: '', count() { const ticked = [...$root.querySelectorAll('input[data-write]:checked')].map((box) => box.value); this.selected = ticked.length; this.writes = ticked.join(',') }, setAll(on) { $root.querySelectorAll('input[data-write]').forEach((box) => { box.checked = on }); this.count() } }"
         x-init="count()"
         @change="count()"
         hx-post="{% url 'plex_push_send' %}"
@@ -17,6 +17,7 @@
     {% csrf_token %}
     <input type="hidden" name="user_uuid" value="{{ session.target.uuid }}">
     <input type="hidden" name="machine_identifier" value="{{ session.server.machine_identifier }}">
+    <input type="hidden" name="writes" :value="writes">
     <p class="text-sm text-[var(--color-text)]">
       {% blocktranslate with user=session.target.title server=session.server.name %}For {{ user }} on {{ server }}:{% endblocktranslate %}
     </p>
@@ -45,7 +46,7 @@
             <p class="pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{{ write.library }}</p>
           {% endifchanged %}
           <label class="flex items-start gap-2 py-1 text-sm text-[var(--color-text)]">
-            <input type="checkbox" name="write" value="{{ write.rating_key }}:{{ write.item_id }}" class="mt-1 shrink-0"{% if not write.warning %} checked{% endif %}>
+            <input type="checkbox" data-write value="{{ write.rating_key }}:{{ write.item_id }}" class="mt-1 shrink-0"{% if not write.warning %} checked{% endif %}>
             <span class="min-w-0">
               <span class="block break-words">{{ write.plex_title }}</span>
               {% if write.warning %}
@@ -56,16 +57,13 @@
         {% endfor %}
       </div>
       <p class="text-sm text-[var(--color-text-muted)]"><span x-text="selected"></span> {% translate "selected" %}</p>
-      <p x-show="selected > max" x-cloak class="text-xs text-[var(--color-warning-text)]">
-        {% blocktranslate %}Tick at most {{ max_writes }} items per send, then send the rest afterwards.{% endblocktranslate %}
-      </p>
       <button type="submit"
-              :disabled="selected === 0 || selected > max"
+              :disabled="selected === 0"
               class="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         {% translate "Mark selected as watched in Plex" %}
       </button>
       <p id="plex-push-sending" class="htmx-indicator text-xs text-[var(--color-text-muted)]">
-        {% translate "Sending to Plex. Each item is checked again before it is marked." %}
+        {% translate "Starting the send." %}
       </p>
     {% else %}
       <p class="text-sm text-[var(--color-text)]">{% translate "Nothing to send: Plex already agrees with Floppy for every matched item." %}</p>
