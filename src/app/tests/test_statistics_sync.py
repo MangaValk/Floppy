@@ -738,6 +738,9 @@ class ReconcilerTests(StatisticsSyncTestCase):
         with patch(SYNC_TASK) as dropped, self.captureOnCommitCallbacks(execute=True):
             statistics_sync.mark_days(self.user.id, [self.day(0)], reason="scrobble")
         dropped.assert_called_once()  # published, then lost
+        # A message waits for the task to start; only after the pending window
+        # expires does the reconciler treat it as lost and publish a retry.
+        cache.delete(statistics_sync._pending_key(self.user.id))
 
         with patch(SYNC_TASK) as enqueue:
             queued = statistics_sync.reconcile()
@@ -750,6 +753,43 @@ class ReconcilerTests(StatisticsSyncTestCase):
             "hours_per_media_type",
             statistics_cache.get_statistics_data(self.user, None, None, "Today"),
         )
+
+    @NON_EAGER
+    @patch(SYNC_TASK)
+    def test_reconcile_queues_once_while_a_message_waits_behind_the_worker(self, enqueue):
+        self.mark([self.day(3)])
+
+        self.assertEqual(statistics_sync.reconcile(), 1)
+        self.assertEqual(statistics_sync.reconcile(), 0)
+        self.assertEqual(statistics_sync.reconcile(), 0)
+        self.assertEqual(enqueue.call_count, 1)
+        self.assertIsNotNone(cache.get(statistics_sync._pending_key(self.user.id)))
+
+    @NON_EAGER
+    @patch(SYNC_TASK)
+    def test_starting_the_task_clears_the_pending_marker(self, _enqueue):
+        self.mark([self.day(3)])
+        statistics_sync.reconcile()
+
+        with patch.object(
+            statistics_sync, "run_sync", return_value={"status": "done", "published": {}}
+        ):
+            statistics_sync.sync_task_body(self.user.id)
+
+        self.assertIsNone(cache.get(statistics_sync._pending_key(self.user.id)))
+        # Durable work is still unfinished, so the next tick can queue again.
+        self.assertEqual(statistics_sync.reconcile(), 1)
+
+    @NON_EAGER
+    @patch(SYNC_TASK)
+    def test_reconcile_retries_after_the_pending_window_expires(self, enqueue):
+        self.mark([self.day(3)])
+        self.assertEqual(statistics_sync.reconcile(), 1)
+
+        cache.delete(statistics_sync._pending_key(self.user.id))
+
+        self.assertEqual(statistics_sync.reconcile(), 1)
+        self.assertEqual(enqueue.call_count, 2)
 
     def test_a_live_lease_is_left_alone_and_an_expired_one_is_retried(self):
         self.mark([self.day(3)])

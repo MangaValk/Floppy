@@ -134,6 +134,42 @@ def upsert_collection_source_state(
     return retry_on_lock(_upsert_state)
 
 
+def prune_collection_source_states(
+    *,
+    user,
+    source: str,
+    source_instance_id: int | None,
+    keep_item_ids,
+) -> int:
+    """Drop this instance's states for items it no longer reports as owned.
+
+    Scoped to the caller's ``source`` and ``source_instance_id``: a Radarr run
+    can never prune another source's snapshots, another instance's snapshots,
+    or a collection entry that has no source snapshot behind it. Call only
+    after a complete read of the instance; an item missing from a partial or
+    failed run is not proof that the server deleted it.
+    """
+    stale = (
+        CollectionSourceState.objects.filter(
+            user=user,
+            source=source,
+            source_instance_id=source_instance_id,
+        )
+        .exclude(item_id__in=keep_item_ids)
+        .select_related("item")
+    )
+    removed = 0
+    for state in stale:
+        remove_collection_source_state(
+            user=user,
+            item=state.item,
+            source=source,
+            source_instance_id=source_instance_id,
+        )
+        removed += 1
+    return removed
+
+
 def remove_collection_source_state(
     *,
     user,
