@@ -1,4 +1,4 @@
-# Deterministic benchmark fixtures (BENCH-01)
+# Deterministic fixtures and measurement runner (BENCH-01 / BENCH-02)
 
 From the repository root, with locked development dependencies installed:
 
@@ -9,7 +9,8 @@ uv run --no-sync python scripts/benchmark_fixtures.py --output /tmp/floppy-bench
 
 The output directory must not already exist. This runs **two fresh processes for
 each of 1,000, 10,000 and 50,000 tracking rows**, with seed `1729`, one warm-up and
-five measured probes per workload. Use an otherwise idle machine. No Redis,
+five measured probes per cold/warm phase per workload. Use an otherwise idle
+machine. No Redis,
 Celery worker, provider credentials, local database copy or running server is
 needed. The harness overrides the configured database, cache and broker before
 Django starts, installs the existing offline network guard, and creates its own
@@ -27,8 +28,89 @@ Sizes must be multiples of ten. `--keep-database` retains each disposable
 directory disposes of the run. Fixtures contain known synthetic integration
 tokens and unusable passwords: **never load them into a production database**.
 No real titles, accounts, emails, provider identifiers, secrets or history are
-copied. Machine receipts omit hostname and environment values; review your
-chosen output path in the recorded command before sharing the report.
+copied. Machine receipts omit hostname and arbitrary environment values. Output and
+baseline paths in recorded commands are redacted; review separately saved local
+invocations before sharing them.
+
+## Repeat and compare measurements (BENCH-02)
+
+The same runner supplies the measurement protocol; there is no second fixture
+generator or production instrumentation. For a small before/after comparison:
+
+```bash
+uv run --no-sync python scripts/benchmark_fixtures.py --sizes 1000 --output /tmp/bench-before --profile
+uv run --no-sync python scripts/benchmark_fixtures.py --sizes 1000 --output /tmp/bench-after --profile --baseline /tmp/bench-before/report.json
+```
+
+Each command independently runs two fresh workers with the same fixture seed.
+`report.json` schema version 2 records protocol `bench02-data-v1`, raw CPU/wall and
+RSS/USS/PSS snapshots, database settings, process settings, repetitions, fixture
+hashes, source/lockfile hashes, Git SHA and tracked-code diff hash/dirty status.
+No source diff, credentials, hostname or environment dump is exported. Command
+output/baseline paths are redacted to portable placeholders; keep the exact local
+invocations separately when writing an experiment report.
+
+Application-cold trials clear the isolated locmem cache and close Django's
+database connection before each sample. Reset cost is recorded separately;
+opening the next connection is part of the operation. Then one unmeasured
+priming call precedes the warm trials. These phases do not reset OS page
+caches, database-server buffers, Python imports, registries or user-object
+caches. Fixture generation/export already touched the database. They are not
+process-start or deployment cold-start measurements.
+
+Process metadata includes DEBUG, cache/broker, task eager mode, schema setup,
+warm-up/reset policy, connection age, timezone, Python hash seed and numeric
+thread-limit environment values. Workers use UTC and `PYTHONHASHSEED=0`.
+Database metadata includes backend/version and an allowlist of effective SQLite
+PRAGMAs or PostgreSQL settings; database names, hosts, usernames and passwords
+are omitted. Provider HTTP and task dispatch are mocked as failures throughout
+the worker, and any attempted call invalidates the run.
+
+`--baseline` emits per-size/state/workload median timing ratios, sample counts
+and percentage changes in JSON and Markdown. It compares only matching fixture
+seed/checksum, protocol, machine/runtime/limits, database settings and process
+policies. Incompatible groups get explicit notes and no ratio. Repetition counts
+may differ. Git/source changes are recorded rather than rejected, because
+measuring code changes is the purpose. Comparisons describe observations, not
+statistical significance or production speedups. Historical BENCH-01 schema-v1
+reports lack phase/settings metadata and are rejected as comparison baselines;
+keep them as historical evidence and establish a new v2 baseline.
+
+In addition to the existing memory-probe calibration, `collector_overhead` times
+50 complete measurements around an empty function and 50 bare calls to that
+same function. This exposes end-to-end timer/memory-collection cost separately
+from operation durations. `--profile` still adds separate SQL/allocation trials,
+with explicit warm-median timing ratios. Normal production paths are untouched.
+
+## Disposable PostgreSQL execution
+
+Generation/measurement defaults to SQLite. To run the same protocol against
+PostgreSQL, start an isolated server, for example (synthetic credentials only):
+
+```bash
+docker run --detach --rm --name floppy-bench-postgres --cpus 1 --memory 256m --tmpfs /var/lib/postgresql/data -e POSTGRES_USER=benchmark -e POSTGRES_PASSWORD=bench-only -p 127.0.0.1:55439:5432 postgres:16-alpine
+docker exec floppy-bench-postgres pg_isready -U benchmark
+BENCH_POSTGRES_USER=benchmark BENCH_POSTGRES_PASSWORD=bench-only BENCH_POSTGRES_PORT=55439 uv run --no-sync python scripts/benchmark_fixtures.py --database postgresql --sizes 1000 --output /tmp/bench-pg-before --profile
+BENCH_POSTGRES_USER=benchmark BENCH_POSTGRES_PASSWORD=bench-only BENCH_POSTGRES_PORT=55439 uv run --no-sync python scripts/benchmark_fixtures.py --database postgresql --sizes 1000 --output /tmp/bench-pg-after --profile --baseline /tmp/bench-pg-before/report.json
+docker stop floppy-bench-postgres
+```
+
+Wait until `pg_isready` succeeds before running the command. Stop the container
+even if the measurement command fails. `BENCH_POSTGRES_HOST` defaults to
+`127.0.0.1` and accepts only loopback addresses/localhost. The explicitly supplied
+user needs CREATEDB access to the server's `postgres` database. Each worker
+creates a fresh `floppy_bench02_<random>` database from `template0` and drops
+that database only in a `finally` block, including on Python errors.
+`--keep-database` is SQLite-only. A server disconnect, SIGKILL or host crash can
+prevent cleanup; any leftover benchmark databases contain synthetic data.
+Use a disposable server as above, separate from the application server.
+
+PostgreSQL schema/generation/export, both cache phases, comparisons and zero
+leftover databases were verified at 1k on PostgreSQL 16.13. Larger PostgreSQL
+runs remain unmeasured. Database-server CPU/memory and its container limits are
+not collected by this in-process protocol; record the container command/limits
+with the experiment. Existing constrained and memory harnesses provide server,
+Redis, worker and cgroup measurements and remain the deployment tools.
 
 ## Data contract
 
@@ -55,7 +137,7 @@ status. This is a synthetic workload, not a model of every real library.
 
 ## Output and interpretation
 
-- `report.json`: schema version, Git SHA, generator/lockfile SHA-256 hashes,
+- `report.json`: schema/protocol version, Git SHA, generator/lockfile SHA-256 hashes,
   runtime versions, machine limits, comparisons and all raw samples.
 - `report.md`: readable checksum and timing/variance tables with limitations.
 - `<size>-<repeat>/fixture.json.gz`: deterministic, dependency-ordered Django
@@ -71,8 +153,9 @@ no timing pass/fail threshold: the report includes min/max and population CV
 not statistical confidence; increase `--repeats` for performance experiments.
 
 Probes reuse the production library-query engine for movie, TV, music and podcast
-pages (24 items), plus direct episode-audit and collection queries. They are warm,
-in-process data probes, **not HTTP surface measurements**. Continue using
+pages (24 items), plus direct episode-audit and collection queries. They are
+in-process probes with explicit application-cold/warm phases, **not HTTP surface
+measurements**. Continue using
 `benchmark_perf`, `scripts/bench.sh` and constrained/container benchmarks for
 their existing purposes. This fixture work does not replace those harnesses.
 
@@ -133,7 +216,8 @@ compressed-byte checksum across different backends is not promised. SQLite
 export/reload is covered by tests. A 1k fixture was also restored to PostgreSQL
 16.13 with matching counts, all serialized fields, re-export checksum and verified
 sequence reset (current-model schema, not migration replay). Larger PostgreSQL
-restores remain unmeasured. Generation itself deliberately stays SQLite-only.
+restores remain unmeasured. BENCH-02 can also generate directly in a fresh
+PostgreSQL database using the command above.
 
 ## Validation
 
@@ -147,6 +231,8 @@ uv run --no-sync ruff check scripts/benchmark_fixtures.py
 `FLOPPY_TEST_FAST_DB=1` builds schema from models and skips migration replay. This
 work changes no models or migrations. Tests check sizes and relationships,
 status/import/collection coverage, no provider/task dispatch, export/reload byte
-equality, existing-data refusal and memory-access-denied behavior. The default
+equality, existing-data refusal and memory-access-denied behavior. BENCH-02 tests
+also check phase order/warm-up, incompatible-baseline rejection and PostgreSQL
+isolation/cleanup on failure. The default
 six fresh-process runs provide the independent repeat-generation check. Keep
 machine-specific receipts outside the index; the command never commits them.

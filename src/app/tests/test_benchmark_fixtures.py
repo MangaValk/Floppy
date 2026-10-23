@@ -4,12 +4,15 @@ import gzip
 import importlib.util
 import io
 import json
+import os
 import tempfile
+from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from app import models
 from app.benchmark_data import TRACKERS, build_dataset
@@ -97,3 +100,142 @@ class BenchmarkFixtureTests(TestCase):
             process.return_value.memory_info.return_value.rss = 123
             process.return_value.memory_full_info.side_effect = psutil.AccessDenied()
             self.assertEqual(harness.memory(), {"rss": 123, "uss": None, "pss": None})
+
+
+class MeasurementProtocolTests(SimpleTestCase):
+    def test_cache_phases_reset_each_cold_sample_and_prime_warm_phase(self):
+        events = []
+        cold, warm = harness.phase_samples(
+            lambda: events.append("operation"),
+            2,
+            lambda: events.append("reset"),
+        )
+        self.assertEqual(
+            events,
+            [
+                "reset",
+                "operation",
+                "reset",
+                "operation",
+                "operation",
+                "operation",
+                "operation",
+            ],
+        )
+        self.assertEqual([row["iteration"] for row in cold], [1, 2])
+        self.assertEqual([row["iteration"] for row in warm], [1, 2])
+        self.assertTrue(all("reset" in row for row in cold))
+        self.assertTrue(all("reset" not in row for row in warm))
+
+    def test_postgres_failure_drops_only_the_created_database(self):
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "BENCH_POSTGRES_HOST": "127.0.0.1",
+                    "BENCH_POSTGRES_USER": "benchmark",
+                },
+            ),
+            patch("psycopg.connect") as connect,
+            patch("django.db.connections.close_all") as close,
+        ):
+            admin = connect.return_value.__enter__.return_value
+            with self.assertRaisesMessage(RuntimeError, "operation failed"):
+                with harness.disposable_database(
+                    SimpleNamespace(database="postgresql")
+                ) as config:
+                    self.assertTrue(config["NAME"].startswith("floppy_bench02_"))
+                    name = config["NAME"]
+                    raise RuntimeError("operation failed")
+            statements = [
+                call.args[0].as_string() for call in admin.execute.call_args_list
+            ]
+            self.assertEqual(
+                statements,
+                [
+                    f'CREATE DATABASE "{name}" TEMPLATE template0',
+                    f'DROP DATABASE "{name}" WITH (FORCE)',
+                ],
+            )
+            close.assert_called_once()
+
+    def test_postgres_refuses_nonlocal_host_before_connecting(self):
+        with (
+            patch.dict(os.environ, {"BENCH_POSTGRES_HOST": "example.invalid"}),
+            patch("psycopg.connect") as connect,
+        ):
+            with (
+                self.assertRaisesMessage(ValueError, "must be loopback"),
+                harness.disposable_database(SimpleNamespace(database="postgresql")),
+            ):
+                self.fail("Nonlocal database accepted")
+            connect.assert_not_called()
+
+    def comparison_report(self):
+        process = dict.fromkeys(
+            [
+                "role",
+                "debug",
+                "cache_backend",
+                "celery_eager",
+                "celery_broker",
+                "provider_network",
+                "schema_setup",
+                "warmup_calls_per_workload",
+                "phase_order",
+                "cold_reset",
+                "os_database_page_cache",
+                "python_hash_seed",
+                "timezone",
+                "database_conn_max_age",
+                "thread_limits",
+            ],
+            False,
+        )
+        return {
+            "schema_version": 2,
+            "protocol": harness.PROTOCOL,
+            "machine": {"logical_cpus": 2},
+            "executions": [
+                {
+                    "size": 1000,
+                    "seed": 1729,
+                    "fixture_sha256": "synthetic",
+                    "database": {"engine": "sqlite"},
+                    "process": process,
+                    "cold_samples": {"movie": [{"wall_s": 0.002}]},
+                    "samples": {"movie": [{"wall_s": 0.001}]},
+                }
+            ],
+        }
+
+    def test_baseline_ratios_keep_cache_states_separate(self):
+        before = self.comparison_report()
+        after = deepcopy(before)
+        after["executions"][0]["samples"]["movie"][0]["wall_s"] = 0.003
+        result = harness.baseline_comparison(after, before)
+        self.assertEqual([row["state"] for row in result], ["application_cold", "warm"])
+        self.assertEqual([row["wall_ratio"] for row in result], [1, 3])
+        self.assertEqual([row["change_percent"] for row in result], [0, 200])
+
+    def test_incompatible_baselines_have_notes_and_no_timing_ratios(self):
+        before = self.comparison_report()
+        for field, value in (
+            ("fixture_sha256", "different"),
+            ("database", {"engine": "postgresql"}),
+        ):
+            after = deepcopy(before)
+            after["executions"][0][field] = value
+            rows = harness.baseline_comparison(after, before)
+            self.assertTrue(all(not row["comparable"] and row["notes"] for row in rows))
+            self.assertTrue(all("wall_ratio" not in row for row in rows))
+        after = deepcopy(before)
+        after["machine"]["logical_cpus"] = 4
+        self.assertTrue(
+            all(
+                not row["comparable"]
+                for row in harness.baseline_comparison(after, before)
+            )
+        )
+        with self.assertRaisesMessage(ValueError, "legacy BENCH-01"):
+            harness.baseline_comparison(before, {"schema_version": 1})
