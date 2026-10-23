@@ -591,11 +591,46 @@ class SendTests(TestCase):
             patch("integrations.plex_watched_push.build_plan", return_value=plan),
             patch("integrations.plex.fetch_metadata", side_effect=self._fetch),
             patch("integrations.plex.mark_watched", side_effect=mark or self._mark) as m,
+            patch("integrations.plex_watched_push.time.sleep"),
         ):
             result = plex_watched_push.send(
                 self.user, self.account, self.session, selected,
             )
         return result, m
+
+    def test_a_wrong_already_watched_answer_is_rechecked_and_sent_once(self):
+        """Plex can report "watched" for an item its listing shows unwatched."""
+        answers = {"m1": [{"type": "movie", "viewCount": 1}]}
+        self.remote = {"m1": {"type": "movie", "viewCount": 0}}
+
+        def fetch(token, uri, rating_key, **kwargs):
+            pending = answers.get(rating_key)
+            return pending.pop(0) if pending else self._fetch(token, uri, rating_key)
+
+        with patch("integrations.plex_watched_push.time.sleep") as sleep:
+            with (
+                patch("integrations.plex_watched_push.build_plan",
+                      return_value=_plan_with(self._write("m1"))),
+                patch("integrations.plex.fetch_metadata", side_effect=fetch),
+                patch("integrations.plex.mark_watched", side_effect=self._mark) as mark,
+            ):
+                result = plex_watched_push.send(
+                    self.user, self.account, self.session, {("m1", self.item.id)},
+                )
+
+        sleep.assert_called_once()
+        mark.assert_called_once()
+        self.assertEqual(result.sent, ["Title m1"])
+        self.assertEqual(PlexWatchedPush.objects.count(), 1)
+
+    def test_an_item_still_watched_on_recheck_is_skipped(self):
+        self.remote = {"m1": {"type": "movie", "viewCount": 1}}
+
+        result, mark = self._send(_plan_with(self._write("m1")), {("m1", self.item.id)})
+
+        mark.assert_not_called()
+        self.assertEqual(result.skipped, [("Title m1", "Already watched in Plex")])
+        self.assertFalse(PlexWatchedPush.objects.exists())
 
     def test_writes_only_ticked_items_the_fresh_plan_still_has(self):
         self.remote = {"m1": {"type": "movie", "viewCount": 0}}

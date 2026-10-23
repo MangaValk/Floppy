@@ -7,6 +7,7 @@ as a Home user is built per request and never stored.
 """
 
 import re
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -23,6 +24,8 @@ from integrations.models import (
 from integrations.safe_fetch import UnsafeUrlError
 
 PLEX_EPISODE_TYPE = 4
+# Gives Plex a moment before items it reported as already watched are read again.
+RECHECK_DELAY_SECONDS = 10
 _PLEX_TYPE_BY_MEDIA_TYPE = {
     MediaTypes.MOVIE.value: "movie",
     MediaTypes.EPISODE.value: "episode",
@@ -226,61 +229,79 @@ def send(user, account, session, selected, progress=None):
     changed since the preview is dropped. Each item is read right before its
     write, because ``/:/scrobble`` adds a play every time it is called.
     ``progress(done, total)`` is called after each item.
+
+    Plex sometimes answers that read with "watched" for an item its library
+    listing still shows unwatched. Those items are read once more after the
+    main pass and sent only if Plex then agrees they are unwatched.
     """
     plan = build_plan(user, account, session)
     planned = [
         write for write in plan.writes if (write.rating_key, write.item_id) in selected
     ]
     result = PushResult(stale=len(selected) - len(planned))
+    recheck = []
 
-    for done, write in enumerate(planned):
-        if progress:
-            progress(done, len(planned))
-        try:
-            current = plex_api.fetch_metadata(session.token, session.uri, write.rating_key)
-            if (
-                current is None
-                or current.get("type") != _PLEX_TYPE_BY_MEDIA_TYPE[write.media_type]
-            ):
-                result.skipped.append((write.plex_title, "No longer found in Plex"))
-                continue
-            if _is_watched(current):
+    def attempt(write, *, last_try):
+        current = plex_api.fetch_metadata(session.token, session.uri, write.rating_key)
+        if (
+            current is None
+            or current.get("type") != _PLEX_TYPE_BY_MEDIA_TYPE[write.media_type]
+        ):
+            result.skipped.append((write.plex_title, "No longer found in Plex"))
+            return
+        if _is_watched(current):
+            if last_try:
                 result.skipped.append((write.plex_title, "Already watched in Plex"))
-                continue
+            else:
+                recheck.append(write)
+            return
 
-            # Recorded before the write: a write that lands while its response
-            # is lost must still be recognized as Floppy's echo on import.
-            PlexWatchedPush.objects.create(
-                user=user,
-                item_id=write.item_id,
-                machine_identifier=session.server.machine_identifier,
-                rating_key=write.rating_key,
-                plex_user_uuid=session.target.uuid,
-                plex_user_title=session.target.title,
-            )
-            plex_api.mark_watched(session.token, session.uri, write.rating_key)
+        # Recorded before the write: a write that lands while its response
+        # is lost must still be recognized as Floppy's echo on import.
+        PlexWatchedPush.objects.create(
+            user=user,
+            item_id=write.item_id,
+            machine_identifier=session.server.machine_identifier,
+            rating_key=write.rating_key,
+            plex_user_uuid=session.target.uuid,
+            plex_user_title=session.target.title,
+        )
+        plex_api.mark_watched(session.token, session.uri, write.rating_key)
 
-            readback = plex_api.fetch_metadata(
-                session.token,
-                session.uri,
-                write.rating_key,
+        readback = plex_api.fetch_metadata(session.token, session.uri, write.rating_key)
+        if readback is None or not _is_watched(readback):
+            result.skipped.append(
+                (write.plex_title, "Sent, but Plex does not show it as watched"),
             )
-            if readback is None or not _is_watched(readback):
-                result.skipped.append(
-                    (write.plex_title, "Sent, but Plex does not show it as watched"),
+            return
+        result.sent.append(write.plex_title)
+
+    def run(writes, *, last_try):
+        for done, write in enumerate(writes):
+            if progress:
+                progress(done, len(writes))
+            try:
+                attempt(write, last_try=last_try)
+            except plex_api.PlexAuthError:
+                result.stopped = "Plex refused access. Nothing after this item was sent."
+            except (plex_api.PlexClientError, UnsafeUrlError):
+                result.stopped = (
+                    "Plex stopped responding. Nothing after this item was sent."
                 )
-                continue
-            result.sent.append(write.plex_title)
-        except plex_api.PlexAuthError:
-            result.stopped = "Plex refused access. Nothing after this item was sent."
-            break
-        except (plex_api.PlexClientError, UnsafeUrlError):
-            result.stopped = "Plex stopped responding. Nothing after this item was sent."
-            break
-        except SoftTimeLimitExceeded:
-            result.stopped = "The send ran out of time. Check again to send the rest."
-            break
+            except SoftTimeLimitExceeded:
+                result.stopped = "The send ran out of time. Check again to send the rest."
+            if result.stopped:
+                return
 
+    run(planned, last_try=False)
+    if recheck and not result.stopped:
+        time.sleep(RECHECK_DELAY_SECONDS)
+        run(recheck, last_try=True)
+    elif recheck:
+        result.skipped.extend(
+            (write.plex_title, "Not checked again: the send stopped")
+            for write in recheck
+        )
     return result
 
 
