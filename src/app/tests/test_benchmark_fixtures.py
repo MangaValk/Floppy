@@ -101,6 +101,16 @@ class BenchmarkFixtureTests(TestCase):
             process.return_value.memory_full_info.side_effect = psutil.AccessDenied()
             self.assertEqual(harness.memory(), {"rss": 123, "uss": None, "pss": None})
 
+    def test_memory_process_exit_is_reported_unavailable(self):
+        try:
+            import psutil
+        except ImportError:
+            self.skipTest("psutil is optional")
+        with patch.object(psutil, "Process", side_effect=psutil.NoSuchProcess(999999)):
+            self.assertEqual(
+                harness.memory(999999), {"rss": None, "uss": None, "pss": None}
+            )
+
 
 class MeasurementProtocolTests(SimpleTestCase):
     def test_cache_phases_reset_each_cold_sample_and_prime_warm_phase(self):

@@ -1,5 +1,8 @@
 # Deterministic fixtures and measurement runner (BENCH-01 / BENCH-02)
 
+For browser journeys, mobile viewports, LCP, long tasks and polling, use the
+[BENCH-03 browser harness](browser-benchmarks.md), which reuses these fixtures.
+
 From the repository root, with locked development dependencies installed:
 
 ```bash

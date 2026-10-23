@@ -134,15 +134,15 @@ def database_metadata(connection):
         }
 
 
-def memory():
+def memory(pid=None):
     """Return process bytes, explicitly identifying unsupported metrics."""
     result = {"rss": None, "uss": None, "pss": None}
     try:
         import psutil
     except ImportError:
         return result
-    process = psutil.Process()
     try:
+        process = psutil.Process(pid) if pid is not None else psutil.Process()
         result["rss"] = process.memory_info().rss
         info = process.memory_full_info()
         result.update({key: getattr(info, key, None) for key in result})
