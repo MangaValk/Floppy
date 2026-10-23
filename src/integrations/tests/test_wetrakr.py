@@ -1247,7 +1247,7 @@ class ConnectViewTests(TestCase):
         page = self.client.get(reverse("mal_export"))
 
         slugs = [service["slug"] for service in page.context["outbound_services"]]
-        self.assertEqual(slugs, ["tmdb", "wetrakr"])
+        self.assertEqual(slugs, ["tmdb", "wetrakr", "plex"])
         for slug in slugs:
             self.assertContains(page, f"activeModal = 'send-{slug}'", count=1)
             self.assertContains(page, f"activeModal === 'send-{slug}'", count=1)

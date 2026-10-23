@@ -2352,6 +2352,7 @@ def mal_export(request):
     user = request.user
     tmdb_sync = rating_sync_status(user)
     wetrakr_sync = wetrakr_status(user)
+    plex_connected = PlexAccount.objects.filter(user=user).exclude(plex_token="").exists()
     mal_account = getattr(user, "mal_account", None)
     schedule = None
     periodic_task = (
@@ -2396,6 +2397,12 @@ def mal_export(request):
                 "description": gettext("Plays, statuses and ratings"),
                 "state": _outbound_state(wetrakr_sync["account"]),
                 "body": "users/components/wetrakr_sync.html",
+            },
+            {
+                "slug": "plex",
+                "description": gettext("Watched movies and episodes"),
+                "state": "connected" if plex_connected else "off",
+                "body": "users/components/plex_watched_push.html",
             },
         ],
     }

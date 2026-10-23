@@ -1,7 +1,9 @@
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
+from django.urls import reverse
 
 from app.models import Item, Sources, WatchState
 from integrations import plex as plex_api
@@ -425,3 +427,119 @@ class BuildPlanTests(TestCase):
         ]
 
         self.assertEqual(len(self._plan().writes), 3)
+
+
+class PlexPushViewTests(TestCase):
+    """The Plex modal reads only, and offers no way to send yet."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="v", password="p")
+        self.client.force_login(self.user)
+        self.session = plex_watched_push.PushSession(
+            target=plex_watched_push.PushTarget("kid", "Kid", False, False),
+            server=plex_watched_push.PushServer("srv", "Home"),
+            uri="http://plex.local",
+            token="kid-srv",
+        )
+
+    def _connect(self):
+        return PlexAccount.objects.create(
+            user=self.user, plex_token="owner-token", plex_username="owner",
+        )
+
+    def _write(self, rating_key, warning=""):
+        return plex_watched_push.PlannedWrite(
+            rating_key=rating_key, item_id=1, media_type="movie", library="Movies",
+            plex_title=f"Title {rating_key}", floppy_title="Floppy title",
+            warning=warning,
+        )
+
+    def test_page_row_follows_the_plex_connection(self):
+        def state():
+            page = self.client.get(reverse("mal_export"))
+            services = {s["slug"]: s for s in page.context["outbound_services"]}
+            return services["plex"]["state"], page
+
+        status, page = state()
+        self.assertEqual(status, "off")
+        self.assertContains(page, "Connect Plex on the")
+
+        self._connect()
+        with patch("integrations.plex.list_home_users") as users:
+            status, page = state()
+        # Opening the page never calls plex.tv; users load on request.
+        users.assert_not_called()
+        self.assertEqual(status, "connected")
+        self.assertContains(page, reverse("plex_push_targets"))
+
+    @patch(
+        "integrations.plex_watched_push.list_targets",
+        return_value=(
+            [plex_watched_push.PushTarget("kid", "Kid", False, True)],
+            [plex_watched_push.PushServer("srv", "Home")],
+        ),
+    )
+    def test_targets_lists_users_and_servers(self, _targets):
+        self._connect()
+
+        response = self.client.get(reverse("plex_push_targets"))
+
+        self.assertContains(response, 'value="kid"')
+        self.assertContains(response, 'value="srv"')
+        self.assertContains(response, reverse("plex_push_preview"))
+
+    def test_targets_without_plex_asks_to_connect(self):
+        self.assertContains(self.client.get(reverse("plex_push_targets")), "Connect Plex first.")
+
+    @patch("integrations.plex.mark_watched")
+    def test_preview_lists_writes_and_cannot_send(self, mark):
+        self._connect()
+        plan = plex_watched_push.PushPlan(
+            writes=[self._write("m1"), self._write("m2", warning="Titles differ")],
+            already_watched=4,
+            not_matched=[("Anime S01E01", "numbering may differ")],
+            failed_libraries=["Kids"],
+        )
+        with (
+            patch("integrations.plex_watched_push.open_session", return_value=self.session),
+            patch("integrations.plex_watched_push.build_plan", return_value=plan),
+        ):
+            response = self.client.post(
+                reverse("plex_push_preview"),
+                {"user_uuid": "kid", "machine_identifier": "srv"},
+            )
+
+        content = response.content.decode()
+        self.assertIn('value="m1:1" class="mt-1 shrink-0" checked', content)
+        self.assertIn('value="m2:1" class="mt-1 shrink-0">', content)
+        self.assertIn("Titles differ", content)
+        self.assertIn("4 already watched in Plex", content)
+        self.assertIn("Could not read: Kids", content)
+        self.assertIn("Anime S01E01", content)
+        self.assertIn("disabled", content)
+        self.assertNotIn("hx-post", content)
+        mark.assert_not_called()
+
+    def test_preview_reports_a_missing_pin(self):
+        self._connect()
+        with patch(
+            "integrations.plex_watched_push.open_session",
+            side_effect=plex_watched_push.PinRequiredError("Kid needs their Plex PIN"),
+        ):
+            response = self.client.post(reverse("plex_push_preview"), {"user_uuid": "kid"})
+
+        self.assertContains(response, "Kid needs their Plex PIN")
+
+    def test_preview_runs_one_check_at_a_time(self):
+        self._connect()
+        cache.add(f"plex_push_preview:{self.user.pk}", 1)
+        with patch("integrations.plex_watched_push.open_session") as session:
+            response = self.client.post(reverse("plex_push_preview"), {})
+
+        session.assert_not_called()
+        self.assertContains(response, "A check is already running")
+        cache.delete(f"plex_push_preview:{self.user.pk}")
+
+    def test_preview_is_post_only(self):
+        self._connect()
+        self.assertEqual(self.client.get(reverse("plex_push_preview")).status_code, 405)
