@@ -1,0 +1,93 @@
+{
+  "work_item": "TASKS-05",
+  "verdict": "IMPROVED",
+  "source_sha_after": "c875777edbc51d56984486100fe83e77566f1c5f",
+  "change": "Pending-enqueue marker for scheduled statistics syncs; reconciler and self-follow-up no longer bypass enqueue dedupe.",
+  "files_changed": [
+    "src/app/statistics_sync.py",
+    "src/app/tests/test_statistics_sync.py",
+    "docs/architecture/statistics-sync.md"
+  ],
+  "primary_outcome": {
+    "backlog_first_tick": {
+      "baseline": {
+        "sync_enqueues": 6,
+        "task_executions": 10,
+        "sync_executions": 6,
+        "unproductive_syncs": 4,
+        "busy_syncs": 0,
+        "max_queue_depth": 4,
+        "wall_s": 131.02757930901134,
+        "db_write_statements": 84,
+        "db_query_statements": 482,
+        "redis_commands_parent_and_task_bodies": 507,
+        "sync_enqueues_per_hour": 164.85079029857704
+      },
+      "after": {
+        "sync_enqueues": 2,
+        "task_executions": 6,
+        "sync_executions": 2,
+        "unproductive_syncs": 0,
+        "busy_syncs": 0,
+        "max_queue_depth": 2,
+        "wall_s": 130.99551664298633,
+        "db_write_statements": 64,
+        "db_query_statements": 370,
+        "redis_commands_parent_and_task_bodies": 421,
+        "sync_enqueues_per_hour": 54.963713144647514
+      }
+    },
+    "backlog_burst_median": {
+      "baseline": {
+        "sync_enqueues": 3,
+        "task_executions": 7,
+        "unproductive_syncs": 2,
+        "db_write_statements": 54,
+        "redis_commands_parent_and_task_bodies": 325,
+        "queue_wait_p50_s": 0.9650774002075195,
+        "queue_wait_p95_s": 5.086521148681641
+      },
+      "after": {
+        "sync_enqueues": 1,
+        "task_executions": 5,
+        "unproductive_syncs": 0,
+        "db_write_statements": 44,
+        "redis_commands_parent_and_task_bodies": 282,
+        "queue_wait_p50_s": 0.9542148113250732,
+        "queue_wait_p95_s": 0.9823110103607178
+      }
+    },
+    "idle_30_min": {
+      "baseline": {
+        "sync_enqueues": 0,
+        "task_executions": 30,
+        "sync_executions": 0,
+        "unproductive_syncs": 0,
+        "busy_syncs": 0,
+        "max_queue_depth": 0,
+        "wall_s": 1800.2291251510032,
+        "db_write_statements": 0,
+        "db_query_statements": 151,
+        "redis_commands_parent_and_task_bodies": 30
+      },
+      "after": {
+        "sync_enqueues": 0,
+        "task_executions": 30,
+        "sync_executions": 0,
+        "unproductive_syncs": 0,
+        "busy_syncs": 0,
+        "max_queue_depth": 0,
+        "wall_s": 1800.24028607097,
+        "db_write_statements": 0,
+        "db_query_statements": 151,
+        "redis_commands_parent_and_task_bodies": 30
+      }
+    }
+  },
+  "tests": {
+    "command": "REDIS_URL=redis://127.0.0.1:6389/0 SECRET=test-only scripts/test.sh app.tests.test_statistics_sync",
+    "baseline": "62 passed (contended baseline log)",
+    "after": "65 passed (3 new regression tests)"
+  },
+  "caveat": "Ordinary-sync wall/CPU deltas are confounded by shared-host drift; deterministic enqueue/execution/statement/Redis counts are the evidence."
+}

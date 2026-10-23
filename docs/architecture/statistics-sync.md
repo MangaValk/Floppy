@@ -191,6 +191,15 @@ or starved message, a worker restart, a second consumer on the same Redis) and
 also midnight rollover and the first build after an upgrade: users with no
 state row are bootstrapped with a full sweep.
 
+The reconciler does not publish a second message while the last one is still
+waiting. A successful enqueue writes `stats:sync:pending:{uid}`; the task
+deletes it when it starts, and the marker expires after the lease window
+(`STATISTICS_SYNC_LEASE_SECONDS`) if delivery was lost before that. So a busy
+worker sees one queued sync per user instead of one per 60 s tick, while a
+genuinely lost message is still recovered within one lease window. The 5-second
+interactive gate still coalesces rapid marks; the scheduled path uses the
+pending marker because a tick interval outlives the gate.
+
 ## The read path
 
 `statistics_cache.get_statistics_data` loads the snapshot (cache, then
