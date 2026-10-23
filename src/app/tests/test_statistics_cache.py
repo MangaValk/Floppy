@@ -131,7 +131,9 @@ class StatisticsRefreshSchedulingTests(TestCase):
         cache.clear()
 
     @patch("app.tasks_interactive.statistics_sync_task.apply_async")
-    def test_background_sync_yields_to_webhooks_but_not_to_imports(self, enqueue):
+    def test_background_sync_runs_on_the_bulk_lane_but_keeps_its_priority(
+        self, enqueue
+    ):
         scheduled = statistics_cache.schedule_statistics_refresh(
             self.user.id, "This Month", allow_inline=False
         )
@@ -141,11 +143,12 @@ class StatisticsRefreshSchedulingTests(TestCase):
         self.assertEqual(priority, settings.CELERY_TASK_PRIORITY_STATISTICS_SYNC)
         self.assertGreater(priority, settings.CELERY_TASK_PRIORITY_INTERACTIVE)
         self.assertLess(priority, settings.CELERY_TASK_PRIORITY_FOLLOWUP)
+        self.assertEqual(enqueue.call_args.kwargs["queue"], "celery")
         route = settings.CELERY_TASK_ROUTES["app.tasks.statistics_sync_task"]
-        self.assertEqual(route["queue"], "interactive")
+        self.assertEqual(route["queue"], "celery")
 
     @patch("app.tasks_interactive.statistics_sync_task.apply_async")
-    def test_forced_refresh_is_queued_ahead_of_other_syncs(self, enqueue):
+    def test_forced_refresh_stays_on_the_interactive_lane(self, enqueue):
         statistics_cache.schedule_statistics_refresh(
             self.user.id, "This Month", force=True
         )
@@ -154,6 +157,11 @@ class StatisticsRefreshSchedulingTests(TestCase):
             enqueue.call_args.kwargs["priority"],
             settings.CELERY_TASK_PRIORITY_INTERACTIVE,
         )
+        self.assertEqual(enqueue.call_args.kwargs["queue"], "interactive")
+
+    def test_talent_fragment_rebuild_runs_on_the_bulk_lane(self):
+        route = settings.CELERY_TASK_ROUTES["Refresh statistics talent fragment"]
+        self.assertEqual(route["queue"], "celery")
 
     def test_schedule_all_ranges_refresh_records_a_change(self):
         before = statistics_sync.current_generation(self.user.id)
