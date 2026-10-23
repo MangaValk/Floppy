@@ -48,6 +48,10 @@ class ReleaseTypes(models.TextChoices):
     PHYSICAL = "physical", "Physical"
 
 
+# Any release date before this year is a placeholder, not a real release.
+MIN_VALID_RELEASE_DATETIME = datetime(1900, 1, 1, tzinfo=UTC)
+
+
 class SentinelDatetime:
     """Sentinel time for event without a specific time."""
 
@@ -84,11 +88,20 @@ def released_q(field_name, now=None):
     date has ended in the active timezone. Comparing it directly with ``now``
     made an episode released at the sentinel's midday time on its listed date,
     which is the day before it airs for users east of UTC (#1588).
+
+    The lower bound keeps year-1 unknown-date sentinels out of the query before
+    its timezone-aware lookups run. SQLite's datetime extract/cast functions
+    underflow datetime.MINYEAR when converting year 1 into a zone west of UTC,
+    which surfaced as ``DataError: string or blob too big`` (#1717).
     """
     now = now or timezone.now()
-    return Q(**{f"{field_name}__lte": now}) & ~(
-        _unknown_time_q(field_name)
-        & Q(**{f"{field_name}__date__gte": timezone.localdate(now)})
+    return (
+        Q(**{f"{field_name}__gte": MIN_VALID_RELEASE_DATETIME})
+        & Q(**{f"{field_name}__lte": now})
+        & ~(
+            _unknown_time_q(field_name)
+            & Q(**{f"{field_name}__date__gte": timezone.localdate(now)})
+        )
     )
 
 
