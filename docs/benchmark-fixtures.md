@@ -9,6 +9,9 @@ use the [BENCH-04 server harness](server-benchmarks.md).
 For schedule inventory, task attempts, retries, queue delay and worker overlap,
 use the [BENCH-05 Celery harness](celery-benchmarks.md).
 
+For capped SQLite/PostgreSQL matrices, controlled load and comparison eligibility,
+use the [BENCH-06 comparison harness](comparison-benchmarks.md).
+
 From the repository root, with locked development dependencies installed:
 
 ```bash
