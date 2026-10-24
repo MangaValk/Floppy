@@ -196,6 +196,11 @@ from app.tasks_external_ids import (  # noqa: E402
     populate_external_ids_for_items,
     reconcile_external_ids_backfill,
 )
+from app.tasks_game_groups import (  # noqa: E402
+    populate_game_group_backfill_queue,
+    populate_game_group_data_for_items,
+    reconcile_game_groups_backfill,
+)
 from app.tasks_genre import (  # noqa: E402
     GENRE_BACKFILL_ITEMS_QUEUE_KEY,
     GENRE_BACKFILL_ITEMS_SCHEDULED_KEY,
@@ -1412,6 +1417,8 @@ __all__ = [
     "populate_episode_runtime_queue",
     "populate_external_ids_backfill_queue",
     "populate_external_ids_for_items",
+    "populate_game_group_backfill_queue",
+    "populate_game_group_data_for_items",
     "populate_genre_backfill_queue",
     "populate_genre_data_for_items",
     "populate_igdb_rating_backfill_queue",
@@ -1428,6 +1435,7 @@ __all__ = [
     "prefetch_album_covers_batch",
     "prefetch_artist_images_batch",
     "reconcile_external_ids_backfill",
+    "reconcile_game_groups_backfill",
     "reconcile_genre_backfill",
     "reconcile_igdb_rating_backfill",
     "reconcile_podcast_website_backfill",
