@@ -81,6 +81,20 @@ class ReleaseSemanticsTests(TestCase):
                 Event.objects.filter(released_q("datetime", after_midnight)).exists(),
             )
 
+    def test_year_one_unknown_date_is_never_released(self):
+        """The year-1 sentinel stays out of queries west of UTC (#1717)."""
+        Event.objects.create(
+            item=self.item,
+            content_number=3,
+            datetime=datetime(1, 1, 1, tzinfo=UTC),
+        )
+        now = datetime(2026, 10, 20, 14, 0, tzinfo=UTC)
+
+        with timezone.override("America/Toronto"):
+            self.assertFalse(
+                Event.objects.filter(released_q("datetime", now)).exists(),
+            )
+
     def test_issue_1588_visionquest_is_not_released_on_its_listed_day(self):
         """The VisionQuest report: listed Oct 20, airs early Oct 21 in Europe."""
         sentinel = date_parser("2026-10-20")

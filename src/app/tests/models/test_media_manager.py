@@ -754,6 +754,54 @@ class MediaManagerTests(TestCase):
             )
             self.assertEqual(tv.max_progress, 1)
 
+    def test_released_episode_count_ignores_year_one_unknown_dates(self):
+        """Undated episodes must not crash the count west of UTC (#1717)."""
+        manager = MediaManager()
+        tv_item = Item.objects.create(
+            media_id="262819",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="LOL: Last One Laughing UK",
+            image="http://example.com/lol.jpg",
+        )
+        tv = TV.objects.create(
+            item=tv_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        season_item = Item.objects.create(
+            media_id="262819",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="LOL: Last One Laughing UK Season 3",
+            image="http://example.com/lol-season.jpg",
+            season_number=3,
+        )
+        Season.objects.create(
+            item=season_item,
+            related_tv=tv,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        Event.objects.create(
+            item=season_item,
+            content_number=9,
+            datetime=datetime(1, 1, 1, tzinfo=UTC),
+        )
+        Event.objects.create(
+            item=season_item,
+            content_number=2,
+            datetime=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+        with timezone.override("America/Toronto"):
+            manager._annotate_tv_released_episodes(
+                [tv],
+                datetime(2026, 10, 16, 2, 0, tzinfo=UTC),
+            )
+
+        self.assertEqual(tv.max_progress, 2)
+
     def test_sort_in_progress_media(self):
         """Test the _sort_in_progress_media method."""
         manager = MediaManager()
