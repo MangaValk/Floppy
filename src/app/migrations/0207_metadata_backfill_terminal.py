@@ -44,3 +44,16 @@ class Migration(migrations.Migration):
             field=models.BooleanField(default=False),
         ),
     ]
+
+    def apply(self, project_state, schema_editor, collect_sql=False):
+        """Limit SQLite's post-migration check to the table this alters."""
+        connection = schema_editor.connection
+        if connection.vendor == "sqlite" and not collect_sql:
+            check_constraints = connection.check_constraints
+
+            def check_changed_table(*args, **kwargs):
+                connection.check_constraints = check_constraints
+                return check_constraints(["app_metadatabackfillstate"])
+
+            connection.check_constraints = check_changed_table
+        return super().apply(project_state, schema_editor, collect_sql)
