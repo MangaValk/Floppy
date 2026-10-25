@@ -95,6 +95,16 @@ class MediaListViewTests(TestCase):
             ],
         )
 
+    def test_infinite_scroll_has_no_global_pagination_guard(self):
+        """htmx's per-element `once` trigger is the only pagination gate.
+
+        A page-wide in-progress flag swallowed the next trigger when its rows
+        arrived inside the re-arm window, stalling the scroll for good.
+        """
+        response = self.client.get(reverse("medialist", args=["movie"]))
+        self.assertNotContains(response, "paginationInProgress")
+        self.assertNotContains(response, "PAGINATION_")
+
     def _create_game_entry(
         self,
         media_id,
