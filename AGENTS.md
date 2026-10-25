@@ -339,6 +339,7 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
   PYTHONPATH=src uv run --no-sync celery -A config worker --queues celery --beat --scheduler django --hostname celery@%h --loglevel DEBUG
   ```
   The interactive worker must be dedicated — **never add `celery` to its `--queues`** or long-running background tasks (Reload calendar, imports) will block user-triggered refreshes.
+  **Queue rule:** `interactive` is only for work a page needs *before it can load* (webhook handling, live playback artwork, Statistics sync the viewer is waiting on). Anything the page does not wait on — feed/RSS refreshes, backfills, follow-ups after a render — goes on the default `celery` queue, with no `queue` route in `CELERY_TASK_ROUTES`.
 - Run Tailwind: `cd src && tailwindcss -i ./static/css/input.css -o ./static/css/main.css --watch`
 - For local setup, see `README.md` for the required `.env` values and Redis startup details.
 

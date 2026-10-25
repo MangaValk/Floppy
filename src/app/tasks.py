@@ -228,7 +228,6 @@ from app.tasks_imdb import refresh_imdb_game_credits_from_datasets  # noqa: E402
 from app.tasks_interactive import (  # noqa: E402
     continue_statistics_refresh_task,  # noqa: F401
     reconcile_statistics_sync_task,  # noqa: F401
-    refresh_podcast_show_from_rss_task,  # noqa: F401
     refresh_statistics_cache_task,  # noqa: F401
     resolve_playback_image,  # noqa: F401
     statistics_sync_task,  # noqa: F401
@@ -257,6 +256,7 @@ from app.tasks_podcast import (  # noqa: E402
     backfill_podcast_show_websites,
     ensure_podcast_website_backfill_reconcile,
     reconcile_podcast_website_backfill,
+    refresh_podcast_show_from_rss_task,  # noqa: F401
 )
 from app.tasks_providers import (  # noqa: E402
     WATCH_PROVIDERS_BACKFILL_ITEMS_QUEUE_KEY,

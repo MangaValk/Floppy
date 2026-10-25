@@ -437,7 +437,7 @@ def media_details(
                     PODCAST_DETAIL_RSS_REFRESH_SECONDS,
                 )
             ):
-                from app.tasks_interactive import refresh_podcast_show_from_rss_task
+                from app.tasks_podcast import refresh_podcast_show_from_rss_task
 
                 # Queued, so a slow feed host never holds the render; new
                 # episodes show on the next view.

@@ -138,7 +138,7 @@ class PodcastShowDetailRssRefreshTests(TestCase):
     def test_refresh_is_queued_once_per_window_without_fetching_inline(self):
         with (
             patch(
-                "app.tasks_interactive.refresh_podcast_show_from_rss_task.delay"
+                "app.tasks_podcast.refresh_podcast_show_from_rss_task.delay"
             ) as delay,
             patch("integrations.podcast_rss.fetch_feed_from_rss") as fetch,
         ):
@@ -152,7 +152,7 @@ class PodcastShowDetailRssRefreshTests(TestCase):
 
     def test_queue_failure_still_renders(self):
         with patch(
-            "app.tasks_interactive.refresh_podcast_show_from_rss_task.delay",
+            "app.tasks_podcast.refresh_podcast_show_from_rss_task.delay",
             side_effect=OSError("broker down"),
         ):
             response = self.client.get(self.url)
@@ -160,7 +160,7 @@ class PodcastShowDetailRssRefreshTests(TestCase):
         self.assertContains(response, "Queued Feed Show")
 
     def test_task_refreshes_the_show_from_its_feed(self):
-        from app.tasks_interactive import refresh_podcast_show_from_rss_task
+        from app.tasks_podcast import refresh_podcast_show_from_rss_task
 
         with patch(
             "app.fork_services_podcast.refresh_show_from_rss"
