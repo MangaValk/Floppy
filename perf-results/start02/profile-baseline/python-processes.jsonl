@@ -1,0 +1,1 @@
+{"label": "collectstatic", "argv": ["python", "manage.py", "collectstatic", "--noinput"], "body_wall_s": 5.017521085042972, "lifetime_cpu_s": 4.999242, "maxrss_kib": 120744, "io": "rchar: 23478821\nwchar: 1320926\nsyscr: 3676\nsyscw: 35\nread_bytes: 4677632\nwrite_bytes: 1330602\ncancelled_write_bytes: 4096\n"}

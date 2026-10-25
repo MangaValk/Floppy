@@ -1,0 +1,1748 @@
+{
+  "fixture": {
+    "items": 100000,
+    "movies": 100000,
+    "users": 1,
+    "bytes": 441831424,
+    "pages": 107869,
+    "freelist": 0,
+    "sqlite": "3.53.4",
+    "python": "3.12.15 (main, Oct 21 2026, 23:25:10) [GCC 15.2.0]",
+    "django": "5.2.17"
+  },
+  "protocol": "sequential-health-then-library-v2",
+  "platform": "Linux-6.10.14-linuxkit-aarch64-with",
+  "limits": [
+    4096,
+    4096
+  ],
+  "host_loadavg_start": [
+    12.2626953125,
+    16.625,
+    18.4873046875
+  ],
+  "database_bytes_at_start": 441831424,
+  "wal_bytes_at_start": 0,
+  "started_epoch": 1792801684.1410866,
+  "initial": {
+    "cpu.stat": "usage_usec 283804\nuser_usec 140827\nsystem_usec 142977\nnr_periods 7\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=2068480 wbytes=0 rios=84 wios=0 dbytes=0 dios=0\n",
+    "memory.current": "14462976\n",
+    "memory.peak": "14606336\n",
+    "memory.stat": "anon 11251712\nfile 2121728\nkernel 933888\nkernel_stack 16384\npagetables 98304\nsec_pagetables 0\npercpu 25728\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 36864\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 11251712\ninactive_file 2064384\nactive_file 57344\nunevictable 0\nslab_reclaimable 337856\nslab_unreclaimable 379688\nslab 717544\nworkingset_refault_anon 0\nworkingset_refault_file 481\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 0\npgsteal 0\npgscan_kswapd 0\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 0\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 5745\npgmajfault 1\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "healthy_s": 23.392283384979237,
+  "healthy_s_counters": {
+    "cpu.stat": "usage_usec 26157674\nuser_usec 19513031\nsystem_usec 6644642\nnr_periods 235\nnr_throttled 58\nthrottled_usec 5196705\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=91963392 wbytes=10792960 rios=5084 wios=966 dbytes=0 dios=0\n",
+    "memory.current": "553914368\n",
+    "memory.peak": "554029056\n",
+    "memory.stat": "anon 470847488\nfile 67629056\nkernel 14671872\nkernel_stack 245760\npagetables 2416640\nsec_pagetables 0\npercpu 27648\nsock 4096\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 13930496\nfile_dirty 1454080\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 470675456\ninactive_file 27373568\nactive_file 40235008\nunevictable 0\nslab_reclaimable 10031840\nslab_unreclaimable 1846632\nslab 11878472\nworkingset_refault_anon 0\nworkingset_refault_file 11333\nworkingset_activate_anon 0\nworkingset_activate_file 10008\nworkingset_restore_anon 0\nworkingset_restore_file 1354\nworkingset_nodereclaim 0\npgscan 8960\npgsteal 8929\npgscan_kswapd 8960\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 8929\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 579586\npgmajfault 223\npgrefill 4665\npgactivate 9\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "usable_s": 33.764199931989424,
+  "usable_s_counters": {
+    "cpu.stat": "usage_usec 34549134\nuser_usec 25211338\nsystem_usec 9337796\nnr_periods 339\nnr_throttled 59\nthrottled_usec 5234727\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=1356402688 wbytes=10792960 rios=20004 wios=966 dbytes=0 dios=0\n",
+    "memory.current": "674566144\n",
+    "memory.peak": "913960960\n",
+    "memory.stat": "anon 606642176\nfile 58347520\nkernel 8855552\nkernel_stack 262144\npagetables 2662400\nsec_pagetables 0\npercpu 27648\nsock 4096\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 13955072\nfile_dirty 1331200\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 32768\nactive_anon 606621696\ninactive_file 32706560\nactive_file 25620480\nunevictable 0\nslab_reclaimable 3909560\nslab_unreclaimable 1873344\nslab 5782904\nworkingset_refault_anon 0\nworkingset_refault_file 212940\nworkingset_activate_anon 0\nworkingset_activate_file 211485\nworkingset_restore_anon 0\nworkingset_restore_file 1399\nworkingset_nodereclaim 0\npgscan 320000\npgsteal 319900\npgscan_kswapd 299136\npgscan_direct 20864\npgscan_khugepaged 0\npgsteal_kswapd 299036\npgsteal_direct 20864\npgsteal_khugepaged 0\npgfault 710277\npgmajfault 223\npgrefill 7862\npgactivate 30\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "ready_counters": {
+    "cpu.stat": "usage_usec 34550118\nuser_usec 25211338\nsystem_usec 9338780\nnr_periods 339\nnr_throttled 59\nthrottled_usec 5234727\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=1356402688 wbytes=10792960 rios=20004 wios=966 dbytes=0 dios=0\n",
+    "memory.current": "674566144\n",
+    "memory.peak": "913960960\n",
+    "memory.stat": "anon 606646272\nfile 58347520\nkernel 8855552\nkernel_stack 262144\npagetables 2662400\nsec_pagetables 0\npercpu 27648\nsock 4096\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 13955072\nfile_dirty 1331200\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 32768\nactive_anon 606621696\ninactive_file 32706560\nactive_file 25620480\nunevictable 0\nslab_reclaimable 3909560\nslab_unreclaimable 1873344\nslab 5782904\nworkingset_refault_anon 0\nworkingset_refault_file 212940\nworkingset_activate_anon 0\nworkingset_activate_file 211485\nworkingset_restore_anon 0\nworkingset_restore_file 1399\nworkingset_nodereclaim 0\npgscan 320000\npgsteal 319900\npgscan_kswapd 299136\npgscan_direct 20864\npgscan_khugepaged 0\npgsteal_kswapd 299036\npgsteal_direct 20864\npgsteal_khugepaged 0\npgfault 710278\npgmajfault 223\npgrefill 7862\npgactivate 30\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "host_loadavg_ready": [
+    12.47216796875,
+    16.19140625,
+    18.27197265625
+  ],
+  "wall_s": 33.766339974012226,
+  "library_latency_s": [
+    4.70863437699154,
+    2.4275303760077804,
+    3.2761834189877845,
+    2.777948834002018,
+    2.040339833998587,
+    2.4498832100071013,
+    2.315530835010577,
+    1.869410375948064,
+    2.5524883760372177,
+    2.65926370897796
+  ],
+  "webhook_rejection": [
+    {
+      "seconds": 0.05300258402712643,
+      "status": 401
+    },
+    {
+      "seconds": 0.010920666973106563,
+      "status": 401
+    },
+    {
+      "seconds": 0.008376624959055334,
+      "status": 401
+    },
+    {
+      "seconds": 0.006478875002358109,
+      "status": 401
+    },
+    {
+      "seconds": 0.007093625026755035,
+      "status": 401
+    },
+    {
+      "seconds": 0.008221582975238562,
+      "status": 401
+    },
+    {
+      "seconds": 0.003218292025849223,
+      "status": 401
+    },
+    {
+      "seconds": 0.003369875019416213,
+      "status": 401
+    },
+    {
+      "seconds": 0.00543374998960644,
+      "status": 401
+    },
+    {
+      "seconds": 0.004180916002951562,
+      "status": 401
+    }
+  ],
+  "correctness": {
+    "quick_check": [
+      [
+        "ok"
+      ]
+    ],
+    "foreign_key_check": [],
+    "items": 100000,
+    "movies": 100000,
+    "migrations": 564
+  },
+  "static_assets": {
+    "account/js/account.js": {
+      "sha256": "9c9b7e44cdbc3c9b5d07922183acf9266a74972f337b7c36ea490ca02146770a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "account/js/onload.js": {
+      "sha256": "1af670ed1218c4efbd25bd354323ccddc144dc64414fc93760b5c2cec6d89580",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/autocomplete.css": {
+      "sha256": "a1909029a26579553af25a390357d10f5886cea3604a0b6896501cda05566dac",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/base.css": {
+      "sha256": "737e61de79492d6acfb351ee3e930b0ea3995452966f9d3f725601fdea80a86e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/changelists.css": {
+      "sha256": "a9a35fc49948fcd6ab2a6d088f24e49ad468357bcea151df321a0ebd58db1383",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/dark_mode.css": {
+      "sha256": "f8ba0096b5086c17b7bf75b2782760fb985eae1569f428a6a54bea9ee742506e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/dashboard.css": {
+      "sha256": "882cfb2a4af92dddc7ca3c7f3b5aff5df6762dca713a9563703652d706ea1d6b",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/forms.css": {
+      "sha256": "bccb52c9fc42dac8730b7208062f11a0fe97c4dbb0bc5047bb0d6f24cca8ef1a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/login.css": {
+      "sha256": "7fc95b6507405add6b19dbcdac87f591c8903d5701257e336077fcd49aea5e72",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/nav_sidebar.css": {
+      "sha256": "e309816f9b554f9fdf7273ff52d4b5ea36a5d108aa80e2aaff2cf5eb61ebfc2e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/responsive.css": {
+      "sha256": "d67321e608149091da96a7780928ed96bc49a7b44ace224075a1784ea911c6c3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/responsive_rtl.css": {
+      "sha256": "54034f41942117da5bf5c1f014c9dda79eaec7fd57d13d003fb85b4131f64af8",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/rtl.css": {
+      "sha256": "be2dc1a643d99c41cda2fae9455da72d043f5fa565342712dafbf362d280031a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/unusable_password_field.css": {
+      "sha256": "73eb3a7d2807e67da1ad93ba8e8a72fff4fdfd51d7d186499e719311f58d8d10",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/vendor/select2/LICENSE-SELECT2.md": {
+      "sha256": "4ee0cbc51370afde358652a0f977972053729ed578b6a42f5e2a037d114f0b39",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/vendor/select2/select2.css": {
+      "sha256": "91a960439e4f7f2f580644fee3261877937c2286defa259e06eccfecb8d53b4a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/vendor/select2/select2.min.css": {
+      "sha256": "15d6ad4dfdb43d0affad683e70029f97a8f8fc8637a28845009ee0542dccdf81",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/css/widgets.css": {
+      "sha256": "e95d23146fac9785d32f8db680803833716205cd976f75a6fb063f9285b32efb",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/LICENSE": {
+      "sha256": "d114faff3488c16c319b3235dc41f90239d3d63d9853733033d8f7535f5c0004",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/README.txt": {
+      "sha256": "67963f02e1b757bdaa5d1a3f852ec94c702277a75e29440a7cb1e058fe61407c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/calendar-icons.svg": {
+      "sha256": "54fce3b74f82c2115a885d89c97d928c490fb842d4ed09611f8521b96666597d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/gis/move_vertex_off.svg": {
+      "sha256": "a2efa9a54372cb941908a15895caf3181c041224c35f99a626f33cae9c02e433",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/gis/move_vertex_on.svg": {
+      "sha256": "0e099c7b35839acff756182a8185069fe446147c927013f431e5fc3f01f2fe71",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-addlink.svg": {
+      "sha256": "ff96d142f13157048fe03b11cc86fec83c2eb6e7edd919072ea7227dd956ca91",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-alert.svg": {
+      "sha256": "697b5df4f03aead71c96cf9325fc84090ae6756ae3f11396282d2d24a6bbb700",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-calendar.svg": {
+      "sha256": "fdb705edafd1f7852939f2dff91d29955a1b35479e4eda3d50c89420705c4876",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-changelink.svg": {
+      "sha256": "a6309c94b0c6f2fbd099f664155cc5330d422deafddf4cda7c8f1782f0cdf3a7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-clock.svg": {
+      "sha256": "939e58bfa47af93c92f2194bdcac9ed0830d8a180e4458e82631d8db5beda440",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-deletelink.svg": {
+      "sha256": "d3a5ce1e8e72e7d51f341b4ef233011d0aa65edf149a886548c96852e67a7740",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-hidelink.svg": {
+      "sha256": "e0c1a2727b4e1643eeac1f4b5bf202fb437cf165cabeb431572041f69e603130",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-no.svg": {
+      "sha256": "42a05a4ebae9dca8582712d807913ed1c9ffb3803f63c3c89987568df41233e7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-unknown-alt.svg": {
+      "sha256": "2f22fda09b51d14e3d9061d828cc669a6d6f030deab1f5d1eeecd91fbeac67f8",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-unknown.svg": {
+      "sha256": "78f7179728bb7286ff21c24ea59ebaba2ca6c8580c3c797ca7d8849ff784ddf7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-viewlink.svg": {
+      "sha256": "34bedf732ee640e43dd6c473c685512dfcd6cd7051539f5c14034eac63b058cd",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/icon-yes.svg": {
+      "sha256": "fc7e09a8bcb027e371a0f2ea4aa93d68625cc44759c2d485b9ad53b88f6421c3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/inline-delete.svg": {
+      "sha256": "197e97a6f8c449279ef92045548247b991639572ac41582b8b66e562c518c3e0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/search.svg": {
+      "sha256": "1e0bcb3cd4fb15f818be66edd40975ca15e09b3607ccc83c06e0cb9d4f6aa4c5",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/selector-icons.svg": {
+      "sha256": "d11272aee949fd447d6983fb59bbece6361ac815612e85d1dbacdac0d319d094",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/sorting-icons.svg": {
+      "sha256": "702bdca788b7300afe9a8f0b13f87c651bb72c3ecc6bd06da4afa9db83b79550",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/tooltag-add.svg": {
+      "sha256": "7d3642a2e18c242e90ab6c65ab0fe1f5f168755b4b98332ba6665a7065496194",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/img/tooltag-arrowright.svg": {
+      "sha256": "18802acbfe0ea2bf5c0cc342d9f49a10687ede0a9272fa9111a50b9e2c77c077",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/SelectBox.js": {
+      "sha256": "6f8dac195a9a083aa5af489b16266eb3d15bad4c1e45c283ff2eb51c301d42e7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/SelectFilter2.js": {
+      "sha256": "00cbbff75b9ad6de2b32a1cef786aef3eeb681d4b5931540875578b526a27a7d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/actions.js": {
+      "sha256": "2999e6a620c2ae83bc11c09ac1138974701d5052fced7bbda6a6142f98c72313",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/admin/DateTimeShortcuts.js": {
+      "sha256": "af2261b4cf523747cc75f9e157f9b61efda973a6bd074669737ee8719f36ffed",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/admin/RelatedObjectLookups.js": {
+      "sha256": "b7cb5151e34a530454859be8c0cb35f9eb73a986bd75057200975c0234f63aeb",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/autocomplete.js": {
+      "sha256": "380a924e21d99d3599cc9284bce9be675b5d0252e33d65fd8caa589261f43b3a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/calendar.js": {
+      "sha256": "723eaa3eb4aa7567aafce9d6514296cb88d51828b2e18c6c6d76b92a1530febe",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/cancel.js": {
+      "sha256": "50465dbef5aee6ce191f5ea515fc5af143e05972778bc56c78ae4b730d8aade8",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/change_form.js": {
+      "sha256": "cce4de3910aad62f575d5fec6920410ce5dba2ee54b59bf1605a553eac50d364",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/core.js": {
+      "sha256": "1f8fd8669d81dd8f49c4c64fa47295badad46496c065de07e8673e8a549be3f1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/filters.js": {
+      "sha256": "4fe265aea64405259b885c3f7b997190cca4900096a965ddff0332f9bdd39da1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/inlines.js": {
+      "sha256": "d48633adb736dac091477ec2206feebeee88e3e6e486aedb21c584e4b49be0ec",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/jquery.init.js": {
+      "sha256": "b8cfca7fb10e04c8a97029ae4076f2b9b424c9c95e4960c24bcf9cdd67af156d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/nav_sidebar.js": {
+      "sha256": "d71cd5f7947719aa90f79dec56690b22e649af314da0324c1c1ab041e3e9ebe4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/popup_response.js": {
+      "sha256": "20a460d1d0a95bf824c13fa5eb2cb78481711306da039b70d1711c9293da1ef1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/prepopulate.js": {
+      "sha256": "518916ac734ad7e396a756b921665d834b9d7e8fdd711fa32929f9025c71aa05",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/prepopulate_init.js": {
+      "sha256": "98920f0209fc4078e2feb4aa3ba58a35111ba640882c5ae344208e435fbd4a84",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/theme.js": {
+      "sha256": "806eb086e2d76ed745fadfe9bd43b53bb2df5653590eeccc64e34436b3ae669e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/unusable_password_field.js": {
+      "sha256": "b5c1a3ec60212cca211cbb7118e02c6991f5b7416eddf4d0936977bc557d018e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/urlify.js": {
+      "sha256": "f280b805cc6df28258e2ecbd3b83633f0b39957cc391d7f02365e8dccc69053a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/jquery/LICENSE.txt": {
+      "sha256": "d4db9ebe6f29f5168eac45ad713f055623ac5d0dcd5ba92da23d650ae012020d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/jquery/jquery.js": {
+      "sha256": "78a85aca2f0b110c29e0d2b137e09f0a1fb7a8e554b499f740d6744dc8962cfe",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/jquery/jquery.min.js": {
+      "sha256": "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/LICENSE.md": {
+      "sha256": "4ee0cbc51370afde358652a0f977972053729ed578b6a42f5e2a037d114f0b39",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/af.js": {
+      "sha256": "229237ba8d7d7e8efb8ccb4de51de97a83f43ab88dfa741f3d8d89e1fb9f77c8",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ar.js": {
+      "sha256": "cf1437a5e4a76d521fac7d4d763c780eb1c3b266e9aaeea67deca555614ce666",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/az.js": {
+      "sha256": "37f294edfb688dfd8782f2519693fc2aa1ba84a21baa28183772b4607fdcb6e4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/bg.js": {
+      "sha256": "e59e889479ae93fe8875974056f7628179e58fb20e68a5ed723b88d27d059984",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/bn.js": {
+      "sha256": "c1d41b81ac59e3b4f21a5c2fb28ec63a3a664d750a696cef554affa0245e9841",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/bs.js": {
+      "sha256": "839ea4592bbd471ca1feb6ab2d20daffc9eb76a2f9d49a996a2e10431db48f04",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ca.js": {
+      "sha256": "0d2cb2017254234c13a7f4db1612cd1ab82f811b0659e57721a7f16141818203",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/cs.js": {
+      "sha256": "b7ff0e5958ba632dbd29a6eab3f975b0cd924ab8d4020653c1b4d7fe6d0c08bf",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/da.js": {
+      "sha256": "b45da6bf315849660e537624b65dc6f77a4291ff95f60a270b193b85c039275a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/de.js": {
+      "sha256": "e5bb297dc8a1329f325c3c1f72abc2fe75774136ed06e403991ddced43d0b45c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/dsb.js": {
+      "sha256": "2ad3f6c4da0fef9a169e86d4ad2ec4a7f04e14fcdc30d0edd30c8f9e46c817f4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/el.js": {
+      "sha256": "21dbc3f1e63f2a95fd7dd1ef95ddce32f41f62c9daa098c37959206c87a67e7f",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/en.js": {
+      "sha256": "0bae803be28e5cdb97116c21c1f8d80456b7806708cec3c51d0019f6a4a1dc6a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/es.js": {
+      "sha256": "22165a232f2e7d376e3b6faf06b8afb303028e53e4eefae4e0ff35a43e81d123",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/et.js": {
+      "sha256": "2e02e074e90a8dceb7b2fc4fd546bb034cded4be96aefd17ea7a7ef22443e73c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/eu.js": {
+      "sha256": "acb9ad3fb6c0fdab643488fcd65feb89333b7e2e425f156b1411c5c9d74ef87c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/fa.js": {
+      "sha256": "7ea66413d7bcb6ddab67b3ab0c63e23ac4cd763dd2dabd028db75d55404378c0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/fi.js": {
+      "sha256": "2951a2ae118635e7bf888a4c18b5f91331ff52435ef8538f0bfd38f381be410d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/fr.js": {
+      "sha256": "6a3d2adab749378ec144173d2eabec83192e3ce71601b66c5055256e0bb0758d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/gl.js": {
+      "sha256": "1d225a7c8f39c8aa785b38c53d3e7fdde67ff9740360fcf37f80569aeeae5c79",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/he.js": {
+      "sha256": "0c83d1287c343640ee52d2cd19d4e76197280a2377bacb4763e50c9b0df857fb",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/hi.js": {
+      "sha256": "9ba66a88a67f8f3c33545802f2f9188b0cb8947e5f244315f8b4cf54ed96bb8d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/hr.js": {
+      "sha256": "35c9539434e23455f5cb45b52e58f5d3e648a1751877bbc35eac9e509eefdc1e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/hsb.js": {
+      "sha256": "1532eccdcac669e9535bae96579d2efeb4ba1d5d1267143a561a62dad9e00ba3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/hu.js": {
+      "sha256": "dcf7549344a91d8f87fa1eb6c289b0e00cb244cba394673afe8c56f8bd56c8eb",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/hy.js": {
+      "sha256": "04b8747e7b6bc2dc0dc254288b02e4750395c8d5c77664692f6f29f96e45b038",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/id.js": {
+      "sha256": "7c627ef80c3bd0fa739371202e317557f42fa83daafee7d78e740823266a6207",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/is.js": {
+      "sha256": "827d1d748a939c95f8c24fad582e6014e449b357648081fd30ec0b96306e40ad",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/it.js": {
+      "sha256": "906c6d6a9c214458f7bbf22163fef359984a811e42ad99a66ac4f9c3e6a85d13",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ja.js": {
+      "sha256": "b59e2ca9dc7f4847096e25b9f9ca070d5f0556612525103767cdb61051e48cb3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ka.js": {
+      "sha256": "0c7e95ae755d47c497ea4b28dadcea9c9aacdf6b82a41372bcff4ac6cdecb232",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/km.js": {
+      "sha256": "c7d8728de9e77358b4a1e62b1541d09d81da917a6fed60fb31217e73d01a4e38",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ko.js": {
+      "sha256": "226981f6fee0d9928498f15441e5eb2fbdb75448db8845b761e9717aa1c48077",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/lt.js": {
+      "sha256": "653fb8e626d5c1d5a74f2a3e4eab2a5b6363229f73c38c6ce52a3bf0a31bfecf",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/lv.js": {
+      "sha256": "847a442b87984a8263fdfbc0db097c412b8996e37187e4efa7a5199be65869e1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/mk.js": {
+      "sha256": "3d2a71ae70692f8492b3d4dbd2a7560fbba6508c88a11d95d5fa6a450bc25dc0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ms.js": {
+      "sha256": "342cf8467b642597fc6030c2d53141bcafa7927f83f9c18dcbbc2886aa9a403e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/nb.js": {
+      "sha256": "79db8a086efa2778883eb51e9020c2abbe35ae71b8c43ed353713b2e26fbb0f1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ne.js": {
+      "sha256": "4108c33d013a1832974b9731ab62518e4dcc183be38372337b1ef5661a276e3f",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/nl.js": {
+      "sha256": "25cb4b7d3a4b4395055edc809a06c2bd23d4b56d1fcb5984ee835870c23dd1b2",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/pl.js": {
+      "sha256": "ea012e2989c975ff1c6cf111b30fa6b5d720741c9426e2dfd50507d1a49a8cca",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ps.js": {
+      "sha256": "e09e2c66d49abf1af5bd97719a7b9bd89d07d2aaf54bc5a736c4de85f75fab83",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/pt-BR.js": {
+      "sha256": "d0315ed47bbd7c40d25e0a633ce42b03a12ad2b19bd793516ec1a1d54e2f12bd",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/pt.js": {
+      "sha256": "2f98eacfccdce4117cba4ae1a48dafbc6acd477e17ef8f3675c917f8852e5290",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ro.js": {
+      "sha256": "01a75be8b574bb62f69823a0c97d9c619eb1239b034fd388dd5ec7c2eb9e8af3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/ru.js": {
+      "sha256": "6d5e9e995084f656342f36d537ced628000014b513de42aa1339fae35a49dbda",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/sk.js": {
+      "sha256": "3276d470fea9227b81cd35bf2ffc265d8f203cb18239c2b2cd01ed845908999a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/sl.js": {
+      "sha256": "2cf20ac29f60a7f59c51ce14695b7f7324a534be7f9667d996dd1b82dc279059",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/sq.js": {
+      "sha256": "a08c492d82ed2b4bc6da0dece63b062e7e251ee0e04a877160058bd01c87447a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/sr-Cyrl.js": {
+      "sha256": "0684f629d89c7991a0c61112473dd6d89ffb08562a5b2672a2fd9892d528ff6c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/sr.js": {
+      "sha256": "ec410b617c1bd2d212b2ebcbe9ea2bc734ef88c2bea1e752bd9bc4642325a065",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/sv.js": {
+      "sha256": "73a9ea5268ad2ace3fe809580ef8827ba1ea2f2387aa8b7622bbc94468e3d491",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/th.js": {
+      "sha256": "b1a0cf2e4fb676ae5fb4a0af5b5c1d76424e83e99703e194a0f3d53a5499ac86",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/tk.js": {
+      "sha256": "99410695bfbd9d01efcdc4d823ed648ec07b26c3d11a92f159b8eb27c511b615",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/tr.js": {
+      "sha256": "743cfc892a74eef6f1f6072222acf9eb099cd932c78f9bfca3a7acef9bf39995",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/uk.js": {
+      "sha256": "322c61143bdd45d6bec23f938eb374d7cb3b47b137e1a421463cf86dac6b74ac",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/vi.js": {
+      "sha256": "9b04dec92b14020aaefc803a86f17333285c488335cc684d60aabc1bb5ffb693",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/zh-CN.js": {
+      "sha256": "a2501dbcf439aac37d219bb100a80355033e6e57b15275930d35d4b62a2bca02",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/i18n/zh-TW.js": {
+      "sha256": "0e70c11bdcb004e7f155bd955e0ef5c4147fb4408f031c3b40b859397889e1fa",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/select2.full.js": {
+      "sha256": "ba0664111e4e0041b30b0c1bff832f841284e46be67344b9f4c2a7f9da2865a2",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/select2/select2.full.min.js": {
+      "sha256": "5c6fdab80cb86a279695dccc226a1fac50e2c922bea70242edaa28f52b7bad2d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/xregexp/LICENSE.txt": {
+      "sha256": "73af2949bff9296cb0f816c3be19a4da4e95adc94c1f924796e8bad3f03f2f29",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/xregexp/xregexp.js": {
+      "sha256": "14cd9f16be1af6656c710a1ba723501b506ee3ff1ec63ba7420944a0f48fe6ea",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "admin/js/vendor/xregexp/xregexp.min.js": {
+      "sha256": "f854171b2c0e1b05bee4374531622ad105a9197deb405b90a480dee8dffd7952",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "css/input.css": {
+      "sha256": "a709f827332ea28cd27f6b4edd604a29bfecb35e37cba2522c27a20d0ac706b7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "css/libraries/select2-4.1.0.min.css": {
+      "sha256": "cda4a81c187015d95ed2c71f1841540b08203cdec5fa2a7d5d1825a3c2166f8c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "css/main.css": {
+      "sha256": "561f129a1f28697341bf42337ee894aa3d5ac9856e7749af75793da616b10ec8",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "django_select2/django_select2.css": {
+      "sha256": "1537ab04917a679c4873c0f6c2c45fe98a6804a744682420ae5f3e9dc8c10def",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "django_select2/django_select2.js": {
+      "sha256": "43c84d9e7871ca573c12080fd9beb1180e37650c60a653300aca430db25f6ec8",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/android-chrome-192x192-maskable.png": {
+      "sha256": "27d9193cdafd14b26bca9045c9ccc740d1e29630af0ba9e3ac3668e4bdc50f76",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/android-chrome-192x192.png": {
+      "sha256": "d3e2abf35e1580483d3f8b57097ec661e00c425b7edf6051ccc3ec48b44f3c71",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/android-chrome-512x512-maskable.png": {
+      "sha256": "02abce91922891943bad4aa3bc126ae55e5f9c6e54f578e3a82bc341e4225b3c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/android-chrome-512x512.png": {
+      "sha256": "4f64e0ce55fd502fac1e733bfabd431486a96d437061a3ecf4a7fd8121f93282",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/apple-touch-icon.png": {
+      "sha256": "61202960ca6e62f8d71931655d1e2d2bcbcec8788b682908facc1ae6498082cb",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/favicon-16x16.png": {
+      "sha256": "71246e261eb8ef59a2d8df1c281dcfa594130a89bfae5fc66031885196b6d857",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/favicon-32x32.png": {
+      "sha256": "7e5eae739fea6b1e59506d74f15af428a5bcc308741602042324356444f52c1a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/favicon.ico": {
+      "sha256": "1e5446782a770c73b5e6cdcb128e3a0925ee82962fac4d7d02385ae1eafa62b3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "favicon/site.webmanifest": {
+      "sha256": "c0328c82dc94620cfc26cbd3c9a25c52a8d9f3408595a1ce0bcceea7e2b1d995",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "fonts/roboto-flex.woff2": {
+      "sha256": "10e8c746c710eea51ea089278fe39fa954b4461384c6d1cb4e5b47e7868e48a5",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/anilist-logo.svg": {
+      "sha256": "5b555f0a03f01daec32b82fdbbf8b587581d2c4322b26ba3075a8517e7d69fb4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/audiobookshelf-logo.svg": {
+      "sha256": "48cfc4d30b44214b1fbd04b1b7d2846630f440f0a7b2aed8a69ce8169c3235ca",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/floppy-hero.png": {
+      "sha256": "99af267172c3e9fa71165f72194f5befb39c041a98c3d8490bdfd9e56db63680",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/floppy-icon.png": {
+      "sha256": "b000b13463decf240233babf59d3b6224f1cdfc5f3d73912fe119ada278d59d3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/floppy-logo-white.png": {
+      "sha256": "7d26cdc5b34b49cef36cfa175535536a70e3cb8cf31e6a60ee8937f330b1c74d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/floppy-logo.png": {
+      "sha256": "d84b6af74b0bf6408b392f569a12696b90deff728045d2a81107715675250400",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/floppy-logo@2x.png": {
+      "sha256": "a6c8f16c3eda268c2d51ecde51443cd0ec856dadf045880558f543eddd6fc394",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/gcd-logo.png": {
+      "sha256": "12ce4efdda34bfc91b14fad8cf3a9369b2057f6cc2566cd4135b2d451a5e8115",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/grouvee_logo.png": {
+      "sha256": "1b2031a22419d64ca701159b85298a9c18149a501f6a0801af6ae43e9cc616af",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/hardcover-logo.png": {
+      "sha256": "4204b9f6a97219489e35eac8fafc740329a86aac9d1310b7680b1071ec734a09",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/hltb-logo.png": {
+      "sha256": "597924ae85b620bedf2e0fe91c6503fbe0cb45783b66f7168412f564fa523b6a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/igdb-logo.png": {
+      "sha256": "d0c71accd5afd3146d75c95a96782e5876f26e2dae928720c280783974b8d94c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/imdb-logo.png": {
+      "sha256": "783a3a47183022d54f0a822456e1fd76987ba0c82cf9ff592983787d3a05b4b7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/kapowarr-logo.png": {
+      "sha256": "4b2f10f779a711cea808a9d13478bd0d2733426645c99da81ac512da5cf608f5",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/kavita-logo.svg": {
+      "sha256": "0d1dd8aa9f751ddc24ff63084adc9356873e86ba689de0249c8d6eb65ff882cc",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/kitsu-logo.png": {
+      "sha256": "44da700834827d6f5e34a149e74525d2d931b637c8b0b7ec504178a00fb7ba00",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/koito-logo.svg": {
+      "sha256": "6aa8341eae09380e6e61465b7501aa7c68884c81c4e0e673f379d9000f8c6f45",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/komga-logo.svg": {
+      "sha256": "40c86f4690e0d44dbff7598a81e82157fa00fcdbdca6389c56fc4d567271174f",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/koreader-logo.svg": {
+      "sha256": "3f3e44467c1e91eafca88a85c4915fbb7528dec1bb7cb051eeb8757eb7552ae1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/lastfm-logo.png": {
+      "sha256": "317c085bdcbfeea251af00b83dd93b76d481eeb5bb99c3fee56811d011b30cee",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/letterboxd-logo.png": {
+      "sha256": "46c06540f13f93f9df7e0edd50691a8b9c05d85f4b09e1d8f5493d6915793ff6",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/logo-goodreads.svg": {
+      "sha256": "f1e9d93a1d79de7fee1a95f7d55eb9af7cd437bf6986dc6f193111f805bb2940",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/mal-logo.ico": {
+      "sha256": "6f410600bf943bf5c9673d330b28533246c8759b839bf7c9b64d60807aefa0f6",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/mangabaka-logo.png": {
+      "sha256": "57c884fe997f5d89d32ccb19c68b673bcaa9a03f06a9f49cce4b3749694f673e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/mdblist-logo.png": {
+      "sha256": "31377c6661b8e7f694b7cc6603845b3c1a741984dc123d52d9ef6a78b3e3c6ce",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/myanimelist-logo.svg": {
+      "sha256": "2b44766f29baf3596afdc3d1e4eb55738899eef14739fa0792f4bbe27aa87504",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/mylar-logo.png": {
+      "sha256": "c9c85205e4d4c12171e14efe9da54af134ed6e7a6ab87e248c48ca0ff4447063",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/opencritic-logo.svg": {
+      "sha256": "58193b480d09fb64102e1301ff3d94ab286ffdbe8ed3f7fdb43eef95881d3446",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/playnite-logo.svg": {
+      "sha256": "a206001fbdab90e6902aa74fa6ce4353596dde49c7129d0d07243bc8dce7ab61",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/playstation-logo.svg": {
+      "sha256": "2d53a0bd83dc62ed15ae90d317e6a5fe27ad13c7c8387123a0f5bebc6b0f3ddc",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/plex-logo.svg": {
+      "sha256": "12f13c2d4718e3983b6ecf165546939ec178e324072f59188278932f89cf9552",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/pocketcasts-logo.svg": {
+      "sha256": "f9246e7d7027334ca7f6626f7e764f8c342c981dc2684b2a824b113bd7b34cc1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/anime.svg": {
+      "sha256": "604a0b00a630c166da73f4d3c61d41019300ec9d52eb61494708ce031ef2f75c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/boardgames.svg": {
+      "sha256": "f51282e5726be443404176d641bb195444dd1a13720f3b2b305a28b443a6565f",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/books.svg": {
+      "sha256": "85995ad8a3bd8b099d5a5de024ac10115e2d1fa65b81afff1d617508f836703b",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/comics.svg": {
+      "sha256": "75a462e8937da612aec0c8021b6fb66c120947a1b811ed02c8244b94afdd1e57",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/games.svg": {
+      "sha256": "b1ec2a9d5444d5d63c3c0df49acb8f07b362ac89cf5f4673352ef3f2d9165e65",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/home.svg": {
+      "sha256": "e067b1e205028e9ef3394a538e1c8e2402ae32f351ea6802de944323e032a312",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/lists.svg": {
+      "sha256": "8bd96b522ed0480f250d6e2a59fe01211426fef14736973cd36a8243174ec0cd",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/manga.svg": {
+      "sha256": "d2b33cd8f5c0711e85448c9ceb8daf351c5b2ccf3f1f5caf74d99dd4afbdd95d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/movies.svg": {
+      "sha256": "ec131c75911ba834920c9a211601d542d4f58e384c6d76b0f64f00116a05de9f",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/stats.svg": {
+      "sha256": "d62e368198a7b0e805cb4b31cf855c6ebd1396378f09a315f7b9acb3446243ef",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/shortcuts/tv.svg": {
+      "sha256": "6b3ba0f48e5520af80fc03daeed0e8b85995ec30884fe9700559f9a41c97616a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/simkl-logo.png": {
+      "sha256": "b19ac3803feecba70c4a0cdb2ac7de4fa5a2a1a3027e9bf08ffff95da9589271",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/steam-logo.ico": {
+      "sha256": "9f890a9debcdfccc339149a7943be9aff9e4c9203c2fa37d5671a5b2c88503ad",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/storygraph-logo.svg": {
+      "sha256": "7e5ff06181812bdbde8b1b837053f9723c33fb816efb815288fc577d9003bca7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/storyteller-logo.svg": {
+      "sha256": "914af5940e2aa94467453027a8cc8159992e9e613e042c258d5e45af43541028",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/stremio-logo.svg": {
+      "sha256": "f720e451704d3925ca8d9d70bd26452c45cddac9820758dbc035a6d0dc7edc91",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/tmdb-logo.png": {
+      "sha256": "ea486d2c95d33068b691bf7a337903174a57b389af35f9789c706aded17ba17d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/trakt-logo.svg": {
+      "sha256": "e76e0435ffc9e0e8e14c730396c7c83c0674b3dbfd2f451a63a25307d0e59215",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/tvdb-logo.png": {
+      "sha256": "e519be4f7968bf1740a85404290632596da6942190f84527588e53ec8e59fada",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/tvtime-logo.png": {
+      "sha256": "390786fcc49c0dff09f406232d9ed1b922bb00e022d64f8ae4d3cd2b17e99c21",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/wetrakr-logo.svg": {
+      "sha256": "572d58956a47a5e577bc062b6576a94fb91dbecd883a061dc13150066f1455a6",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/wikidata-logo.png": {
+      "sha256": "2738769c54904d7a472a1c491f7197c06a51f0f063d9dea0b7bc7e3640fe3027",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/xbox-logo.svg": {
+      "sha256": "ef25829ae47ea61ccc01b078d4ff330a21f81bfe1d6476e21ef3fb2432d27dc0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "img/yamtrack-logo.png": {
+      "sha256": "dee332ef35a6e0e331e5bb357f5c275c41ccdeff4fccdc523a94820fae391524",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/artwork-loading.js": {
+      "sha256": "0f75d4eae91c1f3f9633d5e617048e16c2e08b4fba2547a3684e501acdb61e97",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/barcode-scanner.js": {
+      "sha256": "2e6003e09c6ad9fa7b2972f53cb4a8882d39b8c4ddaac56617c7559ca1da9257",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/barcode-scanner.selfcheck.mjs": {
+      "sha256": "5850e6c09b1bf51982c907c5c309d1d9f8bc8b2dc853fff401c729c9c1ee65fe",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/bulkSelection.js": {
+      "sha256": "b05a1c2d049c5d575340d7f0a4b4783bad83da2dae12d16b9ce45e3c5c96f3f9",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/cache-updater.js": {
+      "sha256": "5d9be8299c130fd2829b00a1965f40a47453e8a25e77ba9d2025e712fd86546d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/cache-updater.selfcheck.mjs": {
+      "sha256": "1709488ae104a1251add52c8bd47cd458d7b7d54b2eebdb46d515fbab15c68e4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/calendar.js": {
+      "sha256": "40ad2c00b535a70dec38772755b92283b0fd8a2b174639fa7285a977a90dbdd4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/collectionCustomFields.js": {
+      "sha256": "16f6ede683ea61370e43b8fadd790ef846fb0fd297345d0bf8ab0d6188d051f2",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/copy-item.js": {
+      "sha256": "1eeed9e95cbe8b5edc5e8fc3ca94c0a1e9df415c25ef83d466a66da8ea8f01a6",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/date-range.js": {
+      "sha256": "83624461341d4de856e6459c417324e8eea637c246c6446d986e5a1d194aacc1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/dateTimePicker.js": {
+      "sha256": "cabb7d6e70e82a03f334ffbd7c63ea020f945b51890f88c832b149373d7ecb80",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/episodeBulkTrackForm.js": {
+      "sha256": "50227348087a17a9277f4d4e5e07cf8352cd253f93b392bf4708b49e8939b121",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/episodeOrderReview.js": {
+      "sha256": "f1f687fb46eeda9d2f831ce41c047e570492a71b3616f522aa4e84fe9ea5e337",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/horizontal-scroll.js": {
+      "sha256": "81445e8fbcf4d24e9745d1e763d822a497060ea901b65527a199350d2d458502",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/horizontal-scroll.selfcheck.mjs": {
+      "sha256": "e0ca7e16aac387d75789d472677d065b9f5968c3916958d0611b9ac3dd14c1ef",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/i18n/SELECT2-LICENSE.txt": {
+      "sha256": "4ee0cbc51370afde358652a0f977972053729ed578b6a42f5e2a037d114f0b39",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/i18n/de.js": {
+      "sha256": "42f0ab60daa8550a31ebadf37c611a4aa45bbcab7fe38a74a294d9f0901390ec",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/i18n/en.js": {
+      "sha256": "0bae803be28e5cdb97116c21c1f8d80456b7806708cec3c51d0019f6a4a1dc6a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/i18n/fr.js": {
+      "sha256": "fc43478fe6028d50d0930594c8e4660ca26692f31e95d0325b92da9a6305daf0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/image-fallback.js": {
+      "sha256": "4a0a60019c91e043f2b64b0e8f9a0327e431f1098d96ee590cae73fcf59ac3bf",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/keepPopupsOnScreen.js": {
+      "sha256": "f76bf9026fcea4780d7814996858b777233c47ef1b76dbf85b49fbe86acf649e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/alpinejs-3.14.9.min.js": {
+      "sha256": "3ed1eed252488921df65e363d6715deb04d7f92aaedb9e52199fdf73cb1e0ad3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/chartjs-4.4.9.min.js": {
+      "sha256": "de315773454b6076b63990bfa05ce5155a37f71992c87d7bb5f9a2ea698697ef",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/chartjs-datalabels-2.0.0.min.js": {
+      "sha256": "4605ba20245c1e0cf5bda1a42f97a0400aa6916c466f06b6137068cffdc26a93",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/htmx-2.0.4.min.js": {
+      "sha256": "e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/jquery-3.7.1.min.js": {
+      "sha256": "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/lazysizes-5.3.2.min.js": {
+      "sha256": "3d9120fa621da6d613c1698b7014ec6bdf4620366e8f2b7b547059f4b6f6272b",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/marked-12.0.2.min.js": {
+      "sha256": "15fabce5b65898b32b03f5ed25e9f891a729ad4c0d6d877110a7744aa847a894",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/select2-4.1.0.min.js": {
+      "sha256": "f7244fff610595b944f76bf3080d74e3af42b5dd234f8f079e698cc39ac966b0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/sortablejs-1.15.3.min.js": {
+      "sha256": "72aa2c4f9f7cb2b8b3268052d6d2daa9d952f209b7fc5cc247ff9e1153db1f16",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/zxing-library-0.21.3.LICENSE.txt": {
+      "sha256": "849b3ff4527ff587eecc78736b5685bbba7a44b071f3b944da914e832292f6c0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/zxing-library-0.21.3.PROVENANCE.txt": {
+      "sha256": "06ffb30c52275ca2997732209b80b21b5d4616da6be1ae65b6ec3a69598f3856",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraries/zxing-library-0.21.3.min.js": {
+      "sha256": "7b1b6776f9dedf2e8453fee12fbf0fd86e0e56a8b4b8ac0c65fcacf86affbde7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/libraryFilterState.js": {
+      "sha256": "dcb453325bf6f9ab6788df2628549728983e327151b2f2ab73d2b330c193ace7",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/listTiers.js": {
+      "sha256": "cd7973e6e0b8efc16119b22c6a322a1eb77de9f346b6a5e675ae9b4d89d8f2bc",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/markdown-editor.js": {
+      "sha256": "4be54838d2f6f9097fea3753cdd116fd76c5c465009bde2df61ec0981380947d",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/matchFixReview.js": {
+      "sha256": "8b104f8d69fcb82c3635ce8dde5babc47c51f0cbca6523d8461e027bcde4565a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/mediaStatusDateHandler.js": {
+      "sha256": "2512dab0abde283c1fc477e7c94db13435ada8a2720325a5bd389d05c2a026f4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/safari-rail.js": {
+      "sha256": "48c2563859b93d5c445919888a5853b5eebf8b26bc20d84a9ef2241292d0aa38",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/savedViews.js": {
+      "sha256": "779968efcd4ebaa2e5518c146aa06fbc25f8ce6df303af8f3a4624743ebeac33",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/searchAutocomplete.js": {
+      "sha256": "4ce652c484a1177b9adbcd25f564f0cc35d3349260fbb2fc1efb0c1c211a86db",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/searchShortcut.js": {
+      "sha256": "25fa43780a995c0aa0c5c6ba8d48d8f9fd394236a518572a2110e86dd85083eb",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/serviceworker.js": {
+      "sha256": "83ba449eabd9a408eec4b704c7e55ff5e9d5fe49c0a38a9ffe811d1f3a05cb9f",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/sessionHistory.js": {
+      "sha256": "19288fc4b0321eef84c9bc594ab06e9005a41de8d05cef7bdd570f9f5fafacfe",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/statistics-charts.js": {
+      "sha256": "7b2abde4ccbfb1ee7501fa3d5c3b2a919dbcc208e43d4f1518066705834ea934",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/stats-media-merge.js": {
+      "sha256": "1fc1b78bcefc5a6ca8f86fffa4520b66cd1f5bdb09cdc31812ba1787a96d977c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "js/stats-media-merge.selfcheck.mjs": {
+      "sha256": "85fbfc2571fc488fab5e724d5824fe5fb845fb1fa2ff7a099fa4fa70cd9829a1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/bootstrap-theme.min.css": {
+      "sha256": "f2e1cc227d6bbb4192e4a3becdfed971c7fc530d76200e43add11c98cb962c53",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/bootstrap-theme.min.css.map": {
+      "sha256": "5ebabc49db378681cf6412aa00bd3b7a111a09f2815231f4b56e296fac486130",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/bootstrap-tweaks.css": {
+      "sha256": "4632c2cb68e6da7de041b49d3458d69dc43895507d426dbee4173ec70ecef2eb",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/bootstrap.min.css": {
+      "sha256": "6d92dfc1700fd38cd130ad818e23bc8aef697f815b2ea5face2b5dfad22f2e11",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/bootstrap.min.css.map": {
+      "sha256": "78b58c9ebfd42ec2c61bc4fdf46a5df998e6cd907c773076a0a6e8f5686bafc3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/default.css": {
+      "sha256": "116577e6db2d0f99b419ecc61b453915af0eff8206b0bf3f9e87897719c1b37b",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/font-awesome-4.0.3.css": {
+      "sha256": "3083e8d3b21ddc3f0e6d65ec3580aa6edfaadca5d9737d9caa27e6a233e1ccf3",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/css/prettify.css": {
+      "sha256": "f9932af1e67a6e5105b71715b9d335873bf8805c01c2a9603e31e96cc4a95819",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/fontawesome-webfont.eot": {
+      "sha256": "39e237c07403e62f00bd6ddf0b59d3349c7bd3869250aaadc389419db6aa40ef",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/fontawesome-webfont.svg": {
+      "sha256": "9bf1cf619b8ecb6314009081a848c37a69fbd07b4a2a7cde339f6342b8eba26e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/fontawesome-webfont.ttf": {
+      "sha256": "6b49348ad53886d09ce4c32fa146e899c820de3f85a8dd3704a0624eb3bf7fa1",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/fontawesome-webfont.woff": {
+      "sha256": "0fd28fece9ebd606b8b071460ebd3fc2ed7bc7a66ef91c8834f11dfacab4a849",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/glyphicons-halflings-regular.eot": {
+      "sha256": "13634da87d9e23f8c3ed9108ce1724d183a39ad072e73e1b3d8cbf646d2d0407",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/glyphicons-halflings-regular.svg": {
+      "sha256": "0688333129cbe4acc8baea3b35f8015287078f3035b9f56768389dd9cf8a0d91",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/glyphicons-halflings-regular.ttf": {
+      "sha256": "e395044093757d82afcb138957d06a1ea9361bdcf0b442d06a18a8051af57456",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/glyphicons-halflings-regular.woff": {
+      "sha256": "a26394f7ede100ca118eff2eda08596275a9839b959c226e15439557a5a80742",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/fonts/glyphicons-halflings-regular.woff2": {
+      "sha256": "fe185d11a49676890d47bb783312a0cda5a44c4039214094e7957b4c040ef11c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/img/glyphicons-halflings-white.png": {
+      "sha256": "f0e0d95a9c8abcdfabf46348e2d4285829bb0491f5f6af0e05af52bffb6324c4",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/img/glyphicons-halflings.png": {
+      "sha256": "1bd51b53278447c1db33f00c4773e711db21e557ecdd26d9b9ae96ca993f05e2",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/img/grid.png": {
+      "sha256": "6e2a58503494a708105ac646d3af5c08c8c890325bb781a257d10f91ff968a9c",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/js/ajax-form.js": {
+      "sha256": "20ccc1eadf07d4e821631c1e7dbda36f303633b9fef61b6e7a3bfd86eb97f1e0",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/js/bootstrap.min.js": {
+      "sha256": "9ee2fcff6709e4d0d24b09ca0fc56aade12b4961ed9c43fd13b03248bfb57afe",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/js/csrf.js": {
+      "sha256": "3194d2bd1659d4911f373ca3039a22d61378cd07bb22f14c5bac633fa787454e",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/js/default.js": {
+      "sha256": "98938fdc9303c909d1497eb45ff4f85a0b58cce04d0d8a6a7356613940bce623",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/js/jquery-3.7.1.min.js": {
+      "sha256": "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/js/load-ajax-form.js": {
+      "sha256": "d457d0e55c3b8c9a84ff853dde5a2cc0f03abd6b6ccb27ff4a386fc77f25fa77",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "rest_framework/js/prettify-min.js": {
+      "sha256": "e2e576e3bc607cd179ff511947010f645d3441a35313aec0dbd06c4437f83b77",
+      "uid": 1000,
+      "gid": 1000
+    }
+  },
+  "startup_status": {
+    "commit_sha": "9d460bc3523a51280fad55cf763845fbf9d784d3",
+    "database": "/floppy/db/db.sqlite3",
+    "elapsed_seconds": 0.10341333399992436,
+    "error_class": null,
+    "error_message": null,
+    "last_progress_at": null,
+    "phase": "open_check",
+    "phase_started_at": "2026-10-24T00:28:06.897120+00:00",
+    "progress_age_seconds": null,
+    "progress_callbacks": null,
+    "progress_rate_per_minute": null,
+    "progress_state": "unknown",
+    "read_bytes": null,
+    "schema_version": 1,
+    "started_at": "2026-10-24T00:28:06.882054+00:00",
+    "status": "ok",
+    "updated_at": "2026-10-24T00:28:06.985472+00:00",
+    "version": "dev"
+  },
+  "stages": [
+    {
+      "seconds": 1.4345232920022681,
+      "message": "[entrypoint] Floppy runtime: version=dev commit=9d460bc3523a51280fad55cf763845fbf9d784d3 hostname=5bb5e75fe2f6 container_name=floppy",
+      "counters": {
+        "cpu.stat": "usage_usec 1274059\nuser_usec 746190\nsystem_usec 527868\nnr_periods 21\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=13185024 wbytes=0 rios=541 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "28131328\n",
+        "memory.peak": "49176576\n",
+        "memory.stat": "anon 12800000\nfile 12230656\nkernel 2424832\nkernel_stack 65536\npagetables 200704\nsec_pagetables 0\npercpu 26112\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 696320\nfile_dirty 77824\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12767232\ninactive_file 7454720\nactive_file 4771840\nunevictable 0\nslab_reclaimable 1164944\nslab_unreclaimable 459176\nslab 1624120\nworkingset_refault_anon 0\nworkingset_refault_file 1566\nworkingset_activate_anon 0\nworkingset_activate_file 939\nworkingset_restore_anon 0\nworkingset_restore_file 5\nworkingset_nodereclaim 0\npgscan 256\npgsteal 256\npgscan_kswapd 256\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 256\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 23847\npgmajfault 54\npgrefill 13\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 1.5635231669875793,
+      "message": "[entrypoint] Checking SQLite storage and relationships for /floppy/db/db.sqlite3",
+      "counters": {
+        "cpu.stat": "usage_usec 1392635\nuser_usec 834354\nsystem_usec 558281\nnr_periods 23\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=13185024 wbytes=0 rios=541 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "27648000\n",
+        "memory.peak": "49176576\n",
+        "memory.stat": "anon 12800000\nfile 12234752\nkernel 2064384\nkernel_stack 65536\npagetables 204800\nsec_pagetables 0\npercpu 26112\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 704512\nfile_dirty 77824\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12767232\ninactive_file 7462912\nactive_file 4771840\nunevictable 0\nslab_reclaimable 1160520\nslab_unreclaimable 434728\nslab 1595248\nworkingset_refault_anon 0\nworkingset_refault_file 1566\nworkingset_activate_anon 0\nworkingset_activate_file 939\nworkingset_restore_anon 0\nworkingset_restore_file 5\nworkingset_nodereclaim 0\npgscan 256\npgsteal 256\npgscan_kswapd 256\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 256\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 27846\npgmajfault 54\npgrefill 13\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 2.742897333984729,
+      "message": "[integrity] phase=connect status=running",
+      "counters": {
+        "cpu.stat": "usage_usec 2503032\nuser_usec 1600145\nsystem_usec 902887\nnr_periods 34\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=14348288 wbytes=4096 rios=588 wios=1 dbytes=0 dios=0\n",
+        "memory.current": "77185024\n",
+        "memory.peak": "77185024\n",
+        "memory.stat": "anon 61378560\nfile 13266944\nkernel 2273280\nkernel_stack 81920\npagetables 409600\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 1630208\nfile_dirty 212992\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61378560\ninactive_file 7831552\nactive_file 5435392\nunevictable 0\nslab_reclaimable 1192752\nslab_unreclaimable 529184\nslab 1721936\nworkingset_refault_anon 0\nworkingset_refault_file 1658\nworkingset_activate_anon 0\nworkingset_activate_file 1031\nworkingset_restore_anon 0\nworkingset_restore_file 5\nworkingset_nodereclaim 0\npgscan 320\npgsteal 320\npgscan_kswapd 320\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 320\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 51641\npgmajfault 63\npgrefill 13\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 2.7585157089633867,
+      "message": "[integrity] phase=open_check status=running",
+      "counters": {
+        "cpu.stat": "usage_usec 2508316\nuser_usec 1605429\nsystem_usec 902887\nnr_periods 35\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=14352384 wbytes=8192 rios=589 wios=2 dbytes=0 dios=0\n",
+        "memory.current": "77430784\n",
+        "memory.peak": "77430784\n",
+        "memory.stat": "anon 61411328\nfile 13275136\nkernel 2277376\nkernel_stack 81920\npagetables 409600\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 1630208\nfile_dirty 212992\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61411328\ninactive_file 7839744\nactive_file 5435392\nunevictable 0\nslab_reclaimable 1194320\nslab_unreclaimable 530312\nslab 1724632\nworkingset_refault_anon 0\nworkingset_refault_file 1658\nworkingset_activate_anon 0\nworkingset_activate_file 1031\nworkingset_restore_anon 0\nworkingset_restore_file 5\nworkingset_nodereclaim 0\npgscan 320\npgsteal 320\npgscan_kswapd 320\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 320\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 51649\npgmajfault 63\npgrefill 13\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 2.847236667992547,
+      "message": "[integrity] Skipped the full storage check: verified by startup at 2026-10-24T00:28:01.856864+00:00",
+      "counters": {
+        "cpu.stat": "usage_usec 2533714\nuser_usec 1612932\nsystem_usec 920781\nnr_periods 35\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=15564800 wbytes=12288 rios=678 wios=3 dbytes=0 dios=0\n",
+        "memory.current": "78848000\n",
+        "memory.peak": "79736832\n",
+        "memory.stat": "anon 61513728\nfile 14487552\nkernel 2326528\nkernel_stack 81920\npagetables 409600\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 2273280\nfile_dirty 212992\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61505536\ninactive_file 8183808\nactive_file 6279168\nunevictable 0\nslab_reclaimable 1207608\nslab_unreclaimable 552128\nslab 1759736\nworkingset_refault_anon 0\nworkingset_refault_file 1658\nworkingset_activate_anon 0\nworkingset_activate_file 1031\nworkingset_restore_anon 0\nworkingset_restore_file 5\nworkingset_nodereclaim 0\npgscan 320\npgsteal 320\npgscan_kswapd 320\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 320\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 51968\npgmajfault 72\npgrefill 13\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 2.852870583999902,
+      "message": "[integrity] phase=open_check status=ok",
+      "counters": {
+        "cpu.stat": "usage_usec 2536207\nuser_usec 1613570\nsystem_usec 922636\nnr_periods 36\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=15564800 wbytes=12288 rios=678 wios=3 dbytes=0 dios=0\n",
+        "memory.current": "78843904\n",
+        "memory.peak": "79736832\n",
+        "memory.stat": "anon 61517824\nfile 14483456\nkernel 2326528\nkernel_stack 81920\npagetables 409600\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 2273280\nfile_dirty 212992\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61509632\ninactive_file 8179712\nactive_file 6279168\nunevictable 0\nslab_reclaimable 1207608\nslab_unreclaimable 552128\nslab 1759736\nworkingset_refault_anon 0\nworkingset_refault_file 1658\nworkingset_activate_anon 0\nworkingset_activate_file 1031\nworkingset_restore_anon 0\nworkingset_restore_file 5\nworkingset_nodereclaim 0\npgscan 320\npgsteal 320\npgscan_kswapd 320\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 320\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 51969\npgmajfault 72\npgrefill 13\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 3.056618709000759,
+      "message": "[entrypoint] Applying database migrations (attempt 1)",
+      "counters": {
+        "cpu.stat": "usage_usec 2688026\nuser_usec 1739250\nsystem_usec 948776\nnr_periods 38\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=15626240 wbytes=12288 rios=679 wios=3 dbytes=0 dios=0\n",
+        "memory.current": "30875648\n",
+        "memory.peak": "79736832\n",
+        "memory.stat": "anon 13606912\nfile 14282752\nkernel 2297856\nkernel_stack 81920\npagetables 241664\nsec_pagetables 0\npercpu 26496\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 700416\nfile_dirty 212992\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13586432\ninactive_file 7942144\nactive_file 6279168\nunevictable 0\nslab_reclaimable 1203888\nslab_unreclaimable 448504\nslab 1652392\nworkingset_refault_anon 0\nworkingset_refault_file 1658\nworkingset_activate_anon 0\nworkingset_activate_file 1031\nworkingset_restore_anon 0\nworkingset_restore_file 5\nworkingset_nodereclaim 0\npgscan 384\npgsteal 384\npgscan_kswapd 384\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 384\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 52324\npgmajfault 73\npgrefill 13\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 14.534944506012835,
+      "message": "[entrypoint] Preparing static files",
+      "counters": {
+        "cpu.stat": "usage_usec 12263886\nuser_usec 9329247\nsystem_usec 2934639\nnr_periods 152\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=63987712 wbytes=10760192 rios=3342 wios=958 dbytes=0 dios=0\n",
+        "memory.current": "80367616\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 13725696\nfile 56176640\nkernel 10027008\nkernel_stack 81920\npagetables 237568\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 761856\nfile_dirty 0\nfile_writeback 913408\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13602816\ninactive_file 31395840\nactive_file 24780800\nunevictable 0\nslab_reclaimable 8728848\nslab_unreclaimable 459192\nslab 9188040\nworkingset_refault_anon 0\nworkingset_refault_file 5217\nworkingset_activate_anon 0\nworkingset_activate_file 3935\nworkingset_restore_anon 0\nworkingset_restore_file 61\nworkingset_nodereclaim 0\npgscan 4544\npgsteal 4541\npgscan_kswapd 4544\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 4541\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 203729\npgmajfault 201\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 14.780535380996298,
+      "message": "[entrypoint] Reusing image static files",
+      "counters": {
+        "cpu.stat": "usage_usec 12467512\nuser_usec 9471029\nsystem_usec 2996483\nnr_periods 155\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=64491520 wbytes=10760192 rios=3407 wios=958 dbytes=0 dios=0\n",
+        "memory.current": "79814656\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 12857344\nfile 55640064\nkernel 10207232\nkernel_stack 81920\npagetables 245760\nsec_pagetables 0\npercpu 26496\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 761856\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12820480\ninactive_file 31023104\nactive_file 24571904\nunevictable 0\nslab_reclaimable 9262520\nslab_unreclaimable 453760\nslab 9716280\nworkingset_refault_anon 0\nworkingset_refault_file 5271\nworkingset_activate_anon 0\nworkingset_activate_file 3989\nworkingset_restore_anon 0\nworkingset_restore_file 85\nworkingset_nodereclaim 0\npgscan 4800\npgsteal 4797\npgscan_kswapd 4800\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 4797\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 206146\npgmajfault 201\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 14.781548172992188,
+      "message": "[entrypoint] Fixing file ownership (PUID=1000 PGID=1000)",
+      "counters": {
+        "cpu.stat": "usage_usec 12468625\nuser_usec 9471092\nsystem_usec 2997532\nnr_periods 155\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=64561152 wbytes=10760192 rios=3408 wios=958 dbytes=0 dios=0\n",
+        "memory.current": "79880192\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 12845056\nfile 55709696\nkernel 10227712\nkernel_stack 81920\npagetables 221184\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 774144\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12816384\ninactive_file 31039488\nactive_file 24641536\nunevictable 0\nslab_reclaimable 9262520\nslab_unreclaimable 448920\nslab 9711440\nworkingset_refault_anon 0\nworkingset_refault_file 5271\nworkingset_activate_anon 0\nworkingset_activate_file 3989\nworkingset_restore_anon 0\nworkingset_restore_file 85\nworkingset_nodereclaim 0\npgscan 4800\npgsteal 4797\npgscan_kswapd 4800\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 4797\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 206158\npgmajfault 202\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 14.841416839975864,
+      "message": "[entrypoint] Reusing image static ownership",
+      "counters": {
+        "cpu.stat": "usage_usec 12490719\nuser_usec 9475825\nsystem_usec 3014894\nnr_periods 155\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=65024000 wbytes=10776576 rios=3444 wios=962 dbytes=0 dios=0\n",
+        "memory.current": "81936384\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 13115392\nfile 56176640\nkernel 11669504\nkernel_stack 163840\npagetables 438272\nsec_pagetables 0\npercpu 27264\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 761856\nfile_dirty 53248\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13053952\ninactive_file 31244288\nactive_file 24920064\nunevictable 0\nslab_reclaimable 9284944\nslab_unreclaimable 563840\nslab 9848784\nworkingset_refault_anon 0\nworkingset_refault_file 5276\nworkingset_activate_anon 0\nworkingset_activate_file 3994\nworkingset_restore_anon 0\nworkingset_restore_file 85\nworkingset_nodereclaim 0\npgscan 4800\npgsteal 4797\npgscan_kswapd 4800\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 4797\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 207066\npgmajfault 205\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 14.842417214997113,
+      "message": "[entrypoint] Chowning /var/log/nginx",
+      "counters": {
+        "cpu.stat": "usage_usec 12492133\nuser_usec 9476897\nsystem_usec 3015236\nnr_periods 155\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=65024000 wbytes=10776576 rios=3444 wios=962 dbytes=0 dios=0\n",
+        "memory.current": "82182144\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 13168640\nfile 56176640\nkernel 11812864\nkernel_stack 180224\npagetables 479232\nsec_pagetables 0\npercpu 27456\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 761856\nfile_dirty 53248\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13099008\ninactive_file 31244288\nactive_file 24920064\nunevictable 0\nslab_reclaimable 9284944\nslab_unreclaimable 585512\nslab 9870456\nworkingset_refault_anon 0\nworkingset_refault_file 5276\nworkingset_activate_anon 0\nworkingset_activate_file 3994\nworkingset_restore_anon 0\nworkingset_restore_file 85\nworkingset_nodereclaim 0\npgscan 4800\npgsteal 4797\npgscan_kswapd 4800\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 4797\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 207115\npgmajfault 205\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 14.84948879800504,
+      "message": "[entrypoint] Chowning /var/lib/nginx",
+      "counters": {
+        "cpu.stat": "usage_usec 12495027\nuser_usec 9476998\nsystem_usec 3018028\nnr_periods 156\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=65028096 wbytes=10776576 rios=3445 wios=962 dbytes=0 dios=0\n",
+        "memory.current": "82083840\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 13127680\nfile 56193024\nkernel 11821056\nkernel_stack 180224\npagetables 471040\nsec_pagetables 0\npercpu 27456\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 765952\nfile_dirty 69632\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13086720\ninactive_file 31260672\nactive_file 24920064\nunevictable 0\nslab_reclaimable 9288848\nslab_unreclaimable 590032\nslab 9878880\nworkingset_refault_anon 0\nworkingset_refault_file 5276\nworkingset_activate_anon 0\nworkingset_activate_file 3994\nworkingset_restore_anon 0\nworkingset_restore_file 85\nworkingset_nodereclaim 0\npgscan 4800\npgsteal 4797\npgscan_kswapd 4800\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 4797\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 207169\npgmajfault 205\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 15.345007422962226,
+      "message": "[entrypoint] resources tier=standard mem=2.0GiB swap=1.0GiB cpus=2 source=override -> gunicorn 1x2, celery workers background=on(celery,discover) interactive=on(interactive) discover=off(merged)",
+      "counters": {
+        "cpu.stat": "usage_usec 12872530\nuser_usec 9726415\nsystem_usec 3146115\nnr_periods 160\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=70406144 wbytes=10784768 rios=3742 wios=964 dbytes=0 dios=0\n",
+        "memory.current": "108232704\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 36540416\nfile 60551168\nkernel 10727424\nkernel_stack 180224\npagetables 577536\nsec_pagetables 0\npercpu 27456\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 1617920\nfile_dirty 86016\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 36495360\ninactive_file 35614720\nactive_file 24920064\nunevictable 0\nslab_reclaimable 9289112\nslab_unreclaimable 582864\nslab 9871976\nworkingset_refault_anon 0\nworkingset_refault_file 6586\nworkingset_activate_anon 0\nworkingset_activate_file 5304\nworkingset_restore_anon 0\nworkingset_restore_file 1324\nworkingset_nodereclaim 0\npgscan 5056\npgsteal 5053\npgscan_kswapd 5056\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 5053\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 216978\npgmajfault 205\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 15.682415172981564,
+      "message": "[entrypoint] celery workers background=on(celery,discover) interactive=on(interactive) discover=off(merged)",
+      "counters": {
+        "cpu.stat": "usage_usec 13209001\nuser_usec 9951480\nsystem_usec 3257521\nnr_periods 164\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=70406144 wbytes=10784768 rios=3742 wios=964 dbytes=0 dios=0\n",
+        "memory.current": "84959232\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 13127680\nfile 60551168\nkernel 10772480\nkernel_stack 180224\npagetables 446464\nsec_pagetables 0\npercpu 27456\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 761856\nfile_dirty 90112\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13111296\ninactive_file 35631104\nactive_file 24920064\nunevictable 0\nslab_reclaimable 9289736\nslab_unreclaimable 578240\nslab 9867976\nworkingset_refault_anon 0\nworkingset_refault_file 6586\nworkingset_activate_anon 0\nworkingset_activate_file 5304\nworkingset_restore_anon 0\nworkingset_restore_file 1324\nworkingset_nodereclaim 0\npgscan 5056\npgsteal 5053\npgscan_kswapd 5056\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 5053\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 226440\npgmajfault 205\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 15.682960339996498,
+      "message": "[entrypoint] Starting services",
+      "counters": {
+        "cpu.stat": "usage_usec 13209716\nuser_usec 9951497\nsystem_usec 3258218\nnr_periods 164\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=70410240 wbytes=10784768 rios=3743 wios=964 dbytes=0 dios=0\n",
+        "memory.current": "85221376\n",
+        "memory.peak": "211210240\n",
+        "memory.stat": "anon 13131776\nfile 60555264\nkernel 10776576\nkernel_stack 163840\npagetables 458752\nsec_pagetables 0\npercpu 27456\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 761856\nfile_dirty 90112\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13115392\ninactive_file 35635200\nactive_file 24920064\nunevictable 0\nslab_reclaimable 9289736\nslab_unreclaimable 573328\nslab 9863064\nworkingset_refault_anon 0\nworkingset_refault_file 6587\nworkingset_activate_anon 0\nworkingset_activate_file 5305\nworkingset_restore_anon 0\nworkingset_restore_file 1324\nworkingset_nodereclaim 0\npgscan 5056\npgsteal 5053\npgscan_kswapd 5056\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 5053\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 226448\npgmajfault 205\npgrefill 1391\npgactivate 2\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 22.06098396796733,
+      "message": "[2026-10-24 00:28:26 +0000] [87] [INFO] celery-interactive@5bb5e75fe2f6 ready.",
+      "counters": {
+        "cpu.stat": "usage_usec 23712128\nuser_usec 17770098\nsystem_usec 5942029\nnr_periods 222\nnr_throttled 51\nthrottled_usec 4703293\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=88186880 wbytes=10788864 rios=4788 wios=965 dbytes=0 dios=0\n",
+        "memory.current": "439275520\n",
+        "memory.peak": "439279616\n",
+        "memory.stat": "anon 358244352\nfile 67198976\nkernel 12869632\nkernel_stack 163840\npagetables 1482752\nsec_pagetables 0\npercpu 27072\nsock 8192\nvmalloc 0\nshmem 8192\nzswap 0\nzswapped 0\nfile_mapped 12931072\nfile_dirty 688128\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 358088704\ninactive_file 27537408\nactive_file 39653376\nunevictable 0\nslab_reclaimable 9897200\nslab_unreclaimable 1209472\nslab 11106672\nworkingset_refault_anon 0\nworkingset_refault_file 10485\nworkingset_activate_anon 0\nworkingset_activate_file 9160\nworkingset_restore_anon 0\nworkingset_restore_file 1326\nworkingset_nodereclaim 0\npgscan 7936\npgsteal 7921\npgscan_kswapd 7936\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 7921\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 514467\npgmajfault 219\npgrefill 4579\npgactivate 5\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 23.573270677006803,
+      "message": "[2026-10-24 00:28:27 +0000] [86] [INFO] celery@5bb5e75fe2f6 ready.",
+      "counters": {
+        "cpu.stat": "usage_usec 26468448\nuser_usec 19717593\nsystem_usec 6750855\nnr_periods 237\nnr_throttled 59\nthrottled_usec 5234727\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=91963392 wbytes=10792960 rios=5084 wios=966 dbytes=0 dios=0\n",
+        "memory.current": "587177984\n",
+        "memory.peak": "587177984\n",
+        "memory.stat": "anon 504901632\nfile 66859008\nkernel 14680064\nkernel_stack 245760\npagetables 2416640\nsec_pagetables 0\npercpu 27648\nsock 4096\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 13950976\nfile_dirty 1454080\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 504795136\ninactive_file 26189824\nactive_file 40652800\nunevictable 0\nslab_reclaimable 10032960\nslab_unreclaimable 1852256\nslab 11885216\nworkingset_refault_anon 0\nworkingset_refault_file 11333\nworkingset_activate_anon 0\nworkingset_activate_file 10008\nworkingset_restore_anon 0\nworkingset_restore_file 1354\nworkingset_nodereclaim 0\npgscan 9152\npgsteal 9118\npgscan_kswapd 9152\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 9118\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 617899\npgmajfault 223\npgrefill 4764\npgactivate 10\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    }
+  ],
+  "processes": "PID   PPID  RSS  COMMAND\n    1     0  19m python /bench/trial.py run\n    8     1  20m {supervisord} /opt/venv/bin/python /opt/venv/bin/supervisord -c /etc/supervisord.conf\n   25     1    0 [timeout]\n   53     1    0 [timeout]\n   56     1    0 [timeout]\n   59     1    0 [timeout]\n   63     1    0 [timeout]\n   66     1    0 [timeout]\n   69     1    0 [timeout]\n   72     1    0 [timeout]\n   84     8 2956 nginx: master process nginx -c /etc/nginx/nginx.conf -g daemon off;\n   85     8 119m {gunicorn} /opt/venv/bin/python /opt/venv/bin/gunicorn --control-socket /tmp/gunicorn.ctl --config python:config.gunicorn config.wsgi:application\n   86     8 108m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --beat --scheduler django --queues celery,discover --hostname=celery@%h --loglevel INFO --without-mingle --without-gossip\n   87     8  88m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --queues interactive --hostname=celery-interactive@%h --loglevel INFO --without-mingle --without-gossip\n   88    84 3080 nginx: worker process\n  120    87  86m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --queues interactive --hostname=celery-interactive@%h --loglevel INFO --without-mingle --without-gossip\n  121    85 205m {gunicorn} /opt/venv/bin/python /opt/venv/bin/gunicorn --control-socket /tmp/gunicorn.ctl --config python:config.gunicorn config.wsgi:application\n  123    86  99m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --beat --scheduler django --queues celery,discover --hostname=celery@%h --loglevel INFO --without-mingle --without-gossip\n  127    86 100m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --beat --scheduler django --queues celery,discover --hostname=celery@%h --loglevel INFO --without-mingle --without-gossip\n  136     1  804 ps -o pid,ppid,rss,args\n",
+  "sizing": {
+    "tier": "standard",
+    "tier_source": "override",
+    "profile": "tier=standard mem=2.0GiB swap=1.0GiB cpus=2 source=override",
+    "memory_bytes": 2147483648,
+    "available_bytes": 2539831296,
+    "swap_bytes": 1073737728,
+    "cpus": 2,
+    "notes": [],
+    "web_concurrency": 1,
+    "web_concurrency_default": 1,
+    "web_concurrency_source": "override",
+    "gunicorn_threads": 2,
+    "gunicorn_threads_default": 4,
+    "gunicorn_threads_source": "override",
+    "celery_queues": "celery,discover",
+    "celery_role": "background",
+    "start_interactive_worker": true,
+    "start_discover_worker": false,
+    "expected_programs": [
+      "nginx",
+      "gunicorn",
+      "celery",
+      "celery-interactive"
+    ],
+    "web_concurrency_over_profile": false
+  }
+}
