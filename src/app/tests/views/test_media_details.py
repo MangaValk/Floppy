@@ -4386,6 +4386,15 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, 'href="https://trakt.tv/shows/test-tv-show"')
         self.assertContains(response, "Trakt")
 
+        # The poller must only exist while the modal is open: it sits inside an
+        # x-if template (not merely x-show) so a closed modal issues no requests.
+        soup = BeautifulSoup(response.content, "html.parser")
+        poller = soup.find(attrs={"hx-get": fragment_url})
+        self.assertIsNotNone(poller)
+        self.assertIsNotNone(
+            poller.find_parent("template", attrs={"x-if": "graphOpen"}),
+        )
+
         fragment = self.client.get(fragment_url)
         self.assertEqual(fragment.status_code, 200)
         self.assertContains(fragment, "Series Graph")
