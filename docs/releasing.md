@@ -53,6 +53,10 @@ Carry these points into the actual release notes before publication:
   the database, backup path and original signing key, verify restores and keep
   encrypted off-host copies. CSV exports are incomplete recovery artifacts;
   PostgreSQL backup remains operator-managed. See [backup guidance](deployment.md#sqlite-data-paths).
+- **SQLite migration preparation:** routine restarts no longer scan the entire
+  database. Upgrades with pending migrations require a verified recovery
+  snapshot prepared with writers stopped, using the new image. Publish the
+  [preparation command and blocking conditions](architecture/sqlite-startup.md).
 - The historical `v26.10.1` migration graph conflicts on fresh installs and
   ordinary upgrades. Use a revision containing
   `users/0141_merge_search_all_discover_seerr.py`; retain data/key, never fake

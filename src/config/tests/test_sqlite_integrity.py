@@ -1002,7 +1002,7 @@ class SqliteIntegrityTests(SimpleTestCase):
                 "python": (
                     "#!/bin/sh\n"
                     'case "$*" in\n'
-                    "  *check_database_for_startup*)\n"
+                    "  *sqlite_startup*)\n"
                     '    echo "[entrypoint] bounded integrity failure" >&2\n'
                     "    exit 1\n"
                     "    ;;\n"
@@ -1012,7 +1012,7 @@ class SqliteIntegrityTests(SimpleTestCase):
                     "esac\n"
                     f'exec "{sys.executable}" "$@"\n'
                 ),
-                "timeout": '#!/bin/sh\nshift\nexec "$@"\n',
+                "timeout": '#!/bin/sh\ncase "$1" in -k) shift 2;; esac\nshift\nexec "$@"\n',
                 "sleep": (
                     "#!/bin/sh\n"
                     # Only the parking loop's 86400s sleep records its pid and
@@ -1092,7 +1092,9 @@ class SqliteIntegrityTests(SimpleTestCase):
             self.assertEqual(process.returncode, 0)
             self.assertEqual(output.count("bounded integrity failure"), 1)
             # "Parks once" means the outer loop did not run the check again.
-            self.assertEqual(output.count("Checking SQLite storage"), 1, output)
+            self.assertEqual(
+                output.count("Checking SQLite startup admission"), 1, output
+            )
             self.assertNotIn("Still checking SQLite integrity", output)
             self.assertIn("SQLite startup is paused", output)
             self.assertNotIn("exceeded its 600s timeout", output)
@@ -1109,8 +1111,8 @@ class SqliteIntegrityTests(SimpleTestCase):
             python_wrapper = bin_path / "python"
             python_wrapper.write_text(
                 "#!/bin/sh\n"
-                'case "$2" in\n'
-                "  *check_database_for_startup*)\n"
+                'case "$*" in\n'
+                "  *sqlite_startup*)\n"
                 '    echo "$$" > "$CHECKER_PID_FILE"\n'
                 '    echo "[entrypoint] checker waiting" >&2\n'
                 "    exec /bin/sleep 30\n"
@@ -1120,7 +1122,9 @@ class SqliteIntegrityTests(SimpleTestCase):
             )
             python_wrapper.chmod(0o755)
             timeout_wrapper = bin_path / "timeout"
-            timeout_wrapper.write_text('#!/bin/sh\nshift\nexec "$@"\n')
+            timeout_wrapper.write_text(
+                '#!/bin/sh\ncase "$1" in -k) shift 2;; esac\nshift\nexec "$@"\n'
+            )
             timeout_wrapper.chmod(0o755)
             env = {
                 **os.environ,
@@ -1564,18 +1568,12 @@ class SqliteIntegrityTests(SimpleTestCase):
         self.assertEqual(status["phase"], "unknown")
         self.assertEqual(status["elapsed_seconds"], 600.0)
 
-    def test_entrypoint_supervises_integrity_check_by_progress_not_wall_clock(self):
+    def test_entrypoint_bounds_admission_before_migrations(self):
         script = ENTRYPOINT.read_text()
-        check = (
-            'python -m config.sqlite_startup_watchdog "$DB_FILE" python -c '
-            "'from config.sqlite_recovery_policy import "
-            "check_database_for_startup; import sys; "
-            'check_database_for_startup(sys.argv[1])\' "$DB_FILE" &'
-        )
+        check = "timeout -k 5 30 python manage.py sqlite_startup &"
 
         self.assertIn(check, script)
-        # A wall-clock bound stops a slow but healthy scan. The watchdog owns
-        # the stall decision and the heartbeat; the shell only waits for it.
+        # Admission must finish quickly; full verification is independent.
         self.assertNotIn("integrity_timeout", script)
         self.assertNotIn('timeout "$integrity', script)
         self.assertNotIn("heartbeat_pid", script)
@@ -1594,7 +1592,7 @@ class SqliteIntegrityTests(SimpleTestCase):
         self.assertLess(wait, reset_trap)
         timeout_case = script.index("124)", reset_trap)
         failure_case = script.index("*)", timeout_case)
-        self.assertIn("stopped making progress", script[timeout_case:failure_case])
+        self.assertIn("exceeded 30s", script[timeout_case:failure_case])
         self.assertIn("integrity check failed", script[failure_case:])
         self.assertIn(
             'trap \'kill "$parking_pid" 2>/dev/null || :; '
