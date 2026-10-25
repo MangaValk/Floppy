@@ -1601,6 +1601,7 @@ if os.environ.get("FLOPPY_PROCESS_ROLE") == "interactive":
     )
 else:
     CELERY_IMPORTS = (
+        "app.tasks_game_groups",
         "integrations.tasks._change_log",
         "integrations.tasks._jellyfin_pull",
         "integrations.tasks._koito",

@@ -169,6 +169,13 @@ on every claim. Every state-touching operation is fenced on it:
   dirty-day clearing. A worker that lost its lease during the expensive
   build cannot overwrite its successor's days. The full-sweep epoch marker
   uses the same fence.
+  This deliberately includes Redis I/O in the writer transaction: a delayed
+  cache publication blocks other SQLite writers. Moving that publication
+  outside the transaction is unsafe with the current shared day keys:
+  a takeover can publish newer days before the old Redis write arrives, and
+  a subsequent lease check cannot undo that overwrite. Snapshot publication
+  avoids this race through durable revision validation; day readers do not
+  have that protocol.
 * **Markers** (`hot/heavy_synced_generation`, `synced_day`) advance
   monotonically (`Greatest`) and only under the caller's token, so a stale pass
   cannot regress what a successor recorded; the full-sweep clear is likewise
