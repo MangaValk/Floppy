@@ -17,6 +17,17 @@ def resolve_playback_image(user_id: int):
     live_playback.resolve_state_image(user_id)
 
 
+@shared_task(name="Refresh podcast show from RSS", ignore_result=True)
+def refresh_podcast_show_from_rss_task(show_id: int):
+    """Reconcile a podcast show against its feed off the detail request path."""
+    from app.fork_services_podcast import refresh_show_from_rss
+    from app.models import PodcastShow
+
+    show = PodcastShow.objects.filter(pk=show_id).first()
+    if show is not None:
+        refresh_show_from_rss(show)
+
+
 @shared_task(name="app.tasks.statistics_sync_task")
 def statistics_sync_task(user_id: int):
     """Rebuild a user's dirty Statistics days and stale ranges, within a budget.

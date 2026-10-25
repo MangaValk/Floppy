@@ -437,10 +437,12 @@ def media_details(
                     PODCAST_DETAIL_RSS_REFRESH_SECONDS,
                 )
             ):
-                from app.fork_services_podcast import refresh_show_from_rss
+                from app.tasks_interactive import refresh_podcast_show_from_rss_task
 
+                # Queued, so a slow feed host never holds the render; new
+                # episodes show on the next view.
                 _best_effort_detail_followup(
-                    lambda: refresh_show_from_rss(show),
+                    lambda: refresh_podcast_show_from_rss_task.delay(show.id),
                     operation_name="podcast_show_rss_refresh",
                 )
 

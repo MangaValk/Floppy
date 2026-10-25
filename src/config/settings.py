@@ -1858,6 +1858,11 @@ CELERY_TASK_ROUTES = {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_INTERACTIVE,
     },
+    # The feed download and episode writes stay off the podcast detail request.
+    "Refresh podcast show from RSS": {
+        "queue": "interactive",
+        "priority": CELERY_TASK_PRIORITY_INTERACTIVE,
+    },
     # Keeps the HTTP request path free of live Plex connection probing when
     # loading Integrations settings.
     "Refresh Plex library sections": {
