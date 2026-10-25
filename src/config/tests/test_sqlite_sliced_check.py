@@ -25,7 +25,7 @@ class SlicedCheckTests(TestCase):
             )
             db.executemany(
                 "INSERT INTO child VALUES (?, 1, ?)",
-                [(i, "x" * 3000) for i in range(1, 400)],
+                [(i, "x" * 6000) for i in range(1, 400)],
             )
 
     def progress(self):
@@ -60,38 +60,32 @@ class SlicedCheckTests(TestCase):
         if sliced._PAGES in done:
             pages.assert_not_called()
 
-    def test_unit_over_budget_falls_back_to_resumable_row_reads(self):
-        class SlowQuickCheck:
-            """Real connection, but quick_check always runs out of time."""
-
-            def __init__(self, conn):
-                self.conn = conn
-
-            def execute(self, sql, *args):
-                if "quick_check" in sql:
-                    raise sqlite3.OperationalError("interrupted")
-                return self.conn.execute(sql, *args)
-
-            def __getattr__(self, name):
-                return getattr(self.conn, name)
-
-        conn = sqlite3.connect(self.database, check_same_thread=False)
-        self.addCleanup(conn.close)
-        unit = {}
-        far = __import__("time").monotonic() + 1000
-        self.assertFalse(
-            sliced._check_table(SlowQuickCheck(conn), self.database, "child", unit, far)
-        )
-        self.assertEqual(unit["mode"], "rows")
-        self.assertTrue(
-            sliced._check_table(SlowQuickCheck(conn), self.database, "child", unit, far)
-        )
-        self.assertTrue(unit["rows_done"])
+    def test_deep_check_over_budget_is_listed_not_blocking(self):
+        with patch.object(sliced, "UNIT_SECONDS", 0.0):
+            state = sliced.run_slice(self.database)
+        self.assertIn(state["status"], {"ok", "partial"})
+        self.assertFalse(state["units"]["child"].get("fk_incomplete"))
 
     def test_daily_budget_caps_total_work(self):
         with patch.object(sliced, "DAILY_BUDGET_SECONDS", 0.0):
             state = sliced.run_slice(self.database)
         self.assertEqual(state["status"], "waiting-budget")
+
+    def test_damaged_overflow_chain_is_found_by_the_sweep(self):
+        pages = sqlite3.connect(self.database)
+        overflow = pages.execute(
+            "SELECT pageno FROM dbstat WHERE pagetype='overflow' LIMIT 1"
+        ).fetchone()[0]
+        pages.close()
+        with Path(self.database).open("r+b") as handle:
+            handle.seek(4096 * (overflow - 1))
+            handle.write(b"\xff" * 16)
+        with patch.object(sliced, "DEEP_SECONDS", 10**12):  # sweep alone
+            state = sliced.run_slice(self.database)
+        self.assertEqual(state["status"], "failed")
+        self.assertEqual(
+            integrity._read_incident_report(self.database)["status"], "corrupt"
+        )
 
     def test_damaged_page_publishes_a_corruption_incident(self):
         with Path(self.database).open("r+b") as handle:

@@ -1,21 +1,21 @@
-"""Time-sliced, resumable background verification of a live SQLite database.
+"""Fast, resumable background verification of a live SQLite database.
 
-Replaces the copy-then-``quick_check``-the-copy background scan, whose cost is
-unbounded on slow storage. Every invocation does at most ``SLICE_SECONDS`` of
-work, the total over any rolling 24 hours is capped at ``DAILY_BUDGET_SECONDS``,
-and progress is persisted so a restart, a new image or a killed slice resumes
-instead of starting over. Units, in order of least recently verified:
+The full check is ``sqlite_page_sweep``: one pass over the file in physical
+order (sequential I/O), rebuilding the page graph in memory. ``quick_check``
+walks each b-tree in key order, which on churned databases and slow storage is
+one random read per page (a 5.2 GB database took 1.9 h, nearly all I/O wait).
 
-* ``pages``: sequential read of the whole file in 8 MiB chunks, resumable by
-  byte offset. Proves every page is readable and the file is not truncated
-  against the header's page count. It does not interpret page contents.
-* per table ``quick_check(table)``: b-tree structure and record format of that
-  table and its indexes. A table that does not finish within ``UNIT_SECONDS``
-  falls back to ``rows`` mode: every record read by rowid range, resumable.
-  That proves records and overflow chains decode, not index or page invariants.
-* per table ``foreign_key_check(table)``, within the same unit budget.
+Per invocation (every few minutes, niced), oldest unit first:
 
-Findings reuse the existing incident reports; nothing repairs live rows.
+* ``__pages__``: the sweep, at most every 7 days; it never needs a copy.
+* per table ``foreign_key_check(table)``, at most every 7 days.
+* per table ``quick_check(table)``: the deep tier (record format, key order),
+  best effort, at most every 30 days, limited to ``UNIT_SECONDS`` per table;
+  tables that do not finish are listed in ``deep_incomplete`` and never block.
+
+Slices and a daily cap keep any single run short; progress persists across
+restarts and image changes. Findings reuse the incident reports; nothing
+repairs live rows.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ import fcntl
 import json
 import os
 import sqlite3
-import stat
 import threading
 import time
 from contextlib import closing, contextmanager
@@ -32,15 +31,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from config import sqlite_integrity as integrity
+from config import sqlite_page_sweep as page_sweep
 
 SLICE_SECONDS = float(os.environ.get("FLOPPY_SQLITE_VERIFY_SLICE_SECONDS", "300"))
 DAILY_BUDGET_SECONDS = float(
     os.environ.get("FLOPPY_SQLITE_VERIFY_DAILY_SECONDS", "3600")
 )
 UNIT_SECONDS = float(os.environ.get("FLOPPY_SQLITE_VERIFY_UNIT_SECONDS", "150"))
+SWEEP_SECONDS = float(os.environ.get("FLOPPY_SQLITE_VERIFY_SWEEP_SECONDS", "1800"))
 REVERIFY_SECONDS = 7 * 86400.0
+DEEP_SECONDS = 30 * 86400.0
 _CHUNK_BYTES = 8 * 1024 * 1024
-_ROW_CHUNK = 2000
 _DAY = 86400.0
 _MIN_BUDGET = 5.0
 _PAGES = "__pages__"
@@ -133,31 +134,28 @@ def _fail(db_path: str, error: sqlite3.DatabaseError) -> bool:
 
 
 def _scan_pages(db_path: str, unit: dict, deadline: float) -> bool:
-    """Sequentially read the file from the saved offset; True when finished."""
-    descriptor = os.open(db_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    """Whole-file structural sweep in physical order; True when it passed."""
+    del unit
     try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            return False
-        size = os.fstat(descriptor).st_size
-        offset = min(unit.get("offset", 0), size)
-        while offset < size:
+        result = page_sweep.sweep(db_path, deadline=deadline)
+    except page_sweep.SweepExpiredError:
+        return False
+    except page_sweep.SweepUnavailableError:
+        return _read_sequentially(db_path, deadline)
+    if result["problems"]:
+        message = "; ".join(result["problems"][:5])
+        integrity._report_corruption(db_path, f"page sweep: {message}")
+        raise sqlite3.DatabaseError(message)
+    return True
+
+
+def _read_sequentially(db_path: str, deadline: float) -> bool:
+    """Fallback when pages may live in the WAL: prove the file is readable."""
+    with Path(db_path).open("rb", buffering=0) as handle:
+        while handle.read(_CHUNK_BYTES):
             if time.monotonic() > deadline:
-                unit["offset"] = offset
                 return False
-            started = time.monotonic()
-            data = os.pread(descriptor, _CHUNK_BYTES, offset)
-            if not data:
-                break
-            offset += len(data)
-            # ~50% duty cycle: never saturate shared storage.
-            time.sleep(min(time.monotonic() - started, 1.0))
-        unit["offset"] = offset
-        if offset < size:
-            msg = f"file shorter than its size on disk ({offset} < {size})"
-            raise sqlite3.DatabaseError(msg)
-        return True
-    finally:
-        os.close(descriptor)
+    return True
 
 
 def _header_problem(conn: sqlite3.Connection, db_path: str) -> str | None:
@@ -179,35 +177,6 @@ def _quote(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
-def _scan_rows(
-    conn: sqlite3.Connection, table: str, unit: dict, deadline: float
-) -> bool:
-    """Read every record of ``table`` by rowid range; resumable via the cursor."""
-    columns = [row[1] for row in conn.execute(f"PRAGMA table_info({_quote(table)})")]
-    if conn.execute(
-        "SELECT 1 FROM pragma_index_list(?) WHERE origin='pk' AND name LIKE 'sqlite_autoindex%'",
-        [table],
-    ).fetchone():
-        # WITHOUT ROWID tables have no rowid cursor; they must finish whole.
-        return False
-    # `|| ''` forces the whole value (including overflow pages) to be read.
-    width = " + ".join(f"coalesce(length({_quote(c)} || ''), 0)" for c in columns)
-    sql = (
-        f"SELECT max(r), count(*) FROM (SELECT rowid AS r, {width} AS w "  # noqa: S608
-        f"FROM {_quote(table)} WHERE rowid > ? ORDER BY rowid LIMIT {_ROW_CHUNK})"
-    )
-    cursor = unit.get("row_cursor", -(2**63))
-    while True:
-        if time.monotonic() > deadline:
-            unit["row_cursor"] = cursor
-            return False
-        last, count = conn.execute(sql, [cursor]).fetchone()
-        if not count:
-            unit["row_cursor"] = cursor
-            return True
-        cursor = last
-
-
 def _interrupted(error: sqlite3.OperationalError) -> bool:
     if "interrupt" not in str(error).lower():
         raise error
@@ -217,32 +186,31 @@ def _interrupted(error: sqlite3.OperationalError) -> bool:
 def _check_table(
     conn, db_path: str, table: str, unit: dict, slice_deadline: float
 ) -> bool:
-    """Verify one table; True when it is finished this slice."""
-    if unit.get("mode") != "rows" and "quick_done" not in unit:
+    """Verify one table; True when it is finished this slice.
+
+    The relationship check is required. The deep ``quick_check`` is best effort:
+    it walks b-trees in key order (random reads on slow storage), so it runs at
+    most every ``DEEP_SECONDS`` and a table that exceeds ``UNIT_SECONDS`` is
+    recorded in ``deep_incomplete`` rather than blocking verification.
+    """
+    deep_age = _age({"verified_at": unit.get("deep_at")})
+    if deep_age > DEEP_SECONDS and "deep_tried" not in unit:
+        unit["deep_tried"] = True
         unit_deadline = time.monotonic() + UNIT_SECONDS
         try:
             with _guarded(conn, min(slice_deadline, unit_deadline)):
                 result = conn.execute(f"PRAGMA quick_check({_quote(table)})").fetchall()
         except sqlite3.OperationalError as error:
             _interrupted(error)
-            if unit_deadline < slice_deadline:
-                unit["mode"] = "rows"  # unit budget exhausted, not the slice
-            return False
-        if result != [("ok",)]:
-            integrity._report_corruption(
-                db_path, f"quick_check({table}): {result[0][0]}"
-            )
-            raise sqlite3.DatabaseError(result[0][0])
-        unit["quick_done"] = True
-    if unit.get("mode") == "rows" and "rows_done" not in unit:
-        try:
-            with _guarded(conn, slice_deadline):
-                if not _scan_rows(conn, table, unit, slice_deadline):
-                    return False
-        except sqlite3.OperationalError as error:
-            _interrupted(error)
-            return False
-        unit["rows_done"] = True
+            unit["deep_incomplete"] = True
+        else:
+            if result != [("ok",)]:
+                integrity._report_corruption(
+                    db_path, f"quick_check({table}): {result[0][0]}"
+                )
+                raise sqlite3.DatabaseError(result[0][0])
+            unit["deep_at"] = _stamp()
+            unit.pop("deep_incomplete", None)
     if "fk_done" not in unit:
         try:
             with _guarded(conn, slice_deadline):
@@ -320,16 +288,23 @@ def run_slice(db_path: str) -> dict:
                     if time.monotonic() >= slice_deadline:
                         break
                     unit = units[name]
+                    started_unit = time.monotonic()
                     if _age(unit) <= REVERIFY_SECONDS:
                         continue
                     if name == _PAGES:
-                        finished = _scan_pages(db_path, unit, slice_deadline)
+                        finished = _scan_pages(
+                            db_path, unit, started_unit + SWEEP_SECONDS
+                        )
                     else:
                         finished = _check_table(
                             conn, db_path, name, unit, slice_deadline
                         )
                     if finished:
-                        keep = {"mode": unit.get("mode")} if unit.get("mode") else {}
+                        keep = {
+                            k: unit[k]
+                            for k in ("deep_at", "deep_incomplete")
+                            if k in unit
+                        }
                         units[name] = {**keep, "verified_at": _stamp()}
                     _save(db_path, state)
                 _summarize(state)

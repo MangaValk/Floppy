@@ -89,52 +89,50 @@ No production migration records are faked or deleted.
 
 ## Verification while serving traffic
 
+**Why the old scan was slow.** `PRAGMA quick_check` walks every b-tree in key
+order. After churn, key order is unrelated to file order, so on spinning or
+network storage each page is a separate seek: a 5.2 GB database took 1.9 h with
+about 43 s of CPU (sequential read of the same file ran at 44 MB/s). Giving
+SQLite more cache does not help when the container's memory is smaller than the
+database, and no `PRAGMA` changes the walk order. The fix is to verify in file
+order.
+
 Supervisor runs `sqlite_startup --background` (`sqlite-verification`) 60 seconds
-after start and then every 10 minutes, at lower CPU priority. Each run is a
-**time slice** (`src/config/sqlite_sliced_check.py`); it makes no copy of the
-database and holds no write lock. Hard bounds, all overridable by environment:
+after start and then every 10 minutes, niced. It makes no copy and takes no
+write lock. Nothing blocks startup or serving, and nothing is re-run because the
+image changed: state is tied to the database file (`DB_FILE.verification.
+progress.json`), so work resumes across restarts and upgrades, and a replaced
+file starts over. Units, oldest first:
 
-- one slice: 300 s (`FLOPPY_SQLITE_VERIFY_SLICE_SECONDS`), enforced with
-  `sqlite3_interrupt` because `quick_check` is a single opcode that a progress
-  handler cannot stop;
-- active verification per rolling 24 h: 3600 s (`..._DAILY_SECONDS`);
-- one table's `quick_check`: 150 s (`..._UNIT_SECONDS`), then it falls back to
-  resumable row reads;
-- read transactions last at most one slice, so WAL checkpoints stall at most
-  that long. Connections are read-only, `mmap_size=0`, 64 MiB page cache.
-
-Progress lives in `DB_FILE.verification.progress.json` (identity-bound to the
-file, so a replaced database starts over; **not** to the image: a new image
-never restarts or re-triggers verification). It records per-unit `verified_at`,
-`verified_through` (the oldest unit), `unverified_units`, `fk_incomplete` flags
-and the slice ledger. Units are re-verified after 7 days, oldest first. Because
-work is capped per day and persisted, a database too slow to finish in a day
-simply takes several days to cover, rather than hours in one run; this is
-visible, never silent.
-
-Per-unit coverage, which is deliberately different from one full `quick_check`:
-
-| Unit | Detects | Does not detect |
+| Unit | Cadence | What it proves |
 |---|---|---|
-| `__pages__`: sequential read in 8 MiB chunks, resumable | unreadable sectors/I/O errors, truncation; header `page_count` vs file size; `freelist_count` sanity | page contents are not interpreted |
-| `quick_check(table)` per table (includes that table's indexes) | b-tree/page/record-format damage | nothing beyond `quick_check` itself (it never compared indexes with tables) |
-| `rows` fallback (table over its 150 s unit budget) | every record and overflow chain decodes, descent root to leaf | page-level invariants and **that table's indexes** |
-| `foreign_key_check(table)` | relationship conflicts | a table whose check exceeds the slice is marked `fk_incomplete` and retried; it can stay incomplete on very slow storage |
+| **Page sweep** (`sqlite_page_sweep.py`) | 7 days | Every page read once, sequentially, from a WAL-aware snapshot (`sqlite_dbpage`; without it the raw file only while the WAL is empty). Header and file size; every b-tree page header, cell-pointer array and content bounds; every child pointer in range, unique and of the right family; schema roots; **overflow chains** (length matches payload, no sharing); freelist chain and count; pages nobody references. |
+| `foreign_key_check(table)` per table | 7 days | Relationship conflicts. Reads the child table and probes parent keys; it needs no extra indexes on the child. |
+| `quick_check(table)` per table (deep tier) | 30 days, best effort | Record format, key ordering. Limited to 150 s per table; a table that does not finish is listed in `deep_incomplete` and never blocks `verified_through`. |
 
+The sweep does not parse records or compare keys, so those are covered only by
+the deep tier, and index-versus-table agreement by neither (`quick_check` never
+did that; `integrity_check` does). On damaged copies of a churned 4 KiB-page
+database the sweep and `quick_check` flagged the same number of cases (random
+8-byte flips 1/60 each, zeroed pages 28/60, clobbered page headers 46/60,
+truncation 60/60; most flips land in free space or row data neither tool
+inspects).
+
+Bounds: a slice does at most 300 s of table work, all checking is capped at
+3600 s per rolling 24 h, the sweep gets its own 1800 s allowance. Overrides:
+`FLOPPY_SQLITE_VERIFY_{SLICE,DAILY,UNIT,SWEEP}_SECONDS`. Read transactions last
+one slice (sweep: its duration), so WAL checkpoints can stall that long.
 Findings use the existing reports: damage writes a `corrupt` incident and
-conflicts a `blocked` one, both of which block the next start; live rows are
-never touched. Busy/I/O/interrupted errors are transient and retried.
-The previous design copied the whole database (read plus write), ran
-`quick_check` and `foreign_key_check` on the copy under a one-hour kill, and
-therefore could not finish on a 5 GB database on slow storage while contending
-for the same disk. That path remains only for `--prepare-migrations`
-(maintenance window, snapshot required for the migration permit). The
-background run no longer produces verification copies; recovery copies come from
-the scheduled snapshot task (whose own `quick_check` of its copy is not yet
-sliced).
+conflicts a `blocked` one, both blocking the next start; live rows are never
+touched. Busy/I/O/interrupted errors are transient and retried.
 
-Observe `[sqlite-verification] slice status=...` logs and the progress file.
-Manually run a slice with `python manage.py sqlite_startup --background`.
+`--prepare-migrations` keeps the copy-and-full-scan path (maintenance window,
+needed for the migration permit). The scheduled snapshot task still runs
+`quick_check` on its copy; that is not yet sliced or swept.
+
+Observe `[sqlite-verification] slice status=...` logs and the progress file
+(`verified_through`, `unverified_units`, `fk_incomplete`, `deep_incomplete`).
+Run a slice manually with `python manage.py sqlite_startup --background`.
 
 A snapshot passing `quick_check` establishes structural integrity of its
 copy only. It does **not** establish relational integrity. Existing scheduled
