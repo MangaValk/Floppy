@@ -179,3 +179,70 @@ or dependency lock are modified. This does not replace the existing full-stack
 constrained benchmark for Gunicorn/webhooks/real beat topology, or long-run leak
 studies. Failures may retain partial private output/logs instead of a full report;
 delete that new output directory to dispose of it. No production speedup claimed.
+
+
+## BENCH-10 attribution extension
+
+The v2 matrix retains the BENCH-06 lock, quotas, offline workers, correctness
+checks and host-noise threshold. See [the retained investigation](plans/Floppy_Performance_Master_Backlog/BENCH-10/README.md)
+for source/image hashes, raw failures and the exact scoped validation commands.
+No production behavior or CI timing gate changes.
+
+Each cell records setup, workload launch, application exit, support shutdown,
+and verified removal boundaries. The existing pre-cleanup CPU screen remains
+visible and gated; a second screen runs after owned-container cleanup. A busy
+pre-cleanup screen is **not attributed to external contention**. PostgreSQL CPU
+is read independently at workload boundaries; its startup/shutdown and the
+Docker client are not included in that delta. `--postgres-tmpfs` selects a
+bounded 128 MiB disposable data directory and records a different storage
+policy. It cannot be compared as the same disk-backed baseline. PostgreSQL
+logs survive failed readiness; no global Docker pruning is performed.
+
+Source manifests travel inside the image. The supervised worker checks the
+origins and SHA256 of actually imported project modules against that manifest;
+a mount, source label or `PYTHONPATH` declaration alone is insufficient. Keep
+the source frozen during building and execution, particularly when other chats
+are editing imports. Loaded-origin checks cover the supervised Python process;
+they do not instrument every interpreter inside Celery.
+
+Use matched incremental observer controls, outside production requests:
+
+```bash
+# Build once from frozen source, then retain the same image for all runs.
+uv run --no-sync python scripts/benchmark_matrix.py --build --profiles minimal --databases sqlite --workloads empty idle --observer off --control-seconds 5 --output /tmp/controls-off
+uv run --no-sync python scripts/benchmark_matrix.py --profiles minimal --databases sqlite --workloads empty idle --observer on --control-seconds 5 --output /tmp/controls-on
+# Repeat both commands with new output directories, then the identical fixed-work
+# fixtures/Celery matrix with both observer settings and both database backends.
+```
+
+Observer-off retains process supervision, timing, the existing worker's own
+instrumentation and two full boundary samples. It disables periodic process /
+cgroup samples and their calibration. Compare absolute CPU/wall differences
+and percentages against observer-off; never subtract an estimated observer cost
+from observed application CPU. The report's `sampler_cpu_s` is supervisor-process
+CPU during worker execution, not total Docker/OS collection cost.
+
+The sampler adds global Linux VM CPU ticks, memory availability and numeric PSI,
+owned-visible-cgroup counters, collector capture CPU, wall/monotonic/boottime
+exposure, and PID/start-tick identities. Global-minus-owned remains unknown,
+not an external-work measurement. Shared-VM counters do not measure the macOS
+host. Matrix process snapshots can miss short-lived Redis/worker lifetimes;
+Redis is embedded in the application cgroup, and its exact independent CPU is
+unsupported. Boundary cgroup deltas exclude some setup/exit work and do not
+measure the whole container lifecycle.
+
+`memory_aging_report.py` reports gaps, suspend exposure, reset/boot warnings,
+unusable files retained on disk, and splits aging tracks on membership/start
+identity changes. Unknown GC, CoW and cache causes remain unknown. Resource
+counters alone do not distinguish those causes. `memory_aging.sh` and the
+existing disposable real-task recipes remain opt-in for 20–30 minute idle /
+loaded windows and 2+ hour growth. Use fixed synthetic media counts, blocked
+providers and a genuinely exclusive quiet host; hold the matrix's same local
+lock around those recipes. Existing aging recipes do not themselves guarantee
+that all these qualification requirements hold.
+
+`eligible` remains the matrix's coarse calibration screen. The new
+`resource_claim_eligible` is explicitly false: this extension does not establish
+exclusive-host ownership, complete Redis/collector lifetime cost or qualified
+long-window resource evidence. A dedicated-host flag alone cannot change that.
+BENCH-10 remains open until those missing completion gates are demonstrated.
