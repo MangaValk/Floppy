@@ -514,20 +514,22 @@ def get_cached_history_window(
         history_days.append(day_payload)
 
     for day_key in missing_day_keys:
-        # Build the whole day so the payload can be cached for every reader,
-        # then narrow it to the requested types.
+        # Filter cold builds at the query boundary; only complete days may
+        # populate the shared day cache.
         day_payload = build_history_day(
             user,
             day_key,
+            media_types=requested_media_types,
             logging_style_override=logging_style,
         )
         if day_payload is None:
             continue
-        cache.set(
-            _day_cache_key(user.id, logging_style, day_key),
-            _serialize_history_day(day_payload),
-            timeout=HISTORY_DAY_CACHE_TIMEOUT,
-        )
+        if requested_media_types is None:
+            cache.set(
+                _day_cache_key(user.id, logging_style, day_key),
+                _serialize_history_day(day_payload),
+                timeout=HISTORY_DAY_CACHE_TIMEOUT,
+            )
         windowed = _window_history_day(
             day_payload,
             max_entries=entry_cap,

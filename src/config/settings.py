@@ -1825,10 +1825,9 @@ CELERY_TASK_ROUTES = {
         "queue": "celery",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Cheap (one query, then enqueues). On the interactive worker so a long
-    # import on the background worker cannot delay recovery of lost syncs.
+    # Periodic recovery is not awaited by a page. Keep its sweeps off the
+    # interactive worker; viewer-requested syncs select that lane separately.
     "Reconcile statistics sync": {
-        "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
     # History cache rebuilds now bound their inline work (see
@@ -1997,6 +1996,11 @@ CELERY_BEAT_SCHEDULE = {
     "reconcile_statistics_sync": {
         "task": "Reconcile statistics sync",
         "schedule": 60,
+        # DatabaseScheduler owns this safety-net lifetime: replace any old
+        # absolute expiry with a rolling lifetime. The next fresh tick rechecks
+        # durable state, so stale ticks need not replay database work.
+        "expires": None,
+        "options": {"expire_seconds": 60},
     },
     # Outbound deliveries (watched state, ratings) retry through their own
     # next_attempt_at and recover from a lost broker message only if something
