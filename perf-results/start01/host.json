@@ -1,0 +1,22 @@
+{
+  "git_sha": "27b89e56a5a91548ebd4a84eba2fc5bce119fff4",
+  "source": "git archive of the SHA; unrelated working-tree edits excluded",
+  "host_os": "macOS 27.2 (26B5101f), Darwin 27.2.0 arm64",
+  "host_cpu": "Apple M1 Pro",
+  "host_memory_bytes": 17179869184,
+  "docker_engine": "28.1.1",
+  "docker_vm_cpus": 10,
+  "docker_vm_memory_bytes": 8218034176,
+  "container_cpu_quota": 2,
+  "container_memory_bytes": 2147483648,
+  "container_extra_swap_bytes": 0,
+  "container_pids_limit": 256,
+  "container_nofile_soft": 4096,
+  "container_nofile_hard": 4096,
+  "application_load": "sequential readiness probes, then ten library GETs and ten rejected webhook POSTs",
+  "host_load": "shared with other active containers; see per-sample load averages",
+  "cache": "SQLite data file fsync and POSIX_FADV_DONTNEED before each cold start; host SSD cache uncontrolled; Redis flushed except provider catalog fixtures",
+  "providers": "requests HTTP mocked to empty results in Gunicorn/Celery; internal Docker network",
+  "cold_runs_planned_per_size_and_verification": 3,
+  "warm_repeats": "not collected on the heavily contended host; no tail percentiles or idle-host claims"
+}
