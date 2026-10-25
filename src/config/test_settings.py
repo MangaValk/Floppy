@@ -39,6 +39,7 @@ CACHES = {
         "LOCATION": REDIS_CACHE_URL,  # noqa: F405
         "TIMEOUT": 18000,  # 5 hours
         "OPTIONS": {
+            "COMPRESSOR": "app.cache_safety.SizedZlibCompressor",
             "CONNECTION_POOL_KWARGS": {"connection_class": FakeConnection},
         },
     },

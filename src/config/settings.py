@@ -652,6 +652,7 @@ CACHES = {
         "KEY_PREFIX": KEY_PREFIX,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "COMPRESSOR": "app.cache_safety.SizedZlibCompressor",
             "REDIS_CLIENT_CLASS": "app.cache_safety.CacheRedis",
             "CONNECTION_POOL_CLASS": "app.cache_safety.CacheConnectionPool",
             # A cache is allowed to be unavailable. Without this, a slow or full
