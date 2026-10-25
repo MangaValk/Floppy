@@ -66,19 +66,25 @@ class _ResolvedReportPublicationError(OSError):
         self.previous_restored = previous_restored
 
 
-def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
-    """Summarize every relationship conflict without retaining every row."""
+def _inspect_foreign_keys(
+    conn: sqlite3.Connection, only_table: str | None = None
+) -> dict:
+    """Summarize every relationship conflict without retaining every row.
+
+    ``only_table`` limits the scan to one table (``foreign_key_check(table)``).
+    """
     counts = Counter()
     samples = []
     conflict_hash = 0
     can_quarantine = True
     total = 0
 
-    for table, row_id, parent, foreign_key_id in conn.execute(
-        "PRAGMA foreign_key_check"
-    ):
+    pragma = "PRAGMA foreign_key_check"
+    if only_table is not None:
+        pragma += "(" + _quote_identifier(only_table) + ")"
+    for conflict_table, row_id, parent, foreign_key_id in conn.execute(pragma):
         total += 1
-        counts[(table, parent, foreign_key_id)] += 1
+        counts[(conflict_table, parent, foreign_key_id)] += 1
         can_quarantine = can_quarantine and row_id is not None
         if len(samples) < _MAX_CONFLICT_SAMPLES:
             samples.append(
@@ -86,7 +92,7 @@ def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
                     "foreign_key_id": foreign_key_id,
                     "parent": parent,
                     "row": row_id,
-                    "table": table,
+                    "table": conflict_table,
                 }
             )
         conflict_hash = (
@@ -94,7 +100,7 @@ def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
             + int.from_bytes(
                 sha256(
                     json.dumps(
-                        [table, row_id, parent, foreign_key_id],
+                        [conflict_table, row_id, parent, foreign_key_id],
                         separators=(",", ":"),
                     ).encode()
                 ).digest(),

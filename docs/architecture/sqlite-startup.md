@@ -8,9 +8,8 @@ timeout; the entrypoint bounds the whole command, including imports and I/O,
 to 30 seconds (then five seconds to kill it). A kernel storage operation in
 uninterruptible sleep cannot be made healthy by a Python or shell deadline.
 
-An expired 48-hour verification, changed image SHA, absent old verification
-record, interrupted scan or previous timeout requests verification after
-startup. These are not corruption findings. An old record is not proof that
+An expired verification, absent record, interrupted scan or previous timeout
+only lets the sliced background verifier continue; a changed image does not. These are not corruption findings. An old record is not proof that
 the current database is entirely healthy; admission checks only accessibility
 and compatibility. Latent damage outside the pages read can be found later.
 
@@ -90,30 +89,52 @@ No production migration records are faked or deleted.
 
 ## Verification while serving traffic
 
-Supervisor manages `sqlite-verification` independently of Celery and web
-workers. It waits 60 seconds before its first attempt, then checks hourly.
-All automatic full-check attempts are limited to once per 48 hours per database
-file, including failed/interrupted attempts. Hourly wakeups retain the failure
-diagnosis rather than repeatedly copying/scanning a large database.
-A database-adjacent advisory lock excludes duplicate
-comprehensive verifiers. A dead process releases the lock automatically.
+Supervisor runs `sqlite_startup --background` (`sqlite-verification`) 60 seconds
+after start and then every 10 minutes, at lower CPU priority. Each run is a
+**time slice** (`src/config/sqlite_sliced_check.py`); it makes no copy of the
+database and holds no write lock. Hard bounds, all overridable by environment:
 
-The verifier runs at lower CPU priority. The [online backup API](https://www.sqlite.org/c3ref/backup_finish.html) copies 256 pages
-per step and yields between steps, releasing its live read lock between
-steps. Structural checking runs on the private copy. Relational checking runs
-on that copy with periodic yields, after the live connection is closed. It
-holds no live write transaction and no long-lived live scan/read snapshot.
-Retention removes old verification snapshots only after both checks pass;
-failed checks cannot prune the last fully verified recovery copy.
-Continuous writers can force backup retries; the process deadline ends the
-attempt rather than holding availability hostage. This is pacing, not a hard
-storage bandwidth guarantee; monitor traffic on slow/shared storage.
+- one slice: 300 s (`FLOPPY_SQLITE_VERIFY_SLICE_SECONDS`), enforced with
+  `sqlite3_interrupt` because `quick_check` is a single opcode that a progress
+  handler cannot stop;
+- active verification per rolling 24 h: 3600 s (`..._DAILY_SECONDS`);
+- one table's `quick_check`: 150 s (`..._UNIT_SECONDS`), then it falls back to
+  resumable row reads;
+- read transactions last at most one slice, so WAL checkpoints stall at most
+  that long. Connections are read-only, `mmap_size=0`, 64 MiB page cache.
 
-Observe Supervisor state, `[sqlite-verification]` phase/error logs, and
-`DB_FILE.verification.json` (phase, start/elapsed time, backup path, separate
-structural/relational outcomes). A timed-out worker may leave its last running
-phase in the file; the parent logs the deadline failure. Manually request an
-attempt with `python manage.py sqlite_startup --background`.
+Progress lives in `DB_FILE.verification.progress.json` (identity-bound to the
+file, so a replaced database starts over; **not** to the image: a new image
+never restarts or re-triggers verification). It records per-unit `verified_at`,
+`verified_through` (the oldest unit), `unverified_units`, `fk_incomplete` flags
+and the slice ledger. Units are re-verified after 7 days, oldest first. Because
+work is capped per day and persisted, a database too slow to finish in a day
+simply takes several days to cover, rather than hours in one run; this is
+visible, never silent.
+
+Per-unit coverage, which is deliberately different from one full `quick_check`:
+
+| Unit | Detects | Does not detect |
+|---|---|---|
+| `__pages__`: sequential read in 8 MiB chunks, resumable | unreadable sectors/I/O errors, truncation; header `page_count` vs file size; `freelist_count` sanity | page contents are not interpreted |
+| `quick_check(table)` per table (includes that table's indexes) | b-tree/page/record-format damage | nothing beyond `quick_check` itself (it never compared indexes with tables) |
+| `rows` fallback (table over its 150 s unit budget) | every record and overflow chain decodes, descent root to leaf | page-level invariants and **that table's indexes** |
+| `foreign_key_check(table)` | relationship conflicts | a table whose check exceeds the slice is marked `fk_incomplete` and retried; it can stay incomplete on very slow storage |
+
+Findings use the existing reports: damage writes a `corrupt` incident and
+conflicts a `blocked` one, both of which block the next start; live rows are
+never touched. Busy/I/O/interrupted errors are transient and retried.
+The previous design copied the whole database (read plus write), ran
+`quick_check` and `foreign_key_check` on the copy under a one-hour kill, and
+therefore could not finish on a 5 GB database on slow storage while contending
+for the same disk. That path remains only for `--prepare-migrations`
+(maintenance window, snapshot required for the migration permit). The
+background run no longer produces verification copies; recovery copies come from
+the scheduled snapshot task (whose own `quick_check` of its copy is not yet
+sliced).
+
+Observe `[sqlite-verification] slice status=...` logs and the progress file.
+Manually run a slice with `python manage.py sqlite_startup --background`.
 
 A snapshot passing `quick_check` establishes structural integrity of its
 copy only. It does **not** establish relational integrity. Existing scheduled

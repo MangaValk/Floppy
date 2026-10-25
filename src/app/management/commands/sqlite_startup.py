@@ -21,6 +21,7 @@ from config.sqlite_availability import (
     startup_gate,
     verify_snapshot,
 )
+from config.sqlite_sliced_check import run_slice
 from config.sqlite_startup_watchdog import _stop
 
 
@@ -101,6 +102,15 @@ class Command(BaseCommand):
             elif maintenance:
                 if options["background"]:
                     os.nice(10)
+                    state = run_slice(db_path)
+                    integrity._log(
+                        f"[sqlite-verification] slice status={state['status']} "
+                        f"verified_through={state.get('verified_through')} "
+                        f"unverified={state.get('unverified_units', [])}"
+                    )
+                    if state["status"] in {"failed", "blocked"}:
+                        raise CommandError(state.get("error", state["status"]))
+                    return
                 verify_snapshot(
                     db_path,
                     Path(settings.BACKUP_DIR) / "verification",
