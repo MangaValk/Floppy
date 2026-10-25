@@ -798,6 +798,7 @@ LANGUAGES = [
     ("de", "Deutsch"),
     ("es", "Español"),
     ("fr", "Français"),
+    ("ru", "Русский"),
     ("it", "Italiano"),
 ]
 
