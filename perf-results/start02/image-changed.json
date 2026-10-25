@@ -1,0 +1,102 @@
+[
+  {
+    "Id": "sha256:f0134805addfd356fd3843ec3efd95f3538e48faf37a7796fb1b231d8253e942",
+    "RepoTags": [
+      "floppy:start02-changed"
+    ],
+    "RepoDigests": [],
+    "Parent": "",
+    "Comment": "buildkit.dockerfile.v0",
+    "Created": "2026-10-24T00:11:48.127212875Z",
+    "DockerVersion": "",
+    "Author": "",
+    "Config": {
+      "Hostname": "",
+      "Domainname": "",
+      "User": "",
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "AttachStderr": false,
+      "ExposedPorts": {
+        "8000/tcp": {}
+      },
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "PATH=/opt/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "LANG=C.UTF-8",
+        "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+        "PYTHON_VERSION=3.12.15",
+        "PYTHON_SHA256=c2c4321961fab0fb999d66e0cecf521c2ab3994c7992873ea99e306c1094fd5a",
+        "PYTHONUNBUFFERED=1",
+        "VIRTUAL_ENV=/opt/venv",
+        "VERSION=dev",
+        "COMMIT_SHA=9d460bc3523a51280fad55cf763845fbf9d784d3",
+        "FLOPPY_CELERY_ROLE=background",
+        "FLOPPY_CELERY_QUEUES=celery",
+        "FLOPPY_START_INTERACTIVE_WORKER=true",
+        "FLOPPY_START_DISCOVER_WORKER=true",
+        "FLOPPY_SUPERVISORD_LOG=AUTO"
+      ],
+      "Cmd": [
+        "/runtime-entrypoint.sh"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD-SHELL",
+          "port=\"$(cat /run/floppy/server-port 2>/dev/null)\"       && case \"$port\" in *[!0-9]*|'') exit 1 ;; esac       && wget --no-verbose --tries=1 --spider \"http://127.0.0.1:${port}/health/\"       || exit 1"
+        ],
+        "Interval": 45000000000,
+        "Timeout": 15000000000,
+        "StartPeriod": 30000000000,
+        "Retries": 5
+      },
+      "ArgsEscaped": true,
+      "Image": "",
+      "Volumes": null,
+      "WorkingDir": "/floppy",
+      "Entrypoint": null,
+      "OnBuild": null,
+      "Labels": null
+    },
+    "Architecture": "arm64",
+    "Os": "linux",
+    "Size": 263779072,
+    "GraphDriver": {
+      "Data": {
+        "LowerDir": "/var/lib/docker/overlay2/fnexuy255uk21v8jn55zhx0k1/diff:/var/lib/docker/overlay2/12ug7eydxklgsp7l7xj9hh0qs/diff:/var/lib/docker/overlay2/jsxauyds1hf2m1tixtxvos8ly/diff:/var/lib/docker/overlay2/m6sggsyb8ptdse4a83wdi5p7p/diff:/var/lib/docker/overlay2/eb4oswfmht1vvy58ninpn3r9m/diff:/var/lib/docker/overlay2/m90gulw84yiakhhswvqrbpnmc/diff:/var/lib/docker/overlay2/hknai4r0jtdbut3qirep63j90/diff:/var/lib/docker/overlay2/7804yxwtkjwlirwfi1cfs2e5r/diff:/var/lib/docker/overlay2/yq7lt0e2yxx6isrshl64bayd5/diff:/var/lib/docker/overlay2/ylvl5kfvljxrfb8wugdam1jby/diff:/var/lib/docker/overlay2/ci2i958ykuy06jtf8zj459spb/diff:/var/lib/docker/overlay2/pi99u1tvitc97nv08op49eyen/diff:/var/lib/docker/overlay2/qb5g64j4473tonmidkcrktruo/diff:/var/lib/docker/overlay2/da351d544390adfc2a03d83379a280f2a7b2818d3cd8fa1327f737014934a73b/diff:/var/lib/docker/overlay2/0430f6e453f0ea1cdb1a3337ee108af028f555de7bd96cd3e521b4a4de1a66e5/diff:/var/lib/docker/overlay2/724cbbe4e45a293a5c36776a92f55a72468f5387e07f1db0d955fa4f39a7ade2/diff:/var/lib/docker/overlay2/d97ca9dca53d8b91573f819953a65214802e8f871875d949c476b07403a23936/diff",
+        "MergedDir": "/var/lib/docker/overlay2/cmub6jojjg7u4vf0rdisq2ef8/merged",
+        "UpperDir": "/var/lib/docker/overlay2/cmub6jojjg7u4vf0rdisq2ef8/diff",
+        "WorkDir": "/var/lib/docker/overlay2/cmub6jojjg7u4vf0rdisq2ef8/work"
+      },
+      "Name": "overlay2"
+    },
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:a278e6f39431cd0ed74238a3d377893ad0d905d68b676bf9a65529080669756b",
+        "sha256:0a90ad252fa6bd52e0bf56fbd8c765d03988d8056d22f72a8d82778e1e9428f7",
+        "sha256:01089d1007fd36db986110b8f7b07322c4332e7951c25627b62f998e2f47d2ff",
+        "sha256:34e1ac0442411ab9324c01f69fbbda3215112f41fbd1e6bda9b9e084ee8be76a",
+        "sha256:4f4b3354b114ee81318b193c66d466b376ee33ecfc0db884a070f0c0bca25fd5",
+        "sha256:a09437ffdcd1286c984786b3f99dab1b3b71e71d32a9b2d67bc8b63a39e62776",
+        "sha256:1b24e025f7504b94d453e1d641a5c67e6a16a68140101a14e9a4f07806e151a7",
+        "sha256:633849e3fb82e5d2698dbf446963cc5c521bf2b258410175380a9cfe7872d737",
+        "sha256:7d5e26f18d397d046f2ddd146662db03bc678d4abd829322f5c6e7940860a900",
+        "sha256:152c0adede5c2c2e5637dca70b1c3f47239b9122a241410bf4213b188c2881ff",
+        "sha256:d77e64dd181c9b184c11541cd44e829bac98e246655d3d2828c3669512625385",
+        "sha256:d5201a0084cae0955203492678d7a7309445c047763e8d5c864fe973773df3e6",
+        "sha256:d976e2fdaed28cc3302cdf41ed9d0ca6606f3449fc3d2c02c1c307a38d7e8ac9",
+        "sha256:fc3981a629884edcfc7d26ca3efa16b1fbc9d4da8f05eb559aa61d65c602bda9",
+        "sha256:2a3d34fe125cbad5b0c437d1a045a07cfef90321fc3e95359d1f30f43b81c255",
+        "sha256:f21e2d17c551ffcb0533a5afc6ada9a7735720128891b99392e44131e77c57d1",
+        "sha256:496814b6892a89b271ef834ef4ace29f6ae24a425c9230f8e7bb5699029e1840",
+        "sha256:47f98250ecb0ffd60ef55a9de5cddc9f65d6b21ba2fd2dcbd503ceb3413291b2"
+      ]
+    },
+    "Metadata": {
+      "LastTagTime": "2026-10-24T00:11:59.044039672Z"
+    }
+  }
+]
