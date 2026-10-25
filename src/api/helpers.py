@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus as HTTP  # noqa: N814
 
-from django.db.models import Count, OuterRef, Subquery
+from django.db.models import Count, OuterRef, Subquery, prefetch_related_objects
 from django.utils.dateparse import parse_date
 from django.utils.timezone import localdate
 from rest_framework.response import Response
@@ -581,9 +581,10 @@ def paginate_list_items(request, user, user_list):
         items = items[offset : offset + limit]
 
     media_objects = []
+    prefetch_groups = {}
     for item in items:
         # Shows info about the last consumption of the media if it's tracked
-        media = BasicMedia.objects.filter_media_prefetch(
+        queryset = BasicMedia.objects.filter_media_prefetch(
             user,
             item.media_id,
             item.media_type,
@@ -591,9 +592,23 @@ def paginate_list_items(request, user, user_list):
             season_number=item.season_number,
             episode_number=item.episode_number,
             annotate_progress=False,
-        ).first()
+        )
+        # The prefetches run once per media type below instead of once per
+        # item (four extra queries each): same lookups, one batched query each.
+        lookups = queryset._prefetch_related_lookups  # noqa: SLF001
+        media = queryset.prefetch_related(None).first()
+        if media is not None:
+            group = prefetch_groups.setdefault(
+                (type(media), item.media_type),
+                (lookups, []),
+            )
+            group[1].append(media)
 
         media_objects.append(media if media is not None else item)
+
+    for lookups, group_media in prefetch_groups.values():
+        if lookups:
+            prefetch_related_objects(group_media, *lookups)
 
     BasicMedia.objects.annotate_episode_progress(
         [media for media in media_objects if getattr(media, "item", None) is not None],
