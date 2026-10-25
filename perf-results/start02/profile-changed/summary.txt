@@ -1,0 +1,23 @@
+Fri Oct 23 19:14:09 2026    perf-results/start02/profile-changed/static_check.prof
+
+         227866 function calls (218050 primitive calls) in 0.477 seconds
+
+   Ordered by: cumulative time
+   List reduced from 383 to 15 due to restriction <15>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.461    0.461 static_collection.py:1(<module>)
+        1    0.001    0.001    0.363    0.363 static_collection.py:63(collection_is_current)
+       32    0.010    0.000    0.345    0.011 static_collection.py:39(_tree)
+        2    0.000    0.000    0.182    0.091 {built-in method builtins.all}
+       32    0.000    0.000    0.182    0.006 static_collection.py:85(<genexpr>)
+      614    0.010    0.000    0.162    0.000 pathlib.py:663(relative_to)
+      742    0.109    0.000    0.111    0.000 {built-in method posix.stat}
+      646    0.000    0.000    0.104    0.000 pathlib.py:842(lstat)
+      685    0.001    0.000    0.104    0.000 pathlib.py:835(stat)
+      9/2    0.000    0.000    0.097    0.049 <frozen importlib._bootstrap>:1349(_find_and_load)
+      9/2    0.001    0.000    0.097    0.048 <frozen importlib._bootstrap>:1304(_find_and_load_unlocked)
+      614    0.002    0.000    0.080    0.000 pathlib.py:690(is_relative_to)
+     5658    0.004    0.000    0.070    0.000 <frozen _collections_abc>:1022(__iter__)
+      9/2    0.000    0.000    0.068    0.034 <frozen importlib._bootstrap>:911(_load_unlocked)
+      6/2    0.000    0.000    0.068    0.034 <frozen importlib._bootstrap_external>:993(exec_module)
