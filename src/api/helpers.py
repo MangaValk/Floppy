@@ -595,7 +595,7 @@ def paginate_list_items(request, user, user_list):
         )
         # The prefetches run once per media type below instead of once per
         # item (four extra queries each): same lookups, one batched query each.
-        lookups = queryset._prefetch_related_lookups  # noqa: SLF001
+        lookups = queryset._prefetch_related_lookups
         media = queryset.prefetch_related(None).first()
         if media is not None:
             group = prefetch_groups.setdefault(
