@@ -2402,6 +2402,18 @@ class Episode(models.Model):
         # range; without this they walked every episode the user watched.
         indexes = [
             models.Index(fields=["end_date"], name="app_episode_end_date_idx"),
+            # The user predicate reaches episodes through their seasons; these
+            # let each season be probed by date. The partial index serves the
+            # open-play branch (`end_date IS NULL AND start_date ...`).
+            models.Index(
+                fields=["related_season", "end_date"],
+                name="app_episode_season_end_idx",
+            ),
+            models.Index(
+                fields=["related_season", "start_date"],
+                name="app_episode_season_open_idx",
+                condition=models.Q(end_date__isnull=True),
+            ),
         ]
         constraints = [
             models.UniqueConstraint(
