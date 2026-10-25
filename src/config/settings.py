@@ -559,7 +559,7 @@ else:
 
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.sqlite3",
+            "ENGINE": "config.sqlite_backend",
             "NAME": FLOPPY_DB_PATH,
             "OPTIONS": {
                 "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
@@ -1802,10 +1802,12 @@ CELERY_TASK_ROUTES = {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Budget-bounded, and yields to webhooks. See
-    # docs/architecture/statistics-sync.md.
+    # Budget-bounded bulk derived work: ordinary syncs stay off the interactive
+    # lane so webhooks and manual refreshes never wait behind a range aggregate.
+    # The task itself overrides the queue to interactive for urgent requests.
+    # See docs/architecture/statistics-sync.md.
     "app.tasks.statistics_sync_task": {
-        "queue": "interactive",
+        "queue": "celery",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
     # The trailing half of the credits Statistics debounce: one state update
@@ -1814,10 +1816,10 @@ CELERY_TASK_ROUTES = {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Rebuilds a talent section the viewer already sees a stale copy of; same
-    # priority as the sync so webhook scrobbles still run first.
+    # Rebuilds a talent section the viewer already sees a stale copy of. It is a
+    # full talent scan, so it belongs with the other bulk derived work.
     "Refresh statistics talent fragment": {
-        "queue": "interactive",
+        "queue": "celery",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
     # Cheap (one query, then enqueues). On the interactive worker so a long

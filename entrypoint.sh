@@ -191,15 +191,20 @@ fi
 # Bounded, retrying migrate: a blocked migration must fail loudly and retry
 # instead of wedging the container as "unhealthy" forever (issue #341).
 # lock_timeout is libpq-only (ignored on SQLite) and fires only while waiting
-# on a lock, so long data migrations are unaffected. Retries escalate to
-# verbosity 2 so Django names each pre/post-migrate handler phase in the logs.
+# on a lock. The separate 900s wall-clock limit also bounds active work.
+# Verbosity 2 and unbuffered output name each migration/handler phase from the
+# first attempt, including when stdout is a Docker pipe.
 migrate_attempts=0
-migrate_verbosity=1
 until echo "[entrypoint] Applying database migrations (attempt $((migrate_attempts + 1)))" >&2 && \
-      DB_POOL_ENABLED=false PGOPTIONS="-c lock_timeout=120s" \
-      timeout 900 python manage.py migrate --noinput -v "$migrate_verbosity"; do
+      PYTHONUNBUFFERED=1 DB_POOL_ENABLED=false PGOPTIONS="-c lock_timeout=120s" \
+      timeout 900 python manage.py migrate --noinput -v 2; do
+    migrate_status=$?
     migrate_attempts=$((migrate_attempts + 1))
-    migrate_verbosity=2
+    if [ "$migrate_status" -eq 124 ]; then
+        echo "[entrypoint] Migration attempt reached the 900s timeout. This does not establish whether it was stalled or still progressing; inspect the last migration/handler phase and database I/O." >&2
+    else
+        echo "[entrypoint] Migration command exited with status ${migrate_status}; see the error above." >&2
+    fi
     if [ "$migrate_attempts" -ge 5 ]; then
         echo "[entrypoint] Migrations failed after ${migrate_attempts} attempts, exiting" >&2
         # This path exits, so a restart policy puts the container into a restart
