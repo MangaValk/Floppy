@@ -176,6 +176,7 @@ from app.tasks_credits import (  # noqa: E402
 )
 from app.tasks_db_backup import write_database_snapshot  # noqa: E402
 from app.tasks_discover import (  # noqa: E402
+    purge_expired_discover_caches,
     refresh_discover_profiles,
     refresh_discover_rows,
     refresh_discover_tab_cache,
