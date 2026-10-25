@@ -452,6 +452,53 @@ class MediaDetailsViewTests(TestCase):
             status_code=503,
         )
 
+    @patch("app.media_details_views._build_series_graph_data", return_value=None)
+    @patch("app.providers.services.get_media_metadata")
+    def test_secondary_fragment_skips_series_graph_scans(
+        self,
+        mock_get_metadata,
+        mock_graph,
+    ):
+        """Only the shell renders the series graphs, so only it scans episodes."""
+        item = Item.objects.create(
+            media_id="279978",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Graph Show",
+            image="https://example.com/graph-show.jpg",
+        )
+        TV.objects.create(item=item, user=self.user, status=Status.IN_PROGRESS.value)
+        mock_get_metadata.return_value = {
+            "media_id": item.media_id,
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            "title": "Graph Show",
+            "image": item.image,
+            "synopsis": "",
+            "details": {},
+            "related": {},
+            "cast": [],
+            "crew": [],
+            "studios_full": [],
+        }
+        url = reverse(
+            "media_details",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.TV.value,
+                "media_id": item.media_id,
+                "title": "graph-show",
+            },
+        )
+
+        response = self.client.get(url, {"fragment": "secondary"})
+        self.assertEqual(response.status_code, 200)
+        mock_graph.assert_not_called()
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_graph.call_count, 3)
+
     @patch("app.providers.services.get_media_metadata")
     def test_media_details_keeps_tracked_tmdb_show_available_when_provider_returns_404(
         self,
