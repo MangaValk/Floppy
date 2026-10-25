@@ -573,6 +573,37 @@ def _enabled_history_media_types(user):
     return allowed_types
 
 
+class _IndexedHistoryDays:
+    """Days of a date-bounded history, read a page at a time from the index."""
+
+    def __init__(self, user, filters, date_filters, logging_style):
+        self._user = user
+        self._filters = filters
+        self._date_filters = date_filters
+        self._logging_style = logging_style
+        self._total = None
+
+    def _window(self, limit, offset):
+        return history_cache_reader.get_cached_history_window(
+            self._user,
+            limit=limit,
+            offset=offset,
+            filters=self._filters or None,
+            logging_style_override=self._logging_style,
+            date_filters=self._date_filters,
+            allowed_media_types=_enabled_history_media_types(self._user),
+        )
+
+    def __len__(self):
+        if self._total is None:
+            self._total = self._window(0, 0)[1]
+        return self._total
+
+    def __getitem__(self, key):
+        start, stop, _ = key.indices(len(self))
+        return self._window(stop - start, start)[0] if stop > start else []
+
+
 def _can_use_cached_month_history(
     history_mode,
     filters,
@@ -1170,6 +1201,10 @@ def history(request):
                     logging_style=logging_style,
                 )
                 history_refreshing = False
+            elif date_filters and set(filters).issubset({"media_type"}):
+                # Date bounds only drop whole days, so page the day index
+                # rather than rebuilding every matching play.
+                history_days_all = None
             else:
                 history_days_all = history_cache.get_history_days(
                     request.user,
@@ -1178,12 +1213,27 @@ def history(request):
                     logging_style_override=logging_style,
                 )
 
-            history_days_all = _filter_history_by_enabled_media_types(
-                history_days_all,
-                request.user,
-            )
-
-            paginator = Paginator(history_days_all, history_cache.HISTORY_DAYS_PER_PAGE)
+            if history_days_all is None:
+                history_days_all = _IndexedHistoryDays(
+                    request.user,
+                    filters,
+                    date_filters,
+                    logging_style,
+                )
+                page_number = max(page_number, 1)
+                paginator = Paginator(
+                    history_days_all,
+                    history_cache.HISTORY_DAYS_PER_PAGE,
+                )
+            else:
+                history_days_all = _filter_history_by_enabled_media_types(
+                    history_days_all,
+                    request.user,
+                )
+                paginator = Paginator(
+                    history_days_all,
+                    history_cache.HISTORY_DAYS_PER_PAGE,
+                )
 
             if paginator.count == 0:
                 page_obj = None

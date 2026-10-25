@@ -392,8 +392,12 @@ def get_cached_history_window(
     logging_style_override=None,
     max_entries_per_day=None,
     date_filters=None,
+    allowed_media_types=None,
 ):
-    """Read one API page from indexed/day-cached history payloads.
+    """Read one page of days from indexed/day-cached history payloads.
+
+    `allowed_media_types` narrows the entry types further (the viewer's
+    enabled media types), intersected with any `media_type` filter.
 
     `date_filters` are applied to the day index rather than to the builders.
     start_date/end_date are whole-day bounds, so a date range only ever drops
@@ -416,6 +420,12 @@ def get_cached_history_window(
 
     logging_style = _normalize_logging_style(logging_style_override, user)
     requested_media_types = expand_history_media_types(filters.get("media_type"))
+    if allowed_media_types is not None:
+        requested_media_types = (
+            set(allowed_media_types)
+            if requested_media_types is None
+            else requested_media_types & set(allowed_media_types)
+        )
     cache_entry = cache.get(_cache_key(user.id, logging_style))
     if requested_media_types is not None:
         era = _current_history_era(user.id, logging_style)
@@ -504,27 +514,28 @@ def get_cached_history_window(
         history_days.append(day_payload)
 
     for day_key in missing_day_keys:
+        # Build the whole day so the payload can be cached for every reader,
+        # then narrow it to the requested types.
         day_payload = build_history_day(
             user,
             day_key,
             logging_style_override=logging_style,
-            media_types=requested_media_types,
         )
         if day_payload is None:
             continue
-        history_days.append(
-            _window_history_day(
-                day_payload,
-                max_entries=entry_cap,
-                media_types=requested_media_types,
-            )
+        cache.set(
+            _day_cache_key(user.id, logging_style, day_key),
+            _serialize_history_day(day_payload),
+            timeout=HISTORY_DAY_CACHE_TIMEOUT,
         )
-        if requested_media_types is None:
-            cache.set(
-                _day_cache_key(user.id, logging_style, day_key),
-                _serialize_history_day(day_payload),
-                timeout=HISTORY_DAY_CACHE_TIMEOUT,
-            )
+        windowed = _window_history_day(
+            day_payload,
+            max_entries=entry_cap,
+            media_types=requested_media_types,
+        )
+        if requested_media_types is not None and not windowed["entry_count"]:
+            continue
+        history_days.append(windowed)
 
     history_days.sort(key=lambda day: day.get("date") or date.min, reverse=True)
 
