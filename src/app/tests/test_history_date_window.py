@@ -166,6 +166,32 @@ class HistoryDateWindowTests(HistoryWindowFixture):
         }
         self.assertEqual(media_types, {MediaTypes.EPISODE.value})
 
+    def test_filtered_cold_day_does_not_poison_the_shared_cache(self):
+        """A later unfiltered reader still sees every category on the day."""
+        day = (self.today - timedelta(days=2)).date().isoformat()
+        params = {"limit": 1, "offset": 0, "date_filters": {
+            "start_date": day, "end_date": day,
+        }}
+        cold, _ = history_cache_reader.get_cached_history_window(
+            self.user, filters={"media_type": MediaTypes.TV.value}, **params,
+        )
+        self.assertEqual(
+            {entry["media_type"] for entry in cold[0]["entries"]},
+            {MediaTypes.EPISODE.value},
+        )
+        complete, _ = history_cache_reader.get_cached_history_window(self.user, **params)
+        self.assertEqual(
+            {entry["media_type"] for entry in complete[0]["entries"]},
+            {MediaTypes.EPISODE.value, MediaTypes.MOVIE.value},
+        )
+        warm, _ = history_cache_reader.get_cached_history_window(
+            self.user, filters={"media_type": MediaTypes.MOVIE.value}, **params,
+        )
+        self.assertEqual(
+            {entry["media_type"] for entry in warm[0]["entries"]},
+            {MediaTypes.MOVIE.value},
+        )
+
     def test_the_api_page_does_not_scale_with_the_history(self):
         """Adding days outside the page must not add queries or entries."""
         date_filters = self._range()
