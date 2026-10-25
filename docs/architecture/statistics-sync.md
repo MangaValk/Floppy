@@ -195,8 +195,11 @@ successor-arrives-mid-range case.
 
 ## The reconciler — why a lost message cannot strand a page
 
-`Reconcile statistics sync` runs every 60 s (on the interactive worker, so a
-long import on the background worker cannot delay it). One query finds users
+`Reconcile statistics sync` is published every 60 s on the default `celery`
+queue, with no queue override in its route. A page does not await this periodic
+sweep; viewer-requested urgent syncs choose the interactive lane independently.
+Background-worker saturation can delay periodic recovery until capacity returns.
+The sweep finds users
 whose lease is free and who have dirty rows, an unsynced generation, a pending
 full sweep, overdue heavy ranges, or a `synced_day` before today — and queues a
 sync for each. That covers every way a sync message can go missing (a dropped
@@ -210,19 +213,21 @@ canonical entry explicitly clears any previous absolute expiry (`expires=None`)
 in favor of that rolling lifetime; its persisted enabled/disabled state is
 preserved. These fields rely on the configured Django DatabaseScheduler, and
 apply only to this canonical entry, leaving differently named legacy rows alone.
-When the interactive
-worker resumes, Celery discards expired ticks before running their database
+When the background worker resumes, Celery discards expired ticks before running their database
 queries; the next fresh tick still finds durable unfinished work. Redis may
 retain expired envelopes until a consumer discards them. This applies to new
 publications; older messages without an expiry keep their original lifetime.
 It does not detect duplicate Beat producers or remove legacy periodic schedules.
+Routing changes also affect new publications only: previously queued messages
+retain their original queue and expiry, and remain registered for consumption.
 
 The reconciler does not publish a second per-user sync message while the last one
 is still waiting. A successful enqueue writes `stats:sync:pending:{uid}`; the task
 deletes it when it starts, and the marker expires after the lease window
 (`STATISTICS_SYNC_LEASE_SECONDS`) if delivery was lost before that. So a busy
-worker sees one queued sync per user instead of one per 60 s tick, while a
-genuinely lost message is still recovered within one lease window. The 5-second
+worker sees one queued sync per user instead of one per 60 s tick. A lost
+publication becomes eligible for recovery when its marker expires and a fresh
+tick can run. The 5-second
 interactive gate still coalesces rapid marks; the scheduled path uses the
 pending marker because a tick interval outlives the gate.
 

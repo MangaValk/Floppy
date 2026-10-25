@@ -1825,10 +1825,9 @@ CELERY_TASK_ROUTES = {
         "queue": "celery",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Cheap (one query, then enqueues). On the interactive worker so a long
-    # import on the background worker cannot delay recovery of lost syncs.
+    # Periodic recovery is not awaited by a page. Keep its sweeps off the
+    # interactive worker; viewer-requested syncs select that lane separately.
     "Reconcile statistics sync": {
-        "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
     # History cache rebuilds now bound their inline work (see

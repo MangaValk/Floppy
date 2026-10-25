@@ -843,7 +843,7 @@ class ReconcilerTests(StatisticsSyncTestCase):
 
         self.assertIn(self.user.id, statistics_sync.users_needing_sync())
 
-    def test_reconcile_is_scheduled_every_minute_on_the_interactive_lane(self):
+    def test_reconcile_is_scheduled_every_minute_on_the_default_lane(self):
         from django.conf import settings
 
         entry = settings.CELERY_BEAT_SCHEDULE["reconcile_statistics_sync"]
@@ -851,7 +851,7 @@ class ReconcilerTests(StatisticsSyncTestCase):
         self.assertLessEqual(entry["schedule"], 60)
         self.assertEqual(entry["options"]["expire_seconds"], entry["schedule"])
         route = settings.CELERY_TASK_ROUTES["Reconcile statistics sync"]
-        self.assertEqual(route["queue"], "interactive")
+        self.assertNotIn("queue", route)
 
 
 
