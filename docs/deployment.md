@@ -622,10 +622,11 @@ See [docs/architecture/log-redaction.md](architecture/log-redaction.md).
 
 ## Upgrading container images
 
-For SQLite upgrades with pending migrations, stop writers and run
+For SQLite upgrades with pending migrations, the container takes a verified
+recovery snapshot [automatically at startup](architecture/sqlite-startup.md#pending-migrations-automatic-snapshot-at-startup)
+before migrating. Set `FLOPPY_SQLITE_AUTO_SNAPSHOT=false` to require
 [offline migration preparation](architecture/sqlite-startup.md#pending-migrations-explicit-offline-preparation)
-using the new image before starting it. Routine restarts with no pending
-migrations do not require this full verification.
+instead. Routine restarts with no pending migrations do not require this.
 
 **Before pulling or recreating a pickle-era deployment**, complete the
 [Celery drain procedure](security-hardening.md#celery-json-transition)
