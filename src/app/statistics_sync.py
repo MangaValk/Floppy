@@ -65,9 +65,12 @@ HEAVY_RANGES = (
     "All Time",
 )
 WARM_DAY_COUNT = 2
-# The dedicated worker runs one task at a time, so a sync yields at its next
-# boundary to anything queued at webhook priority instead of making it wait.
+# Ordinary syncs are bulk derived work and run on the background worker, so a
+# webhook or a manual refresh never shares the interactive worker's only slot
+# with a range aggregate. The sync still yields at each boundary when webhook
+# work is queued, because both workers write the same SQLite database.
 INTERACTIVE_QUEUE = "interactive"
+BACKGROUND_QUEUE = "celery"
 # What a range cost the last time it was built, so a task can tell whether the
 # next one fits in what is left of its budget.
 RANGE_COST_TIMEOUT = 7 * 24 * 60 * 60
@@ -405,7 +408,13 @@ def ensure_sync(user_id: int, *, urgent: bool = False, scheduled=False) -> bool:
             if urgent
             else settings.CELERY_TASK_PRIORITY_STATISTICS_SYNC
         )
-        statistics_sync_task.apply_async(args=[user_id], priority=priority)
+        # Urgent means the user is waiting (manual refresh, first build), so it
+        # keeps the interactive lane. Everything a playback merely marked is
+        # bulk work on the background lane.
+        queue = INTERACTIVE_QUEUE if urgent else BACKGROUND_QUEUE
+        statistics_sync_task.apply_async(
+            args=[user_id], priority=priority, queue=queue
+        )
     except Exception as exc:  # pragma: no cover - broker unavailable
         cache.delete(_gate_key(user_id))
         if scheduled:

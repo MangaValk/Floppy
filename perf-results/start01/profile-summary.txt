@@ -1,0 +1,70 @@
+
+perf-results/start01/raw/baseline-large-unverified-cold-1/_warm_cache.prof
+Fri Oct 23 13:53:58 2026    perf-results/start01/raw/baseline-large-unverified-cold-1/_warm_cache.prof
+
+         594 function calls (592 primitive calls) in 0.904 seconds
+
+   Ordered by: cumulative time
+   List reduced from 111 to 12 due to restriction <12>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.001    0.001    0.904    0.904 sqlite_recovery_policy.py:596(_warm_cache)
+        1    0.026    0.026    0.897    0.897 sqlite_integrity.py:385(warm_database_cache)
+       54    0.870    0.016    0.870    0.016 {method 'readinto' of '_io.FileIO' objects}
+        1    0.000    0.000    0.006    0.006 sqlite_recovery_policy.py:64(emit)
+        1    0.000    0.000    0.006    0.006 sqlite_integrity.py:209(write_startup_status)
+        1    0.000    0.000    0.006    0.006 sqlite_integrity.py:652(_publish_report)
+        2    0.005    0.002    0.005    0.002 {built-in method posix.fsync}
+        1    0.000    0.000    0.003    0.003 sqlite_integrity.py:644(_fsync_directory)
+       12    0.000    0.000    0.000    0.000 pathlib.py:447(__fspath__)
+        1    0.000    0.000    0.000    0.000 pathlib.py:1366(replace)
+       13    0.000    0.000    0.000    0.000 pathlib.py:437(__str__)
+        1    0.000    0.000    0.000    0.000 {built-in method posix.replace}
+
+
+
+perf-results/start01/raw/baseline-large-unverified-cold-1/_scan_and_publish_block.prof
+Fri Oct 23 13:54:02 2026    perf-results/start01/raw/baseline-large-unverified-cold-1/_scan_and_publish_block.prof
+
+         9257 function calls (9250 primitive calls) in 4.070 seconds
+
+   Ordered by: cumulative time
+   List reduced from 120 to 12 due to restriction <12>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.001    0.001    4.070    4.070 sqlite_recovery_policy.py:255(_scan_and_publish_block)
+        2    0.000    0.000    4.023    2.012 sqlite_recovery_policy.py:101(_run_with_progress)
+        2    4.005    2.002    4.020    2.010 {method 'execute' of 'sqlite3.Connection' objects}
+        1    0.000    0.000    2.447    2.447 sqlite_recovery_policy.py:267(<lambda>)
+        1    0.000    0.000    1.576    1.576 sqlite_recovery_policy.py:297(<lambda>)
+        1    0.001    0.001    1.576    1.576 sqlite_integrity.py:69(_inspect_foreign_keys)
+        3    0.000    0.000    0.036    0.012 sqlite_recovery_policy.py:64(emit)
+        3    0.001    0.000    0.036    0.012 sqlite_integrity.py:209(write_startup_status)
+        3    0.001    0.000    0.029    0.010 sqlite_integrity.py:652(_publish_report)
+        6    0.022    0.004    0.022    0.004 {built-in method posix.fsync}
+     3922    0.011    0.000    0.016    0.000 sqlite_recovery_policy.py:114(progress)
+        1    0.007    0.007    0.007    0.007 {method 'close' of 'sqlite3.Connection' objects}
+
+
+
+perf-results/start01/raw/baseline-large-unverified-cold-1/_skip_recently_verified.prof
+Fri Oct 23 13:53:57 2026    perf-results/start01/raw/baseline-large-unverified-cold-1/_skip_recently_verified.prof
+
+         131 function calls (130 primitive calls) in 0.000 seconds
+
+   Ordered by: cumulative time
+   List reduced from 48 to 12 due to restriction <12>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.000    0.000 sqlite_recovery_policy.py:566(_skip_recently_verified)
+        1    0.000    0.000    0.000    0.000 sqlite_integrity.py:332(recent_verification)
+        1    0.000    0.000    0.000    0.000 sqlite_integrity.py:296(_verified_path)
+        1    0.000    0.000    0.000    0.000 pathlib.py:1228(resolve)
+        1    0.000    0.000    0.000    0.000 <frozen posixpath>:420(realpath)
+        3    0.000    0.000    0.000    0.000 pathlib.py:447(__fspath__)
+        3    0.000    0.000    0.000    0.000 pathlib.py:437(__str__)
+        1    0.000    0.000    0.000    0.000 <frozen posixpath>:429(_joinrealpath)
+    12/11    0.000    0.000    0.000    0.000 {built-in method posix.fspath}
+        3    0.000    0.000    0.000    0.000 pathlib.py:551(drive)
+        2    0.000    0.000    0.000    0.000 pathlib.py:407(_load_parts)
+        2    0.000    0.000    0.000    0.000 pathlib.py:387(_parse_path)

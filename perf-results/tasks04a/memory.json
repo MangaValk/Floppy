@@ -1,0 +1,211 @@
+{
+  "baseline_separate": {
+    "runs": 5,
+    "idle_child_uss_mib": 54.53125,
+    "idle_child_rss_mib": 61.375,
+    "idle_parent_rss_mib": 29.796875,
+    "idle_total_private_mib": 168.921875,
+    "loaded_max_child_uss_mib": 64.71875,
+    "loaded_max_child_rss_mib": 71.21875,
+    "per_run": [
+      {
+        "idle": {
+          "child_uss": 54.6015625,
+          "child_rss": 61.4375,
+          "parent_rss": 30.203125,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 64.71875,
+          "max_child_rss": 71.21875
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 54.53125,
+          "child_rss": 61.359375,
+          "parent_rss": 31.0859375,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 66.09375,
+          "max_child_rss": 72.859375
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 54.4609375,
+          "child_rss": 61.3046875,
+          "parent_rss": 28.796875,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 62.140625,
+          "max_child_rss": 69.90625
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 54.6640625,
+          "child_rss": 61.390625,
+          "parent_rss": 29.796875,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 62.390625,
+          "max_child_rss": 68.78125
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 54.53125,
+          "child_rss": 61.375,
+          "parent_rss": 29.1875,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 96.5,
+          "max_child_rss": 105.21875
+        },
+        "load_result": null
+      }
+    ]
+  },
+  "after_separate": {
+    "runs": 5,
+    "idle_child_uss_mib": 24.4375,
+    "idle_child_rss_mib": 60.78125,
+    "idle_parent_rss_mib": 25.7265625,
+    "idle_total_private_mib": 100.390625,
+    "loaded_max_child_uss_mib": 43.796875,
+    "loaded_max_child_rss_mib": 69.34375,
+    "per_run": [
+      {
+        "idle": {
+          "child_uss": 24.4375,
+          "child_rss": 60.875,
+          "parent_rss": 27.4140625,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 46.4375,
+          "max_child_rss": 72.328125
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 24.46875,
+          "child_rss": 60.84375,
+          "parent_rss": 25.7265625,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 43.796875,
+          "max_child_rss": 69.34375
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 23.0546875,
+          "child_rss": 51.5546875,
+          "parent_rss": 17.75,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 34.90625,
+          "max_child_rss": 59.5625
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 24.5078125,
+          "child_rss": 60.78125,
+          "parent_rss": 29.4609375,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 35.140625,
+          "max_child_rss": 60.4375
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 23.8984375,
+          "child_rss": 59.9609375,
+          "parent_rss": 23.578125,
+          "workers": 2
+        },
+        "loaded": {
+          "max_child_uss": 62.359375,
+          "max_child_rss": 88.375
+        },
+        "load_result": null
+      }
+    ]
+  },
+  "after_merged": {
+    "runs": 2,
+    "idle_child_uss_mib": 24.5234375,
+    "idle_child_rss_mib": 60.8828125,
+    "idle_parent_rss_mib": 25.703125,
+    "idle_total_private_mib": 50.2265625,
+    "loaded_max_child_uss_mib": 38.375,
+    "loaded_max_child_rss_mib": 59.015625,
+    "per_run": [
+      {
+        "idle": {
+          "child_uss": 24.671875,
+          "child_rss": 60.90625,
+          "parent_rss": 20.3125,
+          "workers": 1
+        },
+        "loaded": {
+          "max_child_uss": 50.5,
+          "max_child_rss": 76.125
+        },
+        "load_result": null
+      },
+      {
+        "idle": {
+          "child_uss": 24.375,
+          "child_rss": 60.859375,
+          "parent_rss": 31.09375,
+          "workers": 1
+        },
+        "loaded": {
+          "max_child_uss": 26.25,
+          "max_child_rss": 41.90625
+        },
+        "load_result": null
+      }
+    ]
+  },
+  "peak_sync": {
+    "baseline": {
+      "runs": 3,
+      "rss": 59342848,
+      "uss": 50659328,
+      "pss": null
+    },
+    "after": {
+      "runs": 3,
+      "rss": 58359808,
+      "uss": 47054848,
+      "pss": null
+    }
+  },
+  "deltas": {
+    "idle_child_uss_percent": -55.186246418338115,
+    "idle_child_rss_percent": -0.9674134419551934,
+    "idle_total_private_percent": -40.5697900286745,
+    "merged_vs_separate_total_percent": -49.96887159533074
+  }
+}

@@ -1,0 +1,418 @@
+{
+  "fixture": {
+    "items": 1000,
+    "movies": 1000,
+    "users": 1,
+    "bytes": 7618560,
+    "pages": 1860,
+    "freelist": 0,
+    "sqlite": "3.53.4",
+    "python": "3.12.15 (main, Oct  1 2026, 21:48:42) [GCC 15.2.0]",
+    "django": "5.2.17"
+  },
+  "platform": "Linux-6.10.14-linuxkit-aarch64-with",
+  "limits": [
+    4096,
+    4096
+  ],
+  "host_loadavg_start": [
+    23.77001953125,
+    24.900390625,
+    18.97998046875
+  ],
+  "database_bytes_at_start": 7639040,
+  "wal_bytes_at_start": 0,
+  "initial": {
+    "cpu.stat": "usage_usec 1209682\nuser_usec 414621\nsystem_usec 795061\nnr_periods 31\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=749568 wbytes=0 rios=161 wios=0 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+    "memory.current": "13205504\n",
+    "memory.peak": "13414400\n",
+    "memory.stat": "anon 11132928\nfile 884736\nkernel 942080\nkernel_stack 16384\npagetables 98304\nsec_pagetables 0\npercpu 25728\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 28672\nfile_dirty 36864\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 11096064\ninactive_file 741376\nactive_file 143360\nunevictable 0\nslab_reclaimable 350184\nslab_unreclaimable 374712\nslab 724896\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 0\npgsteal 0\npgscan_kswapd 0\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 0\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 5647\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "usable_s": 93.47384595894255,
+  "usable_s_counters": {
+    "cpu.stat": "usage_usec 59073653\nuser_usec 41339645\nsystem_usec 17734007\nnr_periods 965\nnr_throttled 26\nthrottled_usec 827014\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=76636160 wbytes=20172800 rios=4841 wios=1281 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+    "memory.current": "578146304\n",
+    "memory.peak": "583405568\n",
+    "memory.stat": "anon 530042880\nfile 32403456\nkernel 15446016\nkernel_stack 262144\npagetables 2469888\nsec_pagetables 0\npercpu 27648\nsock 4096\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 2293760\nfile_dirty 57344\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 24576\nactive_anon 530030592\ninactive_file 26230784\nactive_file 6160384\nunevictable 0\nslab_reclaimable 10335416\nslab_unreclaimable 2208136\nslab 12543552\nworkingset_refault_anon 0\nworkingset_refault_file 4722\nworkingset_activate_anon 0\nworkingset_activate_file 1961\nworkingset_restore_anon 0\nworkingset_restore_file 24\nworkingset_nodereclaim 0\npgscan 15743\npgsteal 15729\npgscan_kswapd 15487\npgscan_direct 128\npgscan_khugepaged 128\npgsteal_kswapd 15473\npgsteal_direct 128\npgsteal_khugepaged 128\npgfault 709167\npgmajfault 74\npgrefill 1875\npgactivate 4\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "healthy_s": 93.62565333396196,
+  "healthy_s_counters": {
+    "cpu.stat": "usage_usec 59120732\nuser_usec 41379793\nsystem_usec 17740938\nnr_periods 966\nnr_throttled 26\nthrottled_usec 827014\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=76636160 wbytes=20172800 rios=4841 wios=1281 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+    "memory.current": "576761856\n",
+    "memory.peak": "583405568\n",
+    "memory.stat": "anon 528986112\nfile 32403456\nkernel 15114240\nkernel_stack 262144\npagetables 2465792\nsec_pagetables 0\npercpu 27648\nsock 4096\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 2293760\nfile_dirty 57344\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 24576\nactive_anon 528973824\ninactive_file 26230784\nactive_file 6160384\nunevictable 0\nslab_reclaimable 10337096\nslab_unreclaimable 1915200\nslab 12252296\nworkingset_refault_anon 0\nworkingset_refault_file 4722\nworkingset_activate_anon 0\nworkingset_activate_file 1961\nworkingset_restore_anon 0\nworkingset_restore_file 24\nworkingset_nodereclaim 0\npgscan 15743\npgsteal 15729\npgscan_kswapd 15487\npgscan_direct 128\npgscan_khugepaged 128\npgsteal_kswapd 15473\npgsteal_direct 128\npgsteal_khugepaged 128\npgfault 709175\npgmajfault 74\npgrefill 1875\npgactivate 4\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "ready_counters": {
+    "cpu.stat": "usage_usec 59121311\nuser_usec 41379793\nsystem_usec 17741518\nnr_periods 966\nnr_throttled 26\nthrottled_usec 827014\nnr_bursts 0\nburst_usec 0\n",
+    "io.stat": "254:0 rbytes=76636160 wbytes=20172800 rios=4841 wios=1281 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+    "memory.current": "576761856\n",
+    "memory.peak": "583405568\n",
+    "memory.stat": "anon 528990208\nfile 32403456\nkernel 15114240\nkernel_stack 262144\npagetables 2465792\nsec_pagetables 0\npercpu 27648\nsock 4096\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 2293760\nfile_dirty 57344\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 24576\nactive_anon 528973824\ninactive_file 26230784\nactive_file 6160384\nunevictable 0\nslab_reclaimable 10337096\nslab_unreclaimable 1915200\nslab 12252296\nworkingset_refault_anon 0\nworkingset_refault_file 4722\nworkingset_activate_anon 0\nworkingset_activate_file 1961\nworkingset_restore_anon 0\nworkingset_restore_file 24\nworkingset_nodereclaim 0\npgscan 15743\npgsteal 15729\npgscan_kswapd 15487\npgscan_direct 128\npgscan_khugepaged 128\npgsteal_kswapd 15473\npgsteal_direct 128\npgsteal_khugepaged 128\npgfault 709176\npgmajfault 74\npgrefill 1875\npgactivate 4\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+  },
+  "host_loadavg_ready": [
+    32.76318359375,
+    27.5546875,
+    20.4658203125
+  ],
+  "wall_s": 93.62693158397451,
+  "library_latency_s": [
+    0.7597799579962157,
+    0.5939597499673255,
+    0.440750083012972,
+    0.8053513749619015,
+    0.8253861669800244,
+    0.574994417023845,
+    0.547669916995801,
+    0.3334782919846475,
+    0.3559807909769006,
+    0.6884800840052776
+  ],
+  "webhook_rejection": [
+    {
+      "seconds": 0.07980416697682813,
+      "status": 401
+    },
+    {
+      "seconds": 0.014806499995756894,
+      "status": 401
+    },
+    {
+      "seconds": 0.011648249987047166,
+      "status": 401
+    },
+    {
+      "seconds": 0.009526083013042808,
+      "status": 401
+    },
+    {
+      "seconds": 0.0093699159915559,
+      "status": 401
+    },
+    {
+      "seconds": 0.011736915970686823,
+      "status": 401
+    },
+    {
+      "seconds": 0.024784417008049786,
+      "status": 401
+    },
+    {
+      "seconds": 0.013264457986224443,
+      "status": 401
+    },
+    {
+      "seconds": 0.033518875017762184,
+      "status": 401
+    },
+    {
+      "seconds": 0.007630000007338822,
+      "status": 401
+    }
+  ],
+  "correctness": {
+    "quick_check": [
+      [
+        "ok"
+      ]
+    ],
+    "foreign_key_check": [],
+    "items": 1000,
+    "movies": 1000,
+    "migrations": 564
+  },
+  "startup_status": {
+    "commit_sha": "27b89e56a5a91548ebd4a84eba2fc5bce119fff4",
+    "database": "/floppy/db/db.sqlite3",
+    "elapsed_seconds": 0.6928861259948462,
+    "error_class": null,
+    "error_message": null,
+    "last_progress_at": "2026-10-23T18:28:16.362675+00:00",
+    "phase": "foreign_key_check",
+    "phase_started_at": "2026-10-23T18:28:16.218814+00:00",
+    "progress_age_seconds": 8.6e-05,
+    "progress_callbacks": 1,
+    "progress_rate_per_minute": 416.8200796126352,
+    "progress_state": "active",
+    "read_bytes": null,
+    "schema_version": 1,
+    "started_at": "2026-10-23T18:28:15.669884+00:00",
+    "status": "ok",
+    "updated_at": "2026-10-23T18:28:16.362761+00:00",
+    "version": "dev"
+  },
+  "stages": [
+    {
+      "seconds": 2.646078666963149,
+      "message": "[entrypoint] Floppy runtime: version=dev commit=27b89e56a5a91548ebd4a84eba2fc5bce119fff4 hostname=ac4fd3e9c125 container_name=floppy",
+      "counters": {
+        "cpu.stat": "usage_usec 2434743\nuser_usec 1222315\nsystem_usec 1212428\nnr_periods 58\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=1482752 wbytes=0 rios=279 wios=0 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "18702336\n",
+        "memory.peak": "41095168\n",
+        "memory.stat": "anon 14360576\nfile 1404928\nkernel 2191360\nkernel_stack 65536\npagetables 196608\nsec_pagetables 0\npercpu 26112\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 73728\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 14340096\ninactive_file 1257472\nactive_file 143360\nunevictable 0\nslab_reclaimable 1150496\nslab_unreclaimable 435848\nslab 1586344\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 23355\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 2.8628002089681104,
+      "message": "[entrypoint] Checking SQLite storage and relationships for /floppy/db/db.sqlite3",
+      "counters": {
+        "cpu.stat": "usage_usec 2571748\nuser_usec 1322052\nsystem_usec 1249695\nnr_periods 60\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=1482752 wbytes=0 rios=279 wios=0 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "16560128\n",
+        "memory.peak": "41095168\n",
+        "memory.stat": "anon 12677120\nfile 1404928\nkernel 1998848\nkernel_stack 65536\npagetables 172032\nsec_pagetables 0\npercpu 26112\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 73728\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12644352\ninactive_file 1257472\nactive_file 143360\nunevictable 0\nslab_reclaimable 1150832\nslab_unreclaimable 437776\nslab 1588608\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 26767\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 4.89828291896265,
+      "message": "[integrity] phase=connect status=running",
+      "counters": {
+        "cpu.stat": "usage_usec 3879597\nuser_usec 2186982\nsystem_usec 1692615\nnr_periods 80\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=1593344 wbytes=4096 rios=283 wios=1 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "65716224\n",
+        "memory.peak": "65765376\n",
+        "memory.stat": "anon 61276160\nfile 1650688\nkernel 2244608\nkernel_stack 81920\npagetables 393216\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 204800\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61218816\ninactive_file 1507328\nactive_file 143360\nunevictable 0\nslab_reclaimable 1181248\nslab_unreclaimable 527488\nslab 1708736\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 50561\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 4.909139459952712,
+      "message": "[integrity] Running the full storage check: no verification on record",
+      "counters": {
+        "cpu.stat": "usage_usec 3882915\nuser_usec 2188038\nsystem_usec 1694876\nnr_periods 80\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=1593344 wbytes=4096 rios=283 wios=1 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "66002944\n",
+        "memory.peak": "66002944\n",
+        "memory.stat": "anon 61296640\nfile 1650688\nkernel 2248704\nkernel_stack 81920\npagetables 393216\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 204800\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61239296\ninactive_file 1507328\nactive_file 143360\nunevictable 0\nslab_reclaimable 1183936\nslab_unreclaimable 527928\nslab 1711864\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 50566\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 4.9580924599431455,
+      "message": "[integrity] phase=warm_cache status=running",
+      "counters": {
+        "cpu.stat": "usage_usec 3890318\nuser_usec 2192939\nsystem_usec 1697379\nnr_periods 81\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=1593344 wbytes=8192 rios=283 wios=2 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "65781760\n",
+        "memory.peak": "66007040\n",
+        "memory.stat": "anon 61341696\nfile 1658880\nkernel 2252800\nkernel_stack 81920\npagetables 393216\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 204800\nfile_writeback 4096\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61284352\ninactive_file 1515520\nactive_file 143360\nunevictable 0\nslab_reclaimable 1185832\nslab_unreclaimable 523776\nslab 1709608\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 50579\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 5.282042876991909,
+      "message": "[integrity] phase=warm_cache read=7MB seconds=0.3 rate=25MB/s",
+      "counters": {
+        "cpu.stat": "usage_usec 3958115\nuser_usec 2210743\nsystem_usec 1747371\nnr_periods 84\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=9232384 wbytes=8192 rios=293 wios=2 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "74162176\n",
+        "memory.peak": "82505728\n",
+        "memory.stat": "anon 61353984\nfile 9289728\nkernel 2289664\nkernel_stack 81920\npagetables 393216\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 204800\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61341696\ninactive_file 9097216\nactive_file 143360\nunevictable 0\nslab_reclaimable 1202256\nslab_unreclaimable 531648\nslab 1733904\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 52631\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 5.349833376996685,
+      "message": "[integrity] phase=quick_check status=running",
+      "counters": {
+        "cpu.stat": "usage_usec 3968157\nuser_usec 2215142\nsystem_usec 1753015\nnr_periods 85\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=9232384 wbytes=8192 rios=293 wios=2 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "73580544\n",
+        "memory.peak": "82505728\n",
+        "memory.stat": "anon 61509632\nfile 9293824\nkernel 2269184\nkernel_stack 81920\npagetables 393216\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 204800\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 61435904\ninactive_file 9142272\nactive_file 143360\nunevictable 0\nslab_reclaimable 1200976\nslab_unreclaimable 531296\nslab 1732272\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 52682\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 5.440583919000346,
+      "message": "[integrity] phase=quick_check seconds=0.1",
+      "counters": {
+        "cpu.stat": "usage_usec 4021920\nuser_usec 2237671\nsystem_usec 1784248\nnr_periods 86\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=9232384 wbytes=12288 rios=293 wios=3 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "77590528\n",
+        "memory.peak": "82505728\n",
+        "memory.stat": "anon 65691648\nfile 9326592\nkernel 2285568\nkernel_stack 81920\npagetables 401408\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 32768\nfile_dirty 237568\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 65638400\ninactive_file 9175040\nactive_file 143360\nunevictable 0\nslab_reclaimable 1206280\nslab_unreclaimable 536944\nslab 1743224\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 54475\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 5.440885709947906,
+      "message": "[integrity] phase=foreign_key_check status=running",
+      "counters": {
+        "cpu.stat": "usage_usec 4022224\nuser_usec 2237840\nsystem_usec 1784383\nnr_periods 86\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=9232384 wbytes=12288 rios=293 wios=3 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "77590528\n",
+        "memory.peak": "82505728\n",
+        "memory.stat": "anon 65691648\nfile 9326592\nkernel 2285568\nkernel_stack 81920\npagetables 401408\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 32768\nfile_dirty 237568\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 65638400\ninactive_file 9175040\nactive_file 143360\nunevictable 0\nslab_reclaimable 1206280\nslab_unreclaimable 536944\nslab 1743224\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 54475\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 5.5875496689695865,
+      "message": "[integrity] phase=foreign_key_check seconds=0.0",
+      "counters": {
+        "cpu.stat": "usage_usec 4089760\nuser_usec 2257519\nsystem_usec 1832240\nnr_periods 87\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=9232384 wbytes=16384 rios=293 wios=4 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "77893632\n",
+        "memory.peak": "82505728\n",
+        "memory.stat": "anon 65789952\nfile 9322496\nkernel 2273280\nkernel_stack 81920\npagetables 401408\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 32768\nfile_dirty 237568\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 65789952\ninactive_file 9179136\nactive_file 143360\nunevictable 0\nslab_reclaimable 1209384\nslab_unreclaimable 527096\nslab 1736480\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 54527\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 5.590005168982316,
+      "message": "[integrity] phase=foreign_key_check status=ok",
+      "counters": {
+        "cpu.stat": "usage_usec 4090370\nuser_usec 2258129\nsystem_usec 1832240\nnr_periods 87\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=9232384 wbytes=16384 rios=293 wios=4 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "77897728\n",
+        "memory.peak": "82505728\n",
+        "memory.stat": "anon 65794048\nfile 9322496\nkernel 2273280\nkernel_stack 81920\npagetables 401408\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 32768\nfile_dirty 237568\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 65794048\ninactive_file 9179136\nactive_file 143360\nunevictable 0\nslab_reclaimable 1209384\nslab_unreclaimable 527096\nslab 1736480\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 54528\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 5.981020418985281,
+      "message": "[entrypoint] Applying database migrations (attempt 1)",
+      "counters": {
+        "cpu.stat": "usage_usec 4302537\nuser_usec 2465788\nsystem_usec 1836748\nnr_periods 91\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=9232384 wbytes=24576 rios=293 wios=6 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "24489984\n",
+        "memory.peak": "82505728\n",
+        "memory.stat": "anon 12738560\nfile 9293824\nkernel 2183168\nkernel_stack 81920\npagetables 180224\nsec_pagetables 0\npercpu 26112\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 0\nfile_dirty 204800\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12705792\ninactive_file 9150464\nactive_file 143360\nunevictable 0\nslab_reclaimable 1201312\nslab_unreclaimable 480640\nslab 1681952\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgscan 64\npgsteal 64\npgscan_kswapd 64\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 64\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 54615\npgmajfault 3\npgrefill 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 43.656462227983866,
+      "message": "[entrypoint] Collecting static files",
+      "counters": {
+        "cpu.stat": "usage_usec 21615856\nuser_usec 15004039\nsystem_usec 6611816\nnr_periods 468\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=24678400 wbytes=7647232 rios=1680 wios=418 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "45232128\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 12984320\nfile 21995520\nkernel 9572352\nkernel_stack 81920\npagetables 225280\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 4096\nfile_dirty 3129344\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12967936\ninactive_file 17973248\nactive_file 4022272\nunevictable 0\nslab_reclaimable 8324560\nslab_unreclaimable 428488\nslab 8753048\nworkingset_refault_anon 0\nworkingset_refault_file 76\nworkingset_activate_anon 0\nworkingset_activate_file 76\nworkingset_restore_anon 0\nworkingset_restore_file 19\nworkingset_nodereclaim 0\npgscan 3392\npgsteal 3392\npgscan_kswapd 3392\npgscan_direct 0\npgscan_khugepaged 0\npgsteal_kswapd 3392\npgsteal_direct 0\npgsteal_khugepaged 0\npgfault 211430\npgmajfault 6\npgrefill 903\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 60.66940377699211,
+      "message": "[entrypoint] Fixing file ownership (PUID=1000 PGID=1000)",
+      "counters": {
+        "cpu.stat": "usage_usec 29688795\nuser_usec 20987996\nsystem_usec 8700798\nnr_periods 637\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=34205696 wbytes=10776576 rios=2280 wios=961 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "46530560\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 12910592\nfile 23924736\nkernel 9424896\nkernel_stack 49152\npagetables 139264\nsec_pagetables 0\npercpu 25920\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 12288\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12910592\ninactive_file 17821696\nactive_file 6103040\nunevictable 0\nslab_reclaimable 8795040\nslab_unreclaimable 396016\nslab 9191056\nworkingset_refault_anon 0\nworkingset_refault_file 883\nworkingset_activate_anon 0\nworkingset_activate_file 883\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 5248\npgsteal 5248\npgscan_kswapd 5184\npgscan_direct 64\npgscan_khugepaged 0\npgsteal_kswapd 5184\npgsteal_direct 64\npgsteal_khugepaged 0\npgfault 245487\npgmajfault 22\npgrefill 1443\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 61.34544365294278,
+      "message": "[entrypoint] Chowning /floppy/staticfiles",
+      "counters": {
+        "cpu.stat": "usage_usec 29870445\nuser_usec 21041647\nsystem_usec 8828797\nnr_periods 644\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=34304000 wbytes=10792960 rios=2292 wios=965 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "47923200\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 13266944\nfile 24035328\nkernel 10190848\nkernel_stack 163840\npagetables 446464\nsec_pagetables 0\npercpu 27264\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 12288\nfile_dirty 0\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13242368\ninactive_file 17928192\nactive_file 6103040\nunevictable 0\nslab_reclaimable 8816912\nslab_unreclaimable 513896\nslab 9330808\nworkingset_refault_anon 0\nworkingset_refault_file 883\nworkingset_activate_anon 0\nworkingset_activate_file 883\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 5248\npgsteal 5248\npgscan_kswapd 5184\npgscan_direct 64\npgscan_khugepaged 0\npgsteal_kswapd 5184\npgsteal_direct 64\npgsteal_khugepaged 0\npgfault 246488\npgmajfault 22\npgrefill 1443\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 65.73245052999118,
+      "message": "[entrypoint] Chowning /var/log/nginx",
+      "counters": {
+        "cpu.stat": "usage_usec 30456938\nuser_usec 21178935\nsystem_usec 9278003\nnr_periods 688\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=42496000 wbytes=18866176 rios=2626 wios=1243 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "58998784\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 12980224\nfile 34861056\nkernel 10506240\nkernel_stack 81920\npagetables 212992\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 12288\nfile_dirty 65536\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 12955648\ninactive_file 28708864\nactive_file 6139904\nunevictable 0\nslab_reclaimable 9578672\nslab_unreclaimable 464664\nslab 10043336\nworkingset_refault_anon 0\nworkingset_refault_file 883\nworkingset_activate_anon 0\nworkingset_activate_file 883\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 6592\npgsteal 6592\npgscan_kswapd 6464\npgscan_direct 128\npgscan_khugepaged 0\npgsteal_kswapd 6464\npgsteal_direct 128\npgsteal_khugepaged 0\npgfault 246584\npgmajfault 22\npgrefill 1452\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 65.76209061295958,
+      "message": "[entrypoint] Chowning /var/lib/nginx",
+      "counters": {
+        "cpu.stat": "usage_usec 30472180\nuser_usec 21178935\nsystem_usec 9293244\nnr_periods 688\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=42500096 wbytes=18866176 rios=2627 wios=1243 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "58859520\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 13017088\nfile 34865152\nkernel 10526720\nkernel_stack 98304\npagetables 241664\nsec_pagetables 0\npercpu 26496\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 12288\nfile_dirty 65536\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13004800\ninactive_file 28721152\nactive_file 6139904\nunevictable 0\nslab_reclaimable 9585024\nslab_unreclaimable 482056\nslab 10067080\nworkingset_refault_anon 0\nworkingset_refault_file 883\nworkingset_activate_anon 0\nworkingset_activate_file 883\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 6592\npgsteal 6592\npgscan_kswapd 6464\npgscan_direct 128\npgscan_khugepaged 0\npgsteal_kswapd 6464\npgsteal_direct 128\npgsteal_khugepaged 0\npgfault 246669\npgmajfault 22\npgrefill 1452\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 66.74495052994462,
+      "message": "[entrypoint] resources tier=standard mem=2.0GiB swap=1.0GiB cpus=2 source=override -> gunicorn 1x2, celery workers background=on(celery,discover) interactive=on(interactive) discover=off(merged)",
+      "counters": {
+        "cpu.stat": "usage_usec 31154612\nuser_usec 21545293\nsystem_usec 9609318\nnr_periods 698\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=42561536 wbytes=18874368 rios=2636 wios=1245 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "70467584\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 36315136\nfile 22884352\nkernel 10518528\nkernel_stack 81920\npagetables 311296\nsec_pagetables 0\npercpu 26304\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 12288\nfile_dirty 65536\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 36311040\ninactive_file 16683008\nactive_file 6201344\nunevictable 0\nslab_reclaimable 9462216\nslab_unreclaimable 540416\nslab 10002632\nworkingset_refault_anon 0\nworkingset_refault_file 892\nworkingset_activate_anon 0\nworkingset_activate_file 892\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 9536\npgsteal 9536\npgscan_kswapd 9408\npgscan_direct 128\npgscan_khugepaged 0\npgsteal_kswapd 9408\npgsteal_direct 128\npgsteal_khugepaged 0\npgfault 256158\npgmajfault 22\npgrefill 1467\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 68.16065936395898,
+      "message": "[entrypoint] celery workers background=on(celery,discover) interactive=on(interactive) discover=off(merged)",
+      "counters": {
+        "cpu.stat": "usage_usec 31935386\nuser_usec 22105298\nsystem_usec 9830088\nnr_periods 712\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=42569728 wbytes=18874368 rios=2638 wios=1245 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "44699648\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 13406208\nfile 20275200\nkernel 10387456\nkernel_stack 49152\npagetables 151552\nsec_pagetables 0\npercpu 25920\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 12288\nfile_dirty 69632\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13373440\ninactive_file 14065664\nactive_file 6205440\nunevictable 0\nslab_reclaimable 9429840\nslab_unreclaimable 465160\nslab 9895000\nworkingset_refault_anon 0\nworkingset_refault_file 893\nworkingset_activate_anon 0\nworkingset_activate_file 893\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 10176\npgsteal 10176\npgscan_kswapd 10048\npgscan_direct 128\npgscan_khugepaged 0\npgsteal_kswapd 10048\npgsteal_direct 128\npgsteal_khugepaged 0\npgfault 265754\npgmajfault 22\npgrefill 1468\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 68.16631373896962,
+      "message": "[entrypoint] Starting services",
+      "counters": {
+        "cpu.stat": "usage_usec 31942433\nuser_usec 22107749\nsystem_usec 9834684\nnr_periods 712\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=42569728 wbytes=18874368 rios=2638 wios=1245 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "44838912\n",
+        "memory.peak": "178135040\n",
+        "memory.stat": "anon 13701120\nfile 20275200\nkernel 10264576\nkernel_stack 49152\npagetables 151552\nsec_pagetables 0\npercpu 25920\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nfile_mapped 12288\nfile_dirty 69632\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 13627392\ninactive_file 14065664\nactive_file 6205440\nunevictable 0\nslab_reclaimable 9429840\nslab_unreclaimable 465160\nslab 9895000\nworkingset_refault_anon 0\nworkingset_refault_file 893\nworkingset_activate_anon 0\nworkingset_activate_file 893\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 10176\npgsteal 10176\npgscan_kswapd 10048\npgscan_direct 128\npgscan_khugepaged 0\npgsteal_kswapd 10048\npgsteal_direct 128\npgsteal_khugepaged 0\npgfault 265827\npgmajfault 22\npgrefill 1468\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 82.3536538699991,
+      "message": "[2026-10-23 18:29:33 +0000] [119] [INFO] celery-interactive@ac4fd3e9c125 ready.",
+      "counters": {
+        "cpu.stat": "usage_usec 48432649\nuser_usec 33533582\nsystem_usec 14899066\nnr_periods 854\nnr_throttled 22\nthrottled_usec 715297\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=62255104 wbytes=18874368 rios=4045 wios=1245 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "371011584\n",
+        "memory.peak": "372805632\n",
+        "memory.stat": "anon 332550144\nfile 24756224\nkernel 13041664\nkernel_stack 147456\npagetables 1413120\nsec_pagetables 0\npercpu 27072\nsock 8192\nvmalloc 0\nshmem 8192\nzswap 0\nzswapped 0\nfile_mapped 2068480\nfile_dirty 606208\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 24576\nactive_anon 332443648\ninactive_file 18780160\nactive_file 5951488\nunevictable 0\nslab_reclaimable 10129696\nslab_unreclaimable 1223768\nslab 11353464\nworkingset_refault_anon 0\nworkingset_refault_file 1929\nworkingset_activate_anon 0\nworkingset_activate_file 1063\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 14079\npgsteal 14065\npgscan_kswapd 13951\npgscan_direct 128\npgscan_khugepaged 0\npgsteal_kswapd 13937\npgsteal_direct 128\npgsteal_khugepaged 0\npgfault 539058\npgmajfault 71\npgrefill 1863\npgactivate 4\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    },
+    {
+      "seconds": 87.4854438729817,
+      "message": "[2026-10-23 18:29:38 +0000] [118] [INFO] celery@ac4fd3e9c125 ready.",
+      "counters": {
+        "cpu.stat": "usage_usec 54469526\nuser_usec 37798070\nsystem_usec 16671456\nnr_periods 905\nnr_throttled 26\nthrottled_usec 827014\nnr_bursts 0\nburst_usec 0\n",
+        "io.stat": "254:0 rbytes=71614464 wbytes=20172800 rios=4612 wios=1281 dbytes=0 dios=0\n254:16 rbytes=77824 wbytes=0 rios=7 wios=0 dbytes=0 dios=0\n",
+        "memory.current": "516161536\n",
+        "memory.peak": "516419584\n",
+        "memory.stat": "anon 470597632\nfile 31043584\nkernel 14245888\nkernel_stack 196608\npagetables 2080768\nsec_pagetables 0\npercpu 27456\nsock 8192\nvmalloc 0\nshmem 12288\nzswap 0\nzswapped 0\nfile_mapped 2293760\nfile_dirty 118784\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 24576\nactive_anon 470511616\ninactive_file 24842240\nactive_file 6152192\nunevictable 0\nslab_reclaimable 10197624\nslab_unreclaimable 1655832\nslab 11853456\nworkingset_refault_anon 0\nworkingset_refault_file 3693\nworkingset_activate_anon 0\nworkingset_activate_file 1155\nworkingset_restore_anon 0\nworkingset_restore_file 21\nworkingset_nodereclaim 0\npgscan 14847\npgsteal 14833\npgscan_kswapd 14719\npgscan_direct 128\npgscan_khugepaged 0\npgsteal_kswapd 14705\npgsteal_direct 128\npgsteal_khugepaged 0\npgfault 639444\npgmajfault 74\npgrefill 1873\npgactivate 4\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\n"
+      }
+    }
+  ],
+  "processes": "PID   PPID  RSS  COMMAND\n    1     0  22m python /bench/trial.py run\n    8     1  25m {supervisord} /opt/venv/bin/python /opt/venv/bin/supervisord -c /etc/supervisord.conf\n   32     1    0 [timeout]\n   90     1    0 [timeout]\n   93     1    0 [timeout]\n   96     1    0 [timeout]\n  100     1    0 [timeout]\n  103     1    0 [timeout]\n  106     1    0 [timeout]\n  109     1    0 [timeout]\n  112     1    0 [timeout]\n  116     8 5724 nginx: master process nginx -c /etc/nginx/nginx.conf -g daemon off;\n  117     8 125m {gunicorn} /opt/venv/bin/python /opt/venv/bin/gunicorn --control-socket /tmp/gunicorn.ctl --config python:config.gunicorn config.wsgi:application\n  118     8 114m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --beat --scheduler django --queues celery,discover --hostname=celery@%h --loglevel INFO --without-mingle --without-gossip\n  119     8  93m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --queues interactive --hostname=celery-interactive@%h --loglevel INFO --without-mingle --without-gossip\n  120   116 3156 nginx: worker process\n  151   119  88m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --queues interactive --hostname=celery-interactive@%h --loglevel INFO --without-mingle --without-gossip\n  154   118 100m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --beat --scheduler django --queues celery,discover --hostname=celery@%h --loglevel INFO --without-mingle --without-gossip\n  155   118 100m {celery} /opt/venv/bin/python /opt/venv/bin/celery --app config worker --beat --scheduler django --queues celery,discover --hostname=celery@%h --loglevel INFO --without-mingle --without-gossip\n  156   117 131m {gunicorn} /opt/venv/bin/python /opt/venv/bin/gunicorn --control-socket /tmp/gunicorn.ctl --config python:config.gunicorn config.wsgi:application\n  161     1  816 ps -o pid,ppid,rss,args\n",
+  "sizing": {
+    "tier": "standard",
+    "tier_source": "override",
+    "profile": "tier=standard mem=2.0GiB swap=1.0GiB cpus=2 source=override",
+    "memory_bytes": 2147483648,
+    "available_bytes": 3451080704,
+    "swap_bytes": 1073737728,
+    "cpus": 2,
+    "notes": [],
+    "web_concurrency": 1,
+    "web_concurrency_default": 1,
+    "web_concurrency_source": "override",
+    "gunicorn_threads": 2,
+    "gunicorn_threads_default": 4,
+    "gunicorn_threads_source": "override",
+    "celery_queues": "celery,discover",
+    "celery_role": "background",
+    "start_interactive_worker": true,
+    "start_discover_worker": false,
+    "expected_programs": [
+      "nginx",
+      "gunicorn",
+      "celery",
+      "celery-interactive"
+    ],
+    "web_concurrency_over_profile": false
+  }
+}
