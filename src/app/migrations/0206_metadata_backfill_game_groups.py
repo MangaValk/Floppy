@@ -34,3 +34,16 @@ class Migration(migrations.Migration):
             ),
         ),
     ]
+
+    def apply(self, project_state, schema_editor, collect_sql=False):
+        """Skip SQLite's whole-database foreign-key scan for this choice-only change."""
+        connection = schema_editor.connection
+        if connection.vendor == "sqlite" and not collect_sql:
+            check_constraints = connection.check_constraints
+
+            def skip_check(*args, **kwargs):
+                connection.check_constraints = check_constraints
+                return None
+
+            connection.check_constraints = skip_check
+        return super().apply(project_state, schema_editor, collect_sql)

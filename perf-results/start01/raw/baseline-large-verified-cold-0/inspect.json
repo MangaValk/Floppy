@@ -1,0 +1,310 @@
+[
+    {
+        "Id": "c78ea8d0841f1bfa59ef91ff01ceb18129c4e96545877eab911c5a0a62b6d937",
+        "Created": "2026-10-23T18:56:24.464505385Z",
+        "Path": "python",
+        "Args": [
+            "/bench/trial.py",
+            "run"
+        ],
+        "State": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-10-23T18:56:24.634925135Z",
+            "FinishedAt": "2026-10-23T18:57:20.693339841Z",
+            "Health": {
+                "Status": "unhealthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-10-23T18:56:29.858930637Z",
+                        "End": "2026-10-23T18:56:29.941078762Z",
+                        "ExitCode": 1,
+                        "Output": "Connecting to 127.0.0.1:8000 (127.0.0.1:8000)\nwget: can't connect to remote host (127.0.0.1): Connection refused\n"
+                    },
+                    {
+                        "Start": "2026-10-23T18:56:34.954426501Z",
+                        "End": "2026-10-23T18:56:35.100450084Z",
+                        "ExitCode": 1,
+                        "Output": "Connecting to 127.0.0.1:8000 (127.0.0.1:8000)\nwget: can't connect to remote host (127.0.0.1): Connection refused\n"
+                    },
+                    {
+                        "Start": "2026-10-23T18:56:40.103450003Z",
+                        "End": "2026-10-23T18:56:40.21006617Z",
+                        "ExitCode": 1,
+                        "Output": "Connecting to 127.0.0.1:8000 (127.0.0.1:8000)\nwget: server returned error: HTTP/1.1 502 Bad Gateway\n"
+                    },
+                    {
+                        "Start": "2026-10-23T18:56:45.211247964Z",
+                        "End": "2026-10-23T18:56:45.485291839Z",
+                        "ExitCode": 0,
+                        "Output": "Connecting to 127.0.0.1:8000 (127.0.0.1:8000)\nremote file exists\n"
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:645083c90340dca7d4b4ec9825a29fecbb7cd8f8fc53933ca98b4f9a7a22d82b",
+        "ResolvConfPath": "/var/lib/docker/containers/c78ea8d0841f1bfa59ef91ff01ceb18129c4e96545877eab911c5a0a62b6d937/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/c78ea8d0841f1bfa59ef91ff01ceb18129c4e96545877eab911c5a0a62b6d937/hostname",
+        "HostsPath": "/var/lib/docker/containers/c78ea8d0841f1bfa59ef91ff01ceb18129c4e96545877eab911c5a0a62b6d937/hosts",
+        "LogPath": "/var/lib/docker/containers/c78ea8d0841f1bfa59ef91ff01ceb18129c4e96545877eab911c5a0a62b6d937/c78ea8d0841f1bfa59ef91ff01ceb18129c4e96545877eab911c5a0a62b6d937-json.log",
+        "Name": "/floppy-start01-trial",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "floppy-start01-large:/floppy/db",
+                "/host_mnt/Users/dannyvfilms/Developer/Cursor/release/perf-results/start01/raw/baseline-large-verified-cold-0:/results",
+                "/host_mnt/Users/dannyvfilms/Developer/Cursor/release/perf-results/start01:/bench:ro"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "floppy-start01-isolated",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": [],
+            "DnsOptions": [],
+            "DnsSearch": [],
+            "ExtraHosts": null,
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 2147483648,
+            "NanoCpus": 2000000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": [],
+            "BlkioDeviceReadBps": [],
+            "BlkioDeviceWriteBps": [],
+            "BlkioDeviceReadIOps": [],
+            "BlkioDeviceWriteIOps": [],
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": [],
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 2147483648,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": 256,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 4096,
+                    "Soft": 4096
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "c78ea8d0841f1bfa59ef91ff01ceb18129c4e96545877eab911c5a0a62b6d937",
+                "LowerDir": "/var/lib/docker/overlay2/4985f213c01ce4a4140a2f359f414eb4620617abf7d3eec4474074b0630e9e7f-init/diff:/var/lib/docker/overlay2/yc9xx637dzwmymfw7fw8ds3tg/diff:/var/lib/docker/overlay2/zj3rgmrbwfgvyycm43vldlk6k/diff:/var/lib/docker/overlay2/18jewjwzscothax9egv2sxe6e/diff:/var/lib/docker/overlay2/mvt1wfl1u84i7vjah65hhyw3j/diff:/var/lib/docker/overlay2/g6xvt8islm1u6qn08cr73l56b/diff:/var/lib/docker/overlay2/ie2nm1ockmac5vew7mddezn9w/diff:/var/lib/docker/overlay2/negebbjgek79ovhcywlb4sxpo/diff:/var/lib/docker/overlay2/ob5fg5ent0iwag9838gn7j6xn/diff:/var/lib/docker/overlay2/yuw2dcmgsppq2wf9waxafjqui/diff:/var/lib/docker/overlay2/xkp20slnnk1n8rk792cn42zdj/diff:/var/lib/docker/overlay2/trzehsv1liq91aestaeia8w0v/diff:/var/lib/docker/overlay2/i8uze0bzklvxx0vp2av54m9oa/diff:/var/lib/docker/overlay2/iqm8ie3k0ab6uaav8x0os3uro/diff:/var/lib/docker/overlay2/c7jbxxy5zj4rs5cermfbfbetk/diff:/var/lib/docker/overlay2/72ad0231a5693ce91240e0a348b6203e3b8fdfbad559d72b05fcadaa5616322f/diff:/var/lib/docker/overlay2/6e7ed93a5ea2917bca1ecd1f55eb20fe083f4d849be54d0cc4140d47210efc8e/diff:/var/lib/docker/overlay2/cb86793573573042d70a4e9696dd622a069c9851e27f11503132b8071e31c241/diff:/var/lib/docker/overlay2/b40b48058cde84fc2f22e125918c4d840b5ae99102be538163fe020e1a2c79db/diff",
+                "MergedDir": "/var/lib/docker/overlay2/4985f213c01ce4a4140a2f359f414eb4620617abf7d3eec4474074b0630e9e7f/merged",
+                "UpperDir": "/var/lib/docker/overlay2/4985f213c01ce4a4140a2f359f414eb4620617abf7d3eec4474074b0630e9e7f/diff",
+                "WorkDir": "/var/lib/docker/overlay2/4985f213c01ce4a4140a2f359f414eb4620617abf7d3eec4474074b0630e9e7f/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "floppy-start01-large",
+                "Source": "/var/lib/docker/volumes/floppy-start01-large/_data",
+                "Destination": "/floppy/db",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            },
+            {
+                "Type": "bind",
+                "Source": "/host_mnt/Users/dannyvfilms/Developer/Cursor/release/perf-results/start01/raw/baseline-large-verified-cold-0",
+                "Destination": "/results",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/host_mnt/Users/dannyvfilms/Developer/Cursor/release/perf-results/start01",
+                "Destination": "/bench",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "c78ea8d0841f",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "8000/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "SECRET=start01-disposable-only",
+                "WEB_CONCURRENCY=1",
+                "COMMIT_SHA=27b89e56a5a91548ebd4a84eba2fc5bce119fff4",
+                "FLOPPY_NOFILE_LIMIT=4096",
+                "START01_NO_WARM=0",
+                "REDIS_URL=redis://floppy-start01-redis:6379",
+                "GUNICORN_THREADS=2",
+                "CELERY_WORKER_CONCURRENCY=1",
+                "FLOPPY_RESOURCE_TIER=standard",
+                "PYTHONPATH=/bench:/floppy",
+                "PATH=/opt/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=C.UTF-8",
+                "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+                "PYTHON_VERSION=3.12.15",
+                "PYTHON_SHA256=c2c4321961fab0fb999d66e0cecf521c2ab3994c7992873ea99e306c1094fd5a",
+                "PYTHONUNBUFFERED=1",
+                "VIRTUAL_ENV=/opt/venv",
+                "VERSION=dev",
+                "FLOPPY_CELERY_ROLE=background",
+                "FLOPPY_CELERY_QUEUES=celery",
+                "FLOPPY_START_INTERACTIVE_WORKER=true",
+                "FLOPPY_START_DISCOVER_WORKER=true",
+                "FLOPPY_SUPERVISORD_LOG=AUTO"
+            ],
+            "Cmd": [
+                "/bench/trial.py",
+                "run"
+            ],
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "port=\"$(cat /run/floppy/server-port 2\u003e/dev/null)\"       \u0026\u0026 case \"$port\" in *[!0-9]*|'') exit 1 ;; esac       \u0026\u0026 wget --no-verbose --tries=1 --spider \"http://127.0.0.1:${port}/health/\"       || exit 1"
+                ],
+                "Interval": 45000000000,
+                "Timeout": 15000000000,
+                "StartPeriod": 30000000000,
+                "Retries": 5
+            },
+            "Image": "floppy:start01-baseline",
+            "Volumes": null,
+            "WorkingDir": "/floppy",
+            "Entrypoint": [
+                "python"
+            ],
+            "OnBuild": null,
+            "Labels": {}
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "",
+            "SandboxKey": "",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "floppy-start01-isolated": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "95f0806c10a23b422ef624f2e8d5024360e663821b573bdad41363de89d4fbbe",
+                    "EndpointID": "",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": [
+                        "floppy-start01-trial",
+                        "c78ea8d0841f"
+                    ]
+                }
+            }
+        }
+    }
+]

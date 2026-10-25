@@ -1,0 +1,528 @@
+{
+  "samples": [
+    {
+      "label": "idle",
+      "queue": "interactive",
+      "iteration": 0,
+      "warmup": true,
+      "pid": 15926,
+      "rss": 27672576,
+      "uss": 18219008,
+      "pss": null,
+      "gc_freeze_count": 150197,
+      "gc_count": 399
+    },
+    {
+      "label": "idle",
+      "queue": "interactive",
+      "iteration": 1,
+      "warmup": false,
+      "pid": 15926,
+      "rss": 63799296,
+      "uss": 25591808,
+      "pss": null,
+      "gc_freeze_count": 150188,
+      "gc_count": 461
+    },
+    {
+      "label": "idle",
+      "queue": "celery",
+      "iteration": 0,
+      "warmup": true,
+      "pid": 15927,
+      "rss": 28000256,
+      "uss": 18628608,
+      "pss": null,
+      "gc_freeze_count": 150172,
+      "gc_count": 399
+    },
+    {
+      "label": "idle",
+      "queue": "celery",
+      "iteration": 1,
+      "warmup": false,
+      "pid": 15927,
+      "rss": 63864832,
+      "uss": 25657344,
+      "pss": null,
+      "gc_freeze_count": 150163,
+      "gc_count": 461
+    },
+    {
+      "label": "loaded",
+      "queue": "interactive",
+      "iteration": 0,
+      "warmup": true,
+      "pid": 15926,
+      "rss": 19202048,
+      "uss": 13123584,
+      "pss": null,
+      "gc_freeze_count": 150188,
+      "gc_count": 475
+    },
+    {
+      "label": "loaded",
+      "queue": "interactive",
+      "iteration": 1,
+      "warmup": false,
+      "pid": 15926,
+      "rss": 60325888,
+      "uss": 23740416,
+      "pss": null,
+      "gc_freeze_count": 150188,
+      "gc_count": 489
+    },
+    {
+      "label": "loaded",
+      "queue": "celery",
+      "iteration": 0,
+      "warmup": true,
+      "pid": 15927,
+      "rss": 48578560,
+      "uss": 39632896,
+      "pss": null,
+      "gc_freeze_count": 150115,
+      "gc_count": 156
+    },
+    {
+      "label": "loaded",
+      "queue": "celery",
+      "iteration": 1,
+      "warmup": false,
+      "pid": 15927,
+      "rss": 75841536,
+      "uss": 48693248,
+      "pss": null,
+      "gc_freeze_count": 150115,
+      "gc_count": 156
+    }
+  ],
+  "limitations": [
+    "PSS is unavailable on native macOS; null is not zero.",
+    "Child USS/PSS are reported by the task running inside that child.",
+    "Native host, no container CPU or memory quota."
+  ],
+  "idle": {
+    "worker_stats": {
+      "interactive@MacBookPro": {
+        "total": {},
+        "pid": 15887,
+        "clock": "7",
+        "uptime": 10,
+        "pool": {
+          "implementation": "celery.concurrency.prefork:TaskPool",
+          "max-concurrency": 1,
+          "processes": [
+            15926
+          ],
+          "max-tasks-per-child": 50,
+          "put-guarded-by-semaphore": false,
+          "timeouts": [
+            0,
+            21600
+          ],
+          "writes": {
+            "total": 0,
+            "avg": "0.00",
+            "all": "",
+            "raw": "",
+            "strategy": "fair",
+            "inqueues": {
+              "total": 1,
+              "active": 0
+            }
+          }
+        },
+        "broker": {
+          "hostname": "redis+socket:///tmp/floppy-bench05-srpsr7nw/redis.sock?virtual_host=1",
+          "userid": null,
+          "virtual_host": "/",
+          "port": 6379,
+          "insist": false,
+          "ssl": false,
+          "transport": "redis",
+          "connect_timeout": 4,
+          "transport_options": {
+            "queue_order_strategy": "priority",
+            "priority_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "sep": ":",
+            "visibility_timeout": 23400,
+            "socket_timeout": 30,
+            "socket_connect_timeout": 10,
+            "socket_keepalive": true,
+            "retry_on_timeout": true,
+            "health_check_interval": 30
+          },
+          "login_method": null,
+          "uri_prefix": "redis",
+          "heartbeat": 120.0,
+          "failover_strategy": "round-robin",
+          "alternates": [],
+          "credential_provider": null
+        },
+        "prefetch_count": 1,
+        "rusage": {
+          "utime": 1.052435,
+          "stime": 0.486581,
+          "maxrss": 108920832,
+          "ixrss": 0,
+          "idrss": 0,
+          "isrss": 0,
+          "minflt": 31190,
+          "majflt": 308,
+          "nswap": 0,
+          "inblock": 0,
+          "oublock": 0,
+          "msgsnd": 57,
+          "msgrcv": 58,
+          "nsignals": 0,
+          "nvcsw": 1179,
+          "nivcsw": 15799
+        }
+      },
+      "background@MacBookPro": {
+        "total": {},
+        "pid": 15888,
+        "clock": "7",
+        "uptime": 10,
+        "pool": {
+          "implementation": "celery.concurrency.prefork:TaskPool",
+          "max-concurrency": 1,
+          "processes": [
+            15927
+          ],
+          "max-tasks-per-child": 50,
+          "put-guarded-by-semaphore": false,
+          "timeouts": [
+            0,
+            21600
+          ],
+          "writes": {
+            "total": 0,
+            "avg": "0.00",
+            "all": "",
+            "raw": "",
+            "strategy": "fair",
+            "inqueues": {
+              "total": 1,
+              "active": 0
+            }
+          }
+        },
+        "broker": {
+          "hostname": "redis+socket:///tmp/floppy-bench05-srpsr7nw/redis.sock?virtual_host=1",
+          "userid": null,
+          "virtual_host": "/",
+          "port": 6379,
+          "insist": false,
+          "ssl": false,
+          "transport": "redis",
+          "connect_timeout": 4,
+          "transport_options": {
+            "queue_order_strategy": "priority",
+            "priority_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "sep": ":",
+            "visibility_timeout": 23400,
+            "socket_timeout": 30,
+            "socket_connect_timeout": 10,
+            "socket_keepalive": true,
+            "retry_on_timeout": true,
+            "health_check_interval": 30
+          },
+          "login_method": null,
+          "uri_prefix": "redis",
+          "heartbeat": 120.0,
+          "failover_strategy": "round-robin",
+          "alternates": [],
+          "credential_provider": null
+        },
+        "prefetch_count": 1,
+        "rusage": {
+          "utime": 1.033372,
+          "stime": 0.477357,
+          "maxrss": 108969984,
+          "ixrss": 0,
+          "idrss": 0,
+          "isrss": 0,
+          "minflt": 31490,
+          "majflt": 197,
+          "nswap": 0,
+          "inblock": 0,
+          "oublock": 0,
+          "msgsnd": 57,
+          "msgrcv": 58,
+          "nsignals": 0,
+          "nvcsw": 1140,
+          "nivcsw": 15646
+        }
+      }
+    },
+    "footprint": {
+      "background@MacBookPro": {
+        "parent": {
+          "rss": 28786688,
+          "uss": null,
+          "pss": null
+        },
+        "child": null
+      },
+      "interactive@MacBookPro": {
+        "parent": {
+          "rss": 28704768,
+          "uss": null,
+          "pss": null
+        },
+        "child": null
+      }
+    }
+  },
+  "load": {
+    "records": 10000,
+    "cold": true,
+    "loaded": true,
+    "topology": "separate"
+  },
+  "loaded": {
+    "worker_stats": {
+      "background@MacBookPro": {
+        "total": {
+          "tasks04a.memory": 2,
+          "app.tasks.statistics_sync_task": 7,
+          "tasks04a.sync": 1
+        },
+        "pid": 15888,
+        "clock": "66",
+        "uptime": 126,
+        "pool": {
+          "implementation": "celery.concurrency.prefork:TaskPool",
+          "max-concurrency": 1,
+          "processes": [
+            15927
+          ],
+          "max-tasks-per-child": 50,
+          "put-guarded-by-semaphore": false,
+          "timeouts": [
+            0,
+            21600
+          ],
+          "writes": {
+            "total": 10,
+            "avg": "1.00",
+            "all": "1.00",
+            "raw": "10",
+            "strategy": "fair",
+            "inqueues": {
+              "total": 1,
+              "active": 0
+            }
+          }
+        },
+        "broker": {
+          "hostname": "redis+socket:///tmp/floppy-bench05-srpsr7nw/redis.sock?virtual_host=1",
+          "userid": null,
+          "virtual_host": "/",
+          "port": 6379,
+          "insist": false,
+          "ssl": false,
+          "transport": "redis",
+          "connect_timeout": 4,
+          "transport_options": {
+            "queue_order_strategy": "priority",
+            "priority_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "sep": ":",
+            "visibility_timeout": 23400,
+            "socket_timeout": 30,
+            "socket_connect_timeout": 10,
+            "socket_keepalive": true,
+            "retry_on_timeout": true,
+            "health_check_interval": 30
+          },
+          "login_method": null,
+          "uri_prefix": "redis",
+          "heartbeat": 120.0,
+          "failover_strategy": "round-robin",
+          "alternates": [],
+          "credential_provider": null
+        },
+        "prefetch_count": 1,
+        "rusage": {
+          "utime": 1.113016,
+          "stime": 0.807488,
+          "maxrss": 108969984,
+          "ixrss": 0,
+          "idrss": 0,
+          "isrss": 0,
+          "minflt": 93151,
+          "majflt": 207,
+          "nswap": 0,
+          "inblock": 0,
+          "oublock": 0,
+          "msgsnd": 157,
+          "msgrcv": 161,
+          "nsignals": 0,
+          "nvcsw": 1350,
+          "nivcsw": 19800
+        }
+      },
+      "interactive@MacBookPro": {
+        "total": {
+          "tasks04a.memory": 2
+        },
+        "pid": 15887,
+        "clock": "66",
+        "uptime": 126,
+        "pool": {
+          "implementation": "celery.concurrency.prefork:TaskPool",
+          "max-concurrency": 1,
+          "processes": [
+            15926
+          ],
+          "max-tasks-per-child": 50,
+          "put-guarded-by-semaphore": false,
+          "timeouts": [
+            0,
+            21600
+          ],
+          "writes": {
+            "total": 2,
+            "avg": "1.00",
+            "all": "1.00",
+            "raw": "2",
+            "strategy": "fair",
+            "inqueues": {
+              "total": 1,
+              "active": 0
+            }
+          }
+        },
+        "broker": {
+          "hostname": "redis+socket:///tmp/floppy-bench05-srpsr7nw/redis.sock?virtual_host=1",
+          "userid": null,
+          "virtual_host": "/",
+          "port": 6379,
+          "insist": false,
+          "ssl": false,
+          "transport": "redis",
+          "connect_timeout": 4,
+          "transport_options": {
+            "queue_order_strategy": "priority",
+            "priority_steps": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "sep": ":",
+            "visibility_timeout": 23400,
+            "socket_timeout": 30,
+            "socket_connect_timeout": 10,
+            "socket_keepalive": true,
+            "retry_on_timeout": true,
+            "health_check_interval": 30
+          },
+          "login_method": null,
+          "uri_prefix": "redis",
+          "heartbeat": 120.0,
+          "failover_strategy": "round-robin",
+          "alternates": [],
+          "credential_provider": null
+        },
+        "prefetch_count": 1,
+        "rusage": {
+          "utime": 1.145496,
+          "stime": 0.840625,
+          "maxrss": 108920832,
+          "ixrss": 0,
+          "idrss": 0,
+          "isrss": 0,
+          "minflt": 92601,
+          "majflt": 311,
+          "nswap": 0,
+          "inblock": 0,
+          "oublock": 0,
+          "msgsnd": 241,
+          "msgrcv": 244,
+          "nsignals": 0,
+          "nvcsw": 1332,
+          "nivcsw": 20443
+        }
+      }
+    },
+    "footprint": {
+      "interactive@MacBookPro": {
+        "parent": {
+          "rss": 24133632,
+          "uss": null,
+          "pss": null
+        },
+        "child": null
+      },
+      "background@MacBookPro": {
+        "parent": {
+          "rss": 22986752,
+          "uss": null,
+          "pss": null
+        },
+        "child": null
+      }
+    }
+  },
+  "environment": {
+    "sha": "fcccc54a237411da1b85cb4f4ab19379bdc06b6e",
+    "os": "macOS-27.2-arm64-arm-64bit",
+    "python": "3.12.15 (main, Sep 30 2026, 22:04:19) [Clang 21.0.0 (clang-2100.3.34.2)]",
+    "topology": "separate",
+    "workers": [
+      "interactive",
+      "celery"
+    ],
+    "pool": "prefork concurrency=1, prefetch=1",
+    "fixture": {
+      "records": 10000,
+      "days": 3650,
+      "types": [
+        "movie"
+      ]
+    },
+    "resource_limits": "native host; no container CPU/memory quota"
+  }
+}
