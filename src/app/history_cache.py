@@ -1170,14 +1170,9 @@ def build_history_days(
         if process_movies
         else (Movie.objects.none(), {})
     )
-    try:
-        movies_count = movies.count()
-    except Exception:
-        movies_count = None
     logger.info(
-        "history_build_movies user_id=%s qs_count=%s play_map=%s elapsed_ms=%.2f",
+        "history_build_movies user_id=%s play_map=%s elapsed_ms=%.2f",
         user.id,
-        movies_count,
         len(movie_play_map),
         (time.perf_counter() - movies_start) * 1000,
     )
@@ -1226,14 +1221,6 @@ def build_history_days(
             models.Q(end_date__lte=end_date)
             | (models.Q(end_date__isnull=True) & models.Q(start_date__lte=end_date))
         )
-    try:
-        games_count = games.count()
-    except Exception:
-        games_count = None
-    try:
-        boardgames_count = boardgames.count()
-    except Exception:
-        boardgames_count = None
 
     music_start = time.perf_counter()
     music_entries = Music.objects.none()
@@ -1257,10 +1244,6 @@ def build_history_days(
             item__media_id=target_media_id,
             item__source=target_source,
         )
-    try:
-        music_entries_count = music_entries.count()
-    except Exception:
-        music_entries_count = None
 
     podcast_start = time.perf_counter()
     podcast_history_records = []
@@ -1283,13 +1266,6 @@ def build_history_days(
         podcast_history_records = podcast_history_records.filter(
             show_id=podcast_show_filter
         )
-    if process_podcasts:
-        try:
-            podcast_history_count = podcast_history_records.count()
-        except Exception:
-            podcast_history_count = None
-    else:
-        podcast_history_count = 0
     podcast_ids = (
         list(set(podcast_history_records.values_list("id", flat=True)))
         if process_podcasts
@@ -1564,10 +1540,9 @@ def build_history_days(
         entries.extend(music_entry_list)
         entry_counts["music"] = len(music_entry_list)
         logger.info(
-            "history_build_music user_id=%s music_entries=%s history_records_scanned=%s "
+            "history_build_music user_id=%s history_records_scanned=%s "
             "album_day_groups=%s entries=%s elapsed_ms=%.2f",
             user.id,
-            music_entries_count,
             music_history_records_scanned,
             music_album_day_groups,
             entry_counts["music"],
@@ -1585,9 +1560,8 @@ def build_history_days(
         entries.extend(podcast_entry_list)
         entry_counts["podcasts"] = len(podcast_entry_list)
         logger.info(
-            "history_build_podcasts user_id=%s history_records=%s podcast_ids=%s entries=%s elapsed_ms=%.2f",
+            "history_build_podcasts user_id=%s podcast_ids=%s entries=%s elapsed_ms=%.2f",
             user.id,
-            podcast_history_count,
             len(podcast_ids),
             entry_counts["podcasts"],
             (time.perf_counter() - podcast_start) * 1000,
@@ -1610,11 +1584,9 @@ def build_history_days(
             else:
                 entry_counts["boardgames"] += 1
         logger.info(
-            "history_build_games user_id=%s games=%s boardgames=%s entries_games=%s "
+            "history_build_games user_id=%s entries_games=%s "
             "entries_boardgames=%s logging_style=%s elapsed_ms=%.2f",
             user.id,
-            games_count,
-            boardgames_count,
             entry_counts["games"],
             entry_counts["boardgames"],
             game_logging_style,
