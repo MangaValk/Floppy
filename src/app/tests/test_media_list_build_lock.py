@@ -66,7 +66,10 @@ class MediaListFollowerTests(TestCase):
         self.addCleanup(cache.clear)
 
     def _filter_key(self):
-        keys = cache.get(cache_utils._media_list_registry_key(self.user.id)) or []
+        registry = cache.make_key(cache_utils._media_list_registry_key(self.user.id))
+        keys = [
+            k.decode() for k in cache_utils._registry_client().smembers(registry)
+        ]
         (key,) = [k for k in keys if "filter" in k]
         return key
 
