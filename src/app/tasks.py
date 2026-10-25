@@ -1430,6 +1430,7 @@ __all__ = [
     "populate_trakt_popularity_data_for_items",
     "prefetch_album_covers_batch",
     "prefetch_artist_images_batch",
+    "purge_expired_discover_caches",
     "reconcile_external_ids_backfill",
     "reconcile_genre_backfill",
     "reconcile_igdb_rating_backfill",
