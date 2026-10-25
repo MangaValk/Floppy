@@ -831,18 +831,37 @@ def season_details(
             # Check if the show has collection data, and trigger background fetch if not
             # We check the show item (not season) because episode collection data is tied to the show
             try:
-                # Use parent_media_type to pick the correct show Item (anime vs TV)
-                # so we don't hit MultipleObjectsReturned when both exist.
-                show_media_type = (
-                    MediaTypes.ANIME.value
-                    if parent_media_type == MediaTypes.ANIME.value
-                    else MediaTypes.TV.value
-                )
-                show_item = ItemModel.objects.get(
-                    media_id=media_id,
-                    source=source,
-                    media_type=show_media_type,
-                )
+                if current_instance is not None:
+                    # A tracked season owns its parent identity, even when the
+                    # route resolves it from a different library bucket.
+                    show_item = current_instance.related_tv.item
+                else:
+                    show_library_media_type = (
+                        MediaTypes.ANIME.value
+                        if parent_media_type == MediaTypes.ANIME.value
+                        else MediaTypes.TV.value
+                    )
+                    show_items = ItemModel.objects.filter(
+                        media_id=media_id,
+                        source=source,
+                        library_media_type=show_library_media_type,
+                        season_number__isnull=True,
+                        episode_number__isnull=True,
+                    )
+                    # Grouped anime uses TV identities; older anime identities
+                    # can still supply collection data when no TV item exists.
+                    show_item = show_items.filter(
+                        media_type=MediaTypes.TV.value
+                    ).first()
+                    if (
+                        show_item is None
+                        and show_library_media_type == MediaTypes.ANIME.value
+                    ):
+                        show_item = show_items.filter(
+                            media_type=MediaTypes.ANIME.value
+                        ).first()
+                    if show_item is None:
+                        raise ItemModel.DoesNotExist  # noqa: TRY301 - skip auto-fetch when no scoped show exists
                 show_collection_entry = get_item_collection_entries(
                     request.user, show_item
                 ).first()
