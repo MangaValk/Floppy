@@ -2436,15 +2436,24 @@ def media_list(request, media_type):
             filter_data["show_progress"] = media_type in PROGRESS_MEDIA_TYPES
             # Tag counts ignore the tag filter itself, or every other tag
             # would count 0 (#1072).
-            tag_rows = (
-                _menu_rows(replace(menu_filters, tags=()))
+            # Counting reads only the item ids, so the tag-free pass skips the
+            # menu columns.
+            tag_item_ids = (
+                LibraryQueryExecutor(
+                    request.user,
+                    from_media_list_filters(
+                        replace(menu_filters, tags=()), (media_type,)
+                    ),
+                )
+                .filtered.order_by()
+                .values_list("pk", flat=True)
                 if tag_values
-                else filter_data_rows
+                else item_ids
             )
             filter_data.update(
                 _build_media_list_tag_data(
                     request.user,
-                    [SimpleNamespace(**row) for row in tag_rows],
+                    [SimpleNamespace(id=pk) for pk in tag_item_ids],
                 ),
             )
             if _media_list_filter_cache_key:
