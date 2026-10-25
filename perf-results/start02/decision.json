@@ -1,0 +1,234 @@
+{
+  "verdict": "INCONCLUSIVE",
+  "checklist_complete": false,
+  "application_change_adopted": false,
+  "problem_confirmed": true,
+  "baseline_sha": "d6292bdbe0281b68057b485bfff1601139f40057",
+  "candidate_sha": "9d460bc3523a51280fad55cf763845fbf9d784d3",
+  "candidate_branch": "codex/start02-bootstrap",
+  "candidate_files": [
+    "Dockerfile",
+    "entrypoint.sh",
+    "src/config/static_collection.py",
+    "src/config/tests/test_static_collection.py",
+    "src/app/tests/test_data_paths.py"
+  ],
+  "confirmed": "Repeated 274-file collection and default recursive static ownership repair removed; static CPU target exceeded.",
+  "acceptance_limit": "End-to-end readiness is not statistically isolated from changing shared-host load; accepted webhook and loaded-application latency were not measured.",
+  "stage_medians": {
+    "cold": {
+      "baseline": {
+        "n": 12,
+        "static_cpu_s": 3.249003,
+        "static_wall_s": 4.612658481026301,
+        "static_cpu_raw_s": [
+          4.289795,
+          4.045185,
+          3.204479,
+          2.3859019999999997,
+          2.298948,
+          4.315671999999999,
+          2.031347,
+          2.1753460000000002,
+          2.147531,
+          3.293527,
+          5.619409,
+          3.908797
+        ],
+        "ownership_median": {
+          "wall_s": 1.9916449169977568,
+          "cpu_s": 0.2374339999999986,
+          "read_bytes": 8196096.0,
+          "write_bytes": 8073216.0
+        }
+      },
+      "changed": {
+        "n": 12,
+        "static_cpu_s": 0.20521699999999998,
+        "static_wall_s": 0.20710406301077455,
+        "static_cpu_raw_s": [
+          0.5117849999999999,
+          0.19812399999999997,
+          0.12399099999999999,
+          0.6520589999999999,
+          0.19713599999999998,
+          0.160168,
+          0.206922,
+          0.24209,
+          0.161526,
+          0.21471399999999996,
+          0.20351199999999997,
+          0.323435
+        ],
+        "ownership_median": {
+          "wall_s": 0.0014980414998717606,
+          "cpu_s": 0.0014849999999988484,
+          "read_bytes": 0.0,
+          "write_bytes": 0.0
+        }
+      }
+    },
+    "warm": {
+      "baseline": {
+        "n": 5,
+        "static_cpu_s": 2.437729,
+        "static_wall_s": 3.807237376982812,
+        "static_cpu_raw_s": [
+          2.722248,
+          2.381546,
+          2.8819619999999997,
+          2.295046,
+          2.437729
+        ],
+        "ownership_median": {
+          "wall_s": 2.0201893349876627,
+          "cpu_s": 0.19701300000000188,
+          "read_bytes": 8249344,
+          "write_bytes": 8073216
+        }
+      },
+      "changed": {
+        "n": 5,
+        "static_cpu_s": 0.268611,
+        "static_wall_s": 0.22820245794719085,
+        "static_cpu_raw_s": [
+          0.27761199999999997,
+          0.268611,
+          0.19006099999999998,
+          0.28618,
+          0.26150799999999996
+        ],
+        "ownership_median": {
+          "wall_s": 0.002227500022854656,
+          "cpu_s": 0.0013279999999991077,
+          "read_bytes": 0,
+          "write_bytes": 0
+        }
+      }
+    }
+  },
+  "paired_warm": {
+    "healthy_s": {
+      "indices": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "deltas": [
+        -10.698772546020336,
+        7.945580960949883,
+        -15.002980756980833,
+        -22.139643592992797,
+        -0.34597529092570767
+      ],
+      "median_delta": -10.698772546020336,
+      "two_sided_sign_flip_p": 0.1875
+    },
+    "usable_s": {
+      "indices": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "deltas": [
+        -10.765645546023734,
+        7.610539669985883,
+        -16.593688799941447,
+        -20.87768542591948,
+        -0.542393623967655
+      ],
+      "median_delta": -10.765645546023734,
+      "two_sided_sign_flip_p": 0.1875
+    },
+    "cpu_s": {
+      "indices": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "deltas": [
+        -6.930779999999999,
+        7.340042999999994,
+        -8.869494000000003,
+        -14.832554000000002,
+        0.7988649999999993
+      ],
+      "median_delta": -6.930779999999999
+    },
+    "peak_mib": {
+      "indices": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "deltas": [
+        23.48828125,
+        -28.125,
+        29.01171875,
+        -41.16796875,
+        -15.55078125
+      ],
+      "median_delta": -15.55078125
+    },
+    "library_median_ms": {
+      "indices": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "deltas": [
+        -122.95637500938028,
+        1.4086875307839364,
+        -671.2263954977971,
+        -32.11812500376254,
+        -212.0385630405508
+      ],
+      "median_delta": -122.95637500938028
+    },
+    "webhook_median_ms": {
+      "indices": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "deltas": [
+        1.3671460037585348,
+        -2.7451040223240852,
+        -40.41704197879881,
+        0.8036449435167015,
+        -5.372833489673212
+      ],
+      "median_delta": -2.7451040223240852
+    },
+    "queue_roundtrip_ms": {
+      "indices": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "deltas": [
+        243.86599997524172,
+        -267.2736259410158,
+        -124.54329198226333,
+        -38.09612605255097,
+        -218.92325102817267
+      ],
+      "median_delta": -124.54329198226333
+    }
+  },
+  "retained": "Candidate commits and candidate.patch.gz are reviewable; no candidate runtime changes adopted into the shared checkout."
+}
