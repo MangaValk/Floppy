@@ -303,7 +303,8 @@ class BulkImportStatisticsTests(StatisticsSyncTestCase):
     def test_sqlite_defers_other_users_but_postgres_does_not(self):
         other = get_user_model().objects.create_user(username="other-import")
         ImportRun.objects.create(user=other, source="mdblist")
-        self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
+        with patch.object(statistics_sync.connection, "vendor", "sqlite"):
+            self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
         with patch.object(statistics_sync.connection, "vendor", "postgresql"):
             self.assertFalse(statistics_sync._bulk_import_active(self.user.id))
 
