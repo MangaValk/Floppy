@@ -459,6 +459,64 @@ class MediaEpisodeCollectionTests(FloppyApiTestCase):
         self.assertEqual(deleted.status_code, HTTP.NO_CONTENT)
 
     @patch(METADATA_PATH)
+    def test_anime_parameter_finds_an_episode_created_outside_the_anime_library(
+        self, mock_metadata
+    ):
+        """A PUT creates a new episode in the default library; the same parameter finds it."""
+        mock_metadata.return_value = {
+            "media_id": "209867",
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.EPISODE.value,
+            "title": "Frieren: Beyond Journey's End",
+            "image": "https://example.com/still.jpg",
+        }
+        args = (MediaTypes.TV.value, Sources.TMDB.value, "209867", 1, 6)
+        params = {"library_media_type": MediaTypes.ANIME.value}
+
+        created = self.call_api(
+            "put",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            payload={"media_type": "digital"},
+            headers=self.auth_headers,
+        )
+        self.assertEqual(created.status_code, HTTP.CREATED)
+        item = Item.objects.get(
+            media_id="209867",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            season_number=1,
+            episode_number=6,
+        )
+        self.assertNotEqual(item.library_media_type, MediaTypes.ANIME.value)
+
+        repeated = self.call_api(
+            "put",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            payload={"media_type": "digital"},
+            headers=self.auth_headers,
+        )
+        self.assertEqual(repeated.status_code, HTTP.OK)
+        self.assertEqual(repeated.json()["id"], created.json()["id"])
+
+        deleted = self.call_api(
+            "delete",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            headers=self.auth_headers,
+        )
+        self.assertEqual(deleted.status_code, HTTP.NO_CONTENT)
+        self.assertFalse(
+            CollectionEntry.objects.filter(user=self.user1, item=item).exists(),
+        )
+        # The repeat PUT found the item without fetching its metadata again.
+        mock_metadata.assert_called_once()
+
+    @patch(METADATA_PATH)
     def test_anime_library_episode_found_with_library_media_type(self, mock_metadata):
         """PUT and DELETE reach an episode in the anime library when told so."""
         item = Item.objects.create(

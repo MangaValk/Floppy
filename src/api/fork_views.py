@@ -333,6 +333,30 @@ class MediaCollectionView(drf_views.APIView):
             )
         return lookup_media_type, None
 
+    def _find_item(self, request, media_id, source, media_type, season_number, episode_number):
+        """Return the addressed item in the requested library, else the default one.
+
+        A PUT for a show Floppy doesn't have yet creates the episode in the
+        default library even with ``library_media_type=anime``, so calls with
+        the same parameter fall back there to find it.
+        """
+        library_media_type = request.query_params.get("library_media_type")
+
+        def lookup(bucket):
+            return resolve_item_queryset(
+                media_id,
+                source,
+                media_type,
+                season_number=season_number,
+                episode_number=episode_number,
+                library_media_type=bucket,
+            ).first()
+
+        item = lookup(library_media_type)
+        if item is None and library_media_type:
+            item = lookup(None)
+        return item
+
     def _api_entries(self, user, item):
         """Return the user's copies of the item that this API created."""
         return CollectionEntry.objects.filter(
@@ -491,17 +515,26 @@ class MediaCollectionView(drf_views.APIView):
         if error:
             return error
 
-        item, error = get_or_create_provider_item(
-            lookup_media_type,
-            source,
+        item = self._find_item(
+            request,
             media_id,
-            user=request.user,
-            season_number=season_number,
-            episode_number=episode_number,
-            library_media_type=request.query_params.get("library_media_type"),
+            source,
+            lookup_media_type,
+            season_number,
+            episode_number,
         )
-        if error:
-            return error
+        if item is None:
+            item, error = get_or_create_provider_item(
+                lookup_media_type,
+                source,
+                media_id,
+                user=request.user,
+                season_number=season_number,
+                episode_number=episode_number,
+                library_media_type=request.query_params.get("library_media_type"),
+            )
+            if error:
+                return error
 
         entry = self._api_entries(request.user, item).first()
         if entry is None:
@@ -564,14 +597,14 @@ class MediaCollectionView(drf_views.APIView):
         if error:
             return error
 
-        item = resolve_item_queryset(
+        item = self._find_item(
+            request,
             media_id,
             source,
             lookup_media_type,
-            season_number=season_number,
-            episode_number=episode_number,
-            library_media_type=request.query_params.get("library_media_type"),
-        ).first()
+            season_number,
+            episode_number,
+        )
         if item is None:
             return Response(
                 {"detail": "Collection entry not found."},
