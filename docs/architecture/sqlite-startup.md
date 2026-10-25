@@ -30,6 +30,19 @@ before admission, while services remain stopped; stale approvals do not trigger
 a new scan after the incident closes. PostgreSQL retains its existing
 migration/startup path and does not run SQLite verification.
 
+## Pending migrations: automatic snapshot at startup
+
+When migrations are pending and no valid permit exists, admission exits 11 and
+the entrypoint (services not yet started) runs `sqlite_startup
+--prepare-migrations --fast`: an online-API copy of the database, verified with
+`quick_check` on the copy, then a permit, then re-admission and migrate. It
+skips the relationship (`foreign_key_check`) scan, which runs afterwards in the
+background verifier. **Tradeoff:** a pre-existing foreign-key conflict is not
+caught before the migration; the verified copy is the restore point. Incidents
+and previous failed/blocked checks still block. Set
+`FLOPPY_SQLITE_AUTO_SNAPSHOT=false` to require the manual step below. Measured
+here: 18.6s for a 2GB database on local SSD.
+
 ## Pending migrations: explicit offline preparation
 
 Stop **all** application containers, workers, scheduled jobs and other database

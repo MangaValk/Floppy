@@ -29,6 +29,10 @@ class StartupBlockedError(RuntimeError):
     """Startup needs an explicit maintenance operation."""
 
 
+class MigrationPermitRequiredError(StartupBlockedError):
+    """Only a recovery snapshot is missing; the entrypoint can take one."""
+
+
 def _signature(path: Path) -> list[int] | None:
     try:
         info = path.stat()
@@ -163,7 +167,7 @@ def startup_gate(db_path: str, connection) -> bool:
             "Stop all database writers, then run: python manage.py sqlite_startup "
             "--prepare-migrations (bounded to one hour by default). Restart afterwards."
         )
-        raise StartupBlockedError(msg)
+        raise MigrationPermitRequiredError(msg)
     if not isinstance(permit.get("backup"), str) or not permit["backup"]:
         msg = "Migration recovery snapshot record is malformed; prepare again."
         raise StartupBlockedError(msg)
@@ -178,7 +182,12 @@ def startup_gate(db_path: str, connection) -> bool:
 
 
 def verify_snapshot(
-    db_path: str, backup_dir: Path, *, prepare: bool, connection=None
+    db_path: str,
+    backup_dir: Path,
+    *,
+    prepare: bool,
+    connection=None,
+    fast: bool = False,
 ) -> None:
     """Check a private online copy; publish findings, never repair live rows.
 
@@ -291,29 +300,33 @@ def verify_snapshot(
                 msg = "Snapshot/structural verification failed; inspect snapshot logs"
                 raise StartupBlockedError(msg)  # noqa: TRY301
             status("running", "foreign_key_check", backup=str(snapshot))
-            with closing(sqlite3.connect(snapshot)) as copied:
-                last_report = time.monotonic()
-                callbacks = 0
+            # fast: entrypoint-taken snapshot. Structural check only; the
+            # relational scan then runs after startup (documented tradeoff).
+            incident = {"total_conflicts": 0}
+            if not fast:
+                with closing(sqlite3.connect(snapshot)) as copied:
+                    last_report = time.monotonic()
+                    callbacks = 0
 
-                def progress():
-                    nonlocal last_report, callbacks
-                    callbacks += 1
-                    if time.monotonic() - last_report >= _PROGRESS_REPORT_SECONDS:
-                        status(
-                            "running",
-                            "foreign_key_check",
-                            backup=str(snapshot),
-                            structural="ok",
-                            progress_callbacks=callbacks,
-                        )
-                        last_report = time.monotonic()
-                    # Yield CPU/I/O between bounded instruction batches. All
-                    # expensive checks run on the copy, without a live read txn.
-                    time.sleep(0.002)
-                    return 0
+                    def progress():
+                        nonlocal last_report, callbacks
+                        callbacks += 1
+                        if time.monotonic() - last_report >= _PROGRESS_REPORT_SECONDS:
+                            status(
+                                "running",
+                                "foreign_key_check",
+                                backup=str(snapshot),
+                                structural="ok",
+                                progress_callbacks=callbacks,
+                            )
+                            last_report = time.monotonic()
+                        # Yield CPU/I/O between bounded instruction batches. All
+                        # expensive checks run on the copy, without a live read txn.
+                        time.sleep(0.002)
+                        return 0
 
-                copied.set_progress_handler(progress, 100_000)
-                incident = integrity._inspect_foreign_keys(copied)
+                    copied.set_progress_handler(progress, 100_000)
+                    incident = integrity._inspect_foreign_keys(copied)
             with snapshot.open("rb") as checked:
                 integrity._release_page_cache(checked.fileno(), snapshot.name)
             if incident["total_conflicts"]:

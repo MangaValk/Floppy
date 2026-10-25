@@ -78,9 +78,13 @@ class SQLiteAvailabilityTests(SimpleTestCase):
     def gate(self):
         return admission.startup_gate(self.database, self.wrapper)
 
-    def verify(self, *, prepare=False):
+    def verify(self, *, prepare=False, fast=False):
         admission.verify_snapshot(
-            self.database, self.backups, prepare=prepare, connection=self.wrapper
+            self.database,
+            self.backups,
+            prepare=prepare,
+            connection=self.wrapper,
+            fast=fast,
         )
 
     def test_current_history_never_runs_full_storage_or_relationship_checks(self):
@@ -182,6 +186,18 @@ class SQLiteAvailabilityTests(SimpleTestCase):
         self.assertIn([*pending, False], permit["plan"])
         self.assertTrue(all(not backwards for _, _, backwards in permit["plan"]))
         self.assertTrue(self.gate())
+
+    def test_fast_preparation_skips_only_the_relational_scan(self):
+        with sqlite3.connect(self.database) as db:
+            db.execute("INSERT INTO child (id, parent_id) VALUES (1, 99)")
+        self.verify(prepare=True, fast=True)
+        permit = json.loads(admission._permit_path(self.database).read_text())
+        self.assertTrue(Path(permit["backup"]).is_file())
+
+    def test_missing_permit_is_distinguishable_for_the_entrypoint(self):
+        self.pending()
+        with self.assertRaises(admission.MigrationPermitRequiredError):
+            self.gate()
 
     def test_new_image_invalidates_pending_migration_permit(self):
         self.pending()

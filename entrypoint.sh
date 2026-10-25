@@ -150,6 +150,25 @@ if [ -z "$DB_HOST" ]; then
                 integrity_pid=$!
                 wait "$integrity_pid" || integrity_status=$?
             fi
+            if [ "$integrity_status" -eq 11 ]; then
+                # Migrations pending and no snapshot: take one now (services are
+                # not running yet), structural check only; the relational scan
+                # runs after startup. FLOPPY_SQLITE_AUTO_SNAPSHOT=false keeps
+                # the manual --prepare-migrations requirement.
+                integrity_status=11
+                if [ "${FLOPPY_SQLITE_AUTO_SNAPSHOT:-true}" != "false" ]; then
+                    echo "[entrypoint] Taking a recovery snapshot before migrations" >&2
+                    integrity_status=0
+                    python manage.py sqlite_startup --prepare-migrations --fast --timeout 3600 &
+                    integrity_pid=$!
+                    wait "$integrity_pid" || integrity_status=$?
+                    if [ "$integrity_status" -eq 0 ]; then
+                        timeout -k 5 30 python manage.py sqlite_startup &
+                        integrity_pid=$!
+                        wait "$integrity_pid" || integrity_status=$?
+                    fi
+                fi
+            fi
             trap - TERM INT
             if [ "$integrity_status" -eq 10 ]; then
                 SKIP_SQLITE_MIGRATIONS=true

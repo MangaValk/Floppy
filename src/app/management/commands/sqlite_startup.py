@@ -15,6 +15,7 @@ from django.db import DatabaseError, connection
 
 from config import sqlite_integrity as integrity
 from config.sqlite_availability import (
+    MigrationPermitRequiredError,
     StartupBlockedError,
     _permit_path,
     startup_gate,
@@ -35,6 +36,11 @@ class Command(BaseCommand):
         modes.add_argument("--prepare-migrations", action="store_true")
         modes.add_argument("--background", action="store_true")
         modes.add_argument("--recover", action="store_true")
+        parser.add_argument(
+            "--fast",
+            action="store_true",
+            help="With --prepare-migrations: structural snapshot check only",
+        )
         parser.add_argument(
             "--worker", action="store_true", help="Internal deadline worker"
         )
@@ -100,6 +106,7 @@ class Command(BaseCommand):
                     Path(settings.BACKUP_DIR) / "verification",
                     prepare=options["prepare_migrations"],
                     connection=connection,
+                    fast=options["fast"],
                 )
             else:
                 needs_migrations = startup_gate(db_path, connection)
@@ -112,6 +119,10 @@ class Command(BaseCommand):
                 )
                 if not needs_migrations:
                     raise SystemExit(10)  # skip even the no-op migrate handlers
+        except MigrationPermitRequiredError:
+            raise SystemExit(
+                11
+            ) from None  # entrypoint takes a snapshot, then re-admits
         except (
             StartupBlockedError,
             OSError,
