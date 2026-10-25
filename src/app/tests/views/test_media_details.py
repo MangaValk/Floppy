@@ -1371,6 +1371,11 @@ class MediaDetailsViewTests(TestCase):
             detail_response,
             reverse("prefetch_artist_covers", args=[artist.id]),
         )
+        # The page render arms an early poll; the swapped-in fragment must
+        # not, or every swap re-fires `load` and polls once per second.
+        self.assertContains(
+            detail_response, 'hx-trigger="load delay:500ms, every 5s"'
+        )
         self.assertContains(
             detail_response,
             f'id="album-cover-{scored_album.id}"',
@@ -1393,6 +1398,8 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertContains(refresh_response, "hx-preserve", html=False)
         self.assertContains(refresh_response, "Refreshing cover art")
+        self.assertContains(refresh_response, 'hx-trigger="every 5s"')
+        self.assertNotContains(refresh_response, "load delay")
 
     @patch("app.services.music.needs_discography_sync", return_value=False)
     @patch("app.services.music_scrobble.dedupe_artist_albums")
