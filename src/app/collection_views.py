@@ -8,7 +8,9 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, Paginator
+from django.db import connection
 from django.db.models import Count, Q
+from django.db.models.expressions import RawSQL
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -123,6 +125,31 @@ def _custom_value_entry_ids(collection, query):
     ]
 
 
+def _custom_field_values(collection, field_id):
+    """Return (entry id, stored value) for one custom field, in id order.
+
+    The database extracts the single value, so the rest of each entry's JSON
+    never leaves it. The key is quoted into the path for the reason above.
+    """
+    column = f'"{collection.model._meta.db_table}"."custom_field_values"'
+    if connection.vendor == "sqlite":
+        path = '$."' + str(field_id) + '"'
+        rows = collection.order_by("id").values_list(
+            "id",
+            RawSQL(f"json_extract({column}, %s)", [path]),  # noqa: S611 - column is model metadata, key is bound
+            RawSQL(f"json_type({column}, %s)", [path]),  # noqa: S611 - column is model metadata, key is bound
+        )
+        return [
+            (pk, {"true": True, "false": False}.get(kind, value))
+            for pk, value, kind in rows
+        ]
+    rows = collection.order_by("id").values_list(
+        "id",
+        RawSQL(f"{column} -> %s::text", [str(field_id)]),  # noqa: S611 - column is model metadata, key is bound
+    )
+    return [(pk, value) for pk, value in rows]
+
+
 def _custom_value_matches(raw, wanted):
     """Return whether a stored value equals the wanted filter value."""
     return raw not in (None, "") and str(raw).casefold() == wanted.casefold()
@@ -143,11 +170,7 @@ def _ids_ordered_by_custom_field(collection, field, direction):
     Ties keep newest first, like the other sorts.
     """
     present, blank = [], []
-    for entry_id, values in collection.order_by("-id").values_list(
-        "id",
-        "custom_field_values",
-    ):
-        raw = (values or {}).get(str(field.id))
+    for entry_id, raw in reversed(_custom_field_values(collection, field.id)):
         if raw in (None, ""):
             blank.append(entry_id)
         else:
@@ -393,14 +416,11 @@ def collection_list(request, media_type=None):
         collection = collection.filter(
             id__in=[
                 entry_id
-                for entry_id, values in collection.values_list(
-                    "id",
-                    "custom_field_values",
+                for entry_id, raw in _custom_field_values(
+                    collection,
+                    custom_filter_field,
                 )
-                if _custom_value_matches(
-                    (values or {}).get(custom_filter_field),
-                    custom_filter_value,
-                )
+                if _custom_value_matches(raw, custom_filter_value)
             ],
         )
     if format_filter:
