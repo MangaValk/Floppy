@@ -57,10 +57,31 @@ RUNTIME_UNKNOWN_AIRED = 999998
 RUNTIME_UNKNOWN_FAILED = 999999
 
 
+class OwnerEndDateHistory(HistoricalRecords):
+    """History table indexed for the History page's per-user end_date query.
+
+    Only music and podcasts read their history table directly by
+    ``history_user`` and ``end_date``; other media types keep the default.
+    """
+
+    def get_meta_options(self, model):
+        """Add the (history_user, end_date) index for music and podcasts."""
+        meta = super().get_meta_options(model)
+        if model.__name__ in ("Music", "Podcast"):
+            meta["indexes"] = (
+                *meta.get("indexes", ()),
+                models.Index(
+                    fields=["history_user", "end_date"],
+                    name=f"app_hist{model.__name__.lower()}_user_end_idx",
+                ),
+            )
+        return meta
+
+
 class Media(models.Model):
     """Abstract model for all media types."""
 
-    history = HistoricalRecords(
+    history = OwnerEndDateHistory(
         cascade_delete_history=True,
         inherit=True,
         excluded_fields=[
