@@ -65,9 +65,12 @@ HEAVY_RANGES = (
     "All Time",
 )
 WARM_DAY_COUNT = 2
-# The dedicated worker runs one task at a time, so a sync yields at its next
-# boundary to anything queued at webhook priority instead of making it wait.
+# Ordinary syncs are bulk derived work and run on the background worker, so a
+# webhook or a manual refresh never shares the interactive worker's only slot
+# with a range aggregate. The sync still yields at each boundary when webhook
+# work is queued, because both workers write the same SQLite database.
 INTERACTIVE_QUEUE = "interactive"
+BACKGROUND_QUEUE = "celery"
 # What a range cost the last time it was built, so a task can tell whether the
 # next one fits in what is left of its budget.
 RANGE_COST_TIMEOUT = 7 * 24 * 60 * 60
@@ -177,6 +180,13 @@ def _enqueue_gate_seconds() -> int:
 
 def _gate_key(user_id: int) -> str:
     return f"stats:sync:enqueued:{user_id}"
+
+
+def _pending_key(user_id: int) -> str:
+    # Spans a queued-but-not-started message, unlike the 5-second interactive
+    # gate. The task deletes it as soon as it starts, so it only expires when a
+    # published message was lost before delivery.
+    return f"stats:sync:pending:{user_id}"
 
 
 def _day_epoch_key(user_id: int) -> str:
@@ -365,17 +375,28 @@ def request_manual_refresh(user, range_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def ensure_sync(user_id: int, *, urgent: bool = False, bypass_gate=False) -> bool:
+def ensure_sync(user_id: int, *, urgent: bool = False, scheduled=False) -> bool:
     """Queue a sync for the user unless one was queued moments ago.
 
     Losing this message is harmless: the reconciler finds unfinished work. The
     eager/test path skips it and the read path syncs inline instead.
+
+    ``scheduled`` is for the reconciler and its self-follow-up: it queues at
+    most one message per user until the task starts, instead of one per tick
+    while the message waits behind a busy worker. The pending marker expires
+    after the lease window so a message lost before delivery is still recovered.
     """
     if not user_id or _eager_mode():
         return False
     if _bulk_import_active(user_id) or (not urgent and interactive_request_active()):
         return False
-    if not (urgent or bypass_gate) and not cache.add(
+    pending_seconds = _lease_seconds()
+    if scheduled:
+        # The shorter interactive gate would expire between reconciler ticks
+        # and cannot show a message still waiting in the queue.
+        if not cache.add(_pending_key(user_id), True, pending_seconds):
+            return False
+    elif not urgent and not cache.add(
         _gate_key(user_id), True, _enqueue_gate_seconds()
     ):
         return False
@@ -387,11 +408,22 @@ def ensure_sync(user_id: int, *, urgent: bool = False, bypass_gate=False) -> boo
             if urgent
             else settings.CELERY_TASK_PRIORITY_STATISTICS_SYNC
         )
-        statistics_sync_task.apply_async(args=[user_id], priority=priority)
+        # Urgent means the user is waiting (manual refresh, first build), so it
+        # keeps the interactive lane. Everything a playback merely marked is
+        # bulk work on the background lane.
+        queue = INTERACTIVE_QUEUE if urgent else BACKGROUND_QUEUE
+        statistics_sync_task.apply_async(
+            args=[user_id], priority=priority, queue=queue
+        )
     except Exception as exc:  # pragma: no cover - broker unavailable
         cache.delete(_gate_key(user_id))
+        if scheduled:
+            cache.delete(_pending_key(user_id))
         logger.warning("stats_sync_enqueue_failed user_id=%s error=%s", user_id, exc)
         return False
+    # Any successful publication counts as pending, so a mark that queued a
+    # message debounces the next reconciler tick too.
+    cache.set(_pending_key(user_id), True, pending_seconds)
     return True
 
 
@@ -1355,7 +1387,7 @@ def run_sync(
         and not (yield_to_interactive and interactive_request_active())
         and (status == "continued" or _has_hot_work(user_id))
     ):
-        ensure_sync(user_id, bypass_gate=True)
+        ensure_sync(user_id, scheduled=True)
     return {"status": status, "published": published}
 
 
@@ -1371,6 +1403,7 @@ def _has_hot_work(user_id: int) -> bool:
 def sync_task_body(user_id: int) -> dict:
     """Body of the Celery sync task: bounded by the task budget."""
     cache.delete(_gate_key(user_id))
+    cache.delete(_pending_key(user_id))
     return run_sync(user_id, budget_seconds=_task_budget_seconds())
 
 
@@ -1439,7 +1472,7 @@ def reconcile() -> int:
     _bootstrap_states()
     limit = _setting("STATISTICS_SYNC_RECONCILE_USER_LIMIT", 100) or None
     user_ids = users_needing_sync(limit)
-    queued = sum(1 for user_id in user_ids if ensure_sync(user_id, bypass_gate=True))
+    queued = sum(1 for user_id in user_ids if ensure_sync(user_id, scheduled=True))
     if user_ids:
         logger.info("stats_reconcile candidates=%s queued=%s", len(user_ids), queued)
     return queued

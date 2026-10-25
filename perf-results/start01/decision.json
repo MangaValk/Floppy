@@ -1,0 +1,190 @@
+{
+  "work_item": "START-01",
+  "verdict": "INCONCLUSIVE",
+  "checklist_complete": false,
+  "measured_sha": "27b89e56a5a91548ebd4a84eba2fc5bce119fff4",
+  "reviewed_head": "f04f2675a5e9ac5b9cd8fd6db5208b322d2b5c64",
+  "inspected_scope_unchanged_since_measured_sha": [
+    "entrypoint.sh",
+    "src/config/sqlite_recovery_policy.py",
+    "src/config/sqlite_integrity.py"
+  ],
+  "application_implementation_changed": false,
+  "accepted_samples": 12,
+  "samples_per_size_and_verification": 3,
+  "changed_measurements": null,
+  "optimization_deltas": null,
+  "reason_no_changed_measurements": "No implementation candidate retained; extra userspace pass measured but unnecessary physical I/O and safe end-to-end improvement not established.",
+  "proposed_evaluation_target": {
+    "large_fixture_extra_userspace_read_bytes_to_remove": 441847808,
+    "requirements": [
+      "preserve quick_check, foreign_key_check and recovery policy",
+      "reduce total guard CPU and wall time",
+      "no worsening of physical I/O, healthy/usable latency, memory or response/queue latency"
+    ],
+    "achieved": false
+  },
+  "condition_comparisons": [
+    {
+      "size": "small",
+      "comparison": "same implementation, valid record minus verification required; not causal optimization gains",
+      "deltas": {
+        "healthy_s": {
+          "required_median": 32.3532728489954,
+          "valid_record_median": 22.862578094005585,
+          "absolute": -9.490694754989818,
+          "percent": -29.334573968100145
+        },
+        "usable_s": {
+          "required_median": 33.91348705801647,
+          "valid_record_median": 23.667280302965082,
+          "absolute": -10.24620675505139,
+          "percent": -30.21277858429303
+        },
+        "cpu_s": {
+          "required_median": 31.243023,
+          "valid_record_median": 27.931505,
+          "absolute": -3.3115179999999995,
+          "percent": -10.59922402515275
+        },
+        "cpu_to_healthy_s": {
+          "required_median": 28.634208,
+          "valid_record_median": 26.908521,
+          "absolute": -1.7256870000000006,
+          "percent": -6.026662235602957
+        },
+        "peak_mib": {
+          "required_median": 569.75,
+          "valid_record_median": 552.61328125,
+          "absolute": -17.13671875,
+          "percent": -3.0077610794207987
+        },
+        "peak_to_healthy_mib": {
+          "required_median": 528.71484375,
+          "valid_record_median": 454.40625,
+          "absolute": -74.30859375,
+          "percent": -14.054569231110225
+        },
+        "disk_read_bytes": {
+          "required_median": 54562816,
+          "valid_record_median": 17252352,
+          "absolute": -37310464,
+          "percent": -68.3807521957811
+        },
+        "disk_write_bytes": {
+          "required_median": 17084416,
+          "valid_record_median": 8118272,
+          "absolute": -8966144,
+          "percent": -52.48141932390314
+        },
+        "disk_io_bytes": {
+          "required_median": 74170368,
+          "valid_record_median": 25370624,
+          "absolute": -48799744,
+          "percent": -65.79412414402474
+        },
+        "library_median_ms": {
+          "required_median": 327.25445850519463,
+          "valid_record_median": 209.099312487524,
+          "absolute": -118.15514601767063,
+          "percent": -36.104976707535094
+        },
+        "webhook_median_ms": {
+          "required_median": 7.381895469734445,
+          "valid_record_median": 3.9206045330502093,
+          "absolute": -3.461290936684236,
+          "percent": -46.888918312043664
+        }
+      }
+    },
+    {
+      "size": "large",
+      "comparison": "same implementation, valid record minus verification required; not causal optimization gains",
+      "deltas": {
+        "healthy_s": {
+          "required_median": 27.720284095034003,
+          "valid_record_median": 19.679842342971824,
+          "absolute": -8.04044175206218,
+          "percent": -29.00562535541473
+        },
+        "usable_s": {
+          "required_median": 38.14321505901171,
+          "valid_record_median": 25.66494355298346,
+          "absolute": -12.47827150602825,
+          "percent": -32.71426251490076
+        },
+        "cpu_s": {
+          "required_median": 38.435062,
+          "valid_record_median": 27.206565,
+          "absolute": -11.228497,
+          "percent": -29.214202906710543
+        },
+        "cpu_to_healthy_s": {
+          "required_median": 29.203469,
+          "valid_record_median": 21.363228,
+          "absolute": -7.840240999999999,
+          "percent": -26.846950956408634
+        },
+        "peak_mib": {
+          "required_median": 1130.76171875,
+          "valid_record_median": 1136.265625,
+          "absolute": 5.50390625,
+          "percent": 0.48674324207617237
+        },
+        "peak_to_healthy_mib": {
+          "required_median": 856.14453125,
+          "valid_record_median": 438.52734375,
+          "absolute": -417.6171875,
+          "percent": -48.778818558855335
+        },
+        "disk_read_bytes": {
+          "required_median": 478474240,
+          "valid_record_median": 465723392,
+          "absolute": -12750848,
+          "percent": -2.6648974874802036
+        },
+        "disk_write_bytes": {
+          "required_median": 18882560,
+          "valid_record_median": 8118272,
+          "absolute": -10764288,
+          "percent": -57.00650759219089
+        },
+        "disk_io_bytes": {
+          "required_median": 497356800,
+          "valid_record_median": 473841664,
+          "absolute": -23515136,
+          "percent": -4.728021412394482
+        },
+        "library_median_ms": {
+          "required_median": 998.2570214779116,
+          "valid_record_median": 984.558312484296,
+          "absolute": -13.698708993615583,
+          "percent": -1.3722627238158318
+        },
+        "webhook_median_ms": {
+          "required_median": 4.85870850388892,
+          "valid_record_median": 3.390749479876831,
+          "absolute": -1.4679590240120888,
+          "percent": -30.212946976282513
+        }
+      }
+    }
+  ],
+  "correctness": {
+    "raw_sample_checks": "passed",
+    "linux_regression_tests": 89,
+    "linux_regression_skips": 0,
+    "macos_regression_tests": 89,
+    "macos_regression_skips": 14
+  },
+  "unmeasured": [
+    "five warm repetitions",
+    "dedicated idle host",
+    "NAS/HDD",
+    "fragmented/freelist-heavy database",
+    "nonempty-WAL startup",
+    "accepted webhook queue delay",
+    "PostgreSQL runtime",
+    "concurrent container writers"
+  ]
+}

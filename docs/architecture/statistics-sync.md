@@ -74,10 +74,14 @@ request a full sweep (imports, provider migrations, preference changes).
 
 ## The sync
 
-`statistics_sync_task(user_id)` runs `run_sync` on the interactive queue at
-`CELERY_TASK_PRIORITY_STATISTICS_SYNC = 1`: behind webhooks (0), ahead of
-follow-up imports and backfills (3+). That matters on the minimal tier, where
-one worker consumes every queue.
+`statistics_sync_task(user_id)` runs `run_sync` on the background `celery`
+queue at `CELERY_TASK_PRIORITY_STATISTICS_SYNC = 1`: ahead of follow-up imports
+and backfills (3+) on that worker. Ordinary syncs are bulk derived work, so
+they never share the interactive worker's only slot with webhook scrobbles or a
+manual refresh. Urgent requests (a manual Refresh, a range that has never been
+built) override the queue to `interactive`, because the user is waiting. On the
+minimal tier one worker consumes every queue, so priority ordering still
+separates them; on the other tiers the processes do.
 
 When an interactive browser request is active, the background task yields before
 claiming its database lease or between day slices and ranges. The reconciler
@@ -110,8 +114,9 @@ design aborted on every version change and needed a settling window to stop
 restarting in a loop.
 
 **It is bounded.** After `STATISTICS_SYNC_TASK_BUDGET_SECONDS` (10 s) it stops
-at the next slice or range, queues its own continuation and returns, so the
-single-slot interactive worker is never held for a whole All Time rebuild.
+at the next slice or range, queues its own continuation and returns, so a range
+aggregate cannot hold a worker indefinitely and the same SQLite writer is not
+occupied for a whole All Time rebuild.
 
 A range aggregate cannot stop partway, so the budget is enforced by choosing
 what to start: each finished range records its cost (`stats:sync:range_seconds`),
@@ -119,8 +124,9 @@ and a task starts a further range only if it is expected to fit in what is left.
 The first range a task builds always runs, so a range dearer than a whole budget
 still gets a task of its own. At each slice and range boundary the sync also
 looks at the broker and yields when a webhook-priority (0) task is queued: the
-worker cannot be preempted, so this is the only way a scrobble waits for one
-slice instead of one task. The worst case is therefore the budget plus one range.
+worker cannot be preempted, so this is how a background sync steps aside
+between slices while webhook work is waiting on the same SQLite writer. The
+worst case is therefore the budget plus one range.
 A sync more than 5 s over budget logs `stats_sync_overrun` naming its slowest
 range; `stats_sync` carries `days` and `days_ms` for the day-building phase,
 and each `stats_range_summary` carries `missing_days` and `days_ms` so the
@@ -191,6 +197,15 @@ or starved message, a worker restart, a second consumer on the same Redis) and
 also midnight rollover and the first build after an upgrade: users with no
 state row are bootstrapped with a full sweep.
 
+The reconciler does not publish a second message while the last one is still
+waiting. A successful enqueue writes `stats:sync:pending:{uid}`; the task
+deletes it when it starts, and the marker expires after the lease window
+(`STATISTICS_SYNC_LEASE_SECONDS`) if delivery was lost before that. So a busy
+worker sees one queued sync per user instead of one per 60 s tick, while a
+genuinely lost message is still recovered within one lease window. The 5-second
+interactive gate still coalesces rapid marks; the scheduled path uses the
+pending marker because a tick interval outlives the gate.
+
 ## The read path
 
 `statistics_cache.get_statistics_data` loads the snapshot (cache, then
@@ -208,7 +223,8 @@ Tests that exercise the real queueing override both settings and patch
 
 `request_manual_refresh(user, range_name)` marks every day in that range dirty,
 requests a full sweep (so the heavy ranges are due too), and queues an urgent
-sync. It no longer throws away every day payload the user has.
+sync on the interactive lane, since the user is waiting on it. It no longer
+throws away every day payload the user has.
 
 ## What marks changes
 

@@ -1,0 +1,40 @@
+Fri Oct 23 15:10:04 2026    /Users/dannyvfilms/Developer/Cursor/release/perf-results/tasks05/baseline-duplicate.prof
+
+         908096 function calls (871448 primitive calls) in 0.661 seconds
+
+   Ordered by: cumulative time
+   List reduced from 757 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.012    0.012    0.661    0.661 /source/app/statistics_sync.py:1057(run_sync)
+        1    0.004    0.004    0.616    0.616 /source/app/statistics_sync.py:928(_build_days)
+        2    0.056    0.028    0.311    0.156 /source/app/statistics_day_builder.py:462(build_stats_for_day)
+        1    0.003    0.003    0.276    0.276 /source/app/statistics_day_builder.py:156(_build_prefetch_for_range)
+    17151    0.015    0.000    0.252    0.000 /opt/venv/lib/python3.12/site-packages/django/utils/timezone.py:167(localtime)
+    17155    0.008    0.000    0.204    0.000 /opt/venv/lib/python3.12/site-packages/django/utils/timezone.py:64(get_current_timezone)
+65066/30655    0.029    0.000    0.200    0.000 {built-in method builtins.getattr}
+    17203    0.023    0.000    0.185    0.000 /opt/venv/lib/python3.12/site-packages/asgiref/local.py:156(__getattr__)
+    10290    0.007    0.000    0.181    0.000 /source/app/stats_utils.py:266(_localize_datetime)
+     3440    0.001    0.000    0.132    0.000 /opt/venv/lib/python3.12/site-packages/django/db/models/query.py:497(_iterator)
+     3440    0.006    0.000    0.132    0.000 /opt/venv/lib/python3.12/site-packages/django/db/models/query.py:203(__iter__)
+        6    0.007    0.001    0.127    0.021 /source/app/statistics_day_builder.py:88(_bucket_overlap_rows)
+     6868    0.009    0.000    0.106    0.000 /source/app/statistics_day_cache.py:21(_normalize_day_value)
+     3459    0.010    0.000    0.104    0.000 /opt/venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1534(apply_converters)
+     3430    0.006    0.000    0.072    0.000 /source/app/statistics_day_builder.py:667(_update_top_played)
+     3430    0.006    0.000    0.067    0.000 /source/app/statistics_day_builder.py:700(_add_hour)
+    17163    0.035    0.000    0.062    0.000 /opt/venv/lib/python3.12/site-packages/asgiref/local.py:54(__getattr__)
+     3430    0.005    0.000    0.062    0.000 /source/app/statistics_day_builder.py:624(_update_item_meta)
+    13738    0.012    0.000    0.050    0.000 /opt/venv/lib/python3.12/site-packages/django/db/backends/sqlite3/operations.py:315(convert_datetimefield_value)
+       24    0.000    0.000    0.043    0.002 /opt/venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1593(execute_sql)
+    17276    0.013    0.000    0.035    0.000 /usr/local/lib/python3.12/contextlib.py:141(__exit__)
+    17276    0.011    0.000    0.030    0.000 /usr/local/lib/python3.12/contextlib.py:299(helper)
+    27549    0.009    0.000    0.028    0.000 /opt/venv/lib/python3.12/site-packages/django/utils/timezone.py:224(is_naive)
+    17276    0.008    0.000    0.028    0.000 /usr/local/lib/python3.12/contextlib.py:132(__enter__)
+    17163    0.018    0.000    0.028    0.000 /opt/venv/lib/python3.12/site-packages/asgiref/local.py:45(_storage)
+    39/12    0.000    0.000    0.026    0.002 /source/app/request_timing.py:111(wrapped)
+    55067    0.026    0.000    0.026    0.000 {method 'utcoffset' of 'datetime.datetime' objects}
+    10304    0.005    0.000    0.024    0.000 /opt/venv/lib/python3.12/site-packages/django/utils/timezone.py:237(make_aware)
+     3444    0.002    0.000    0.023    0.000 /opt/venv/lib/python3.12/site-packages/django/db/models/fields/json.py:84(from_db_value)
+       15    0.000    0.000    0.023    0.002 /opt/venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1563(results_iter)
+
+

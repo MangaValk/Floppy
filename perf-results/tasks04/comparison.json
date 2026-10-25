@@ -1,0 +1,994 @@
+{
+  "baseline": {
+    "cells": {
+      "100-cold-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 1.5010199666256085,
+          "values": [
+            1.473714750027284,
+            1.4873687920626253,
+            1.4662421670509502,
+            1.486877957941033,
+            1.59089616604615
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.0011316250311210752,
+          "p95": 0.0014239163836464285
+        },
+        "sync_wall_s": {
+          "mean": 0.9138744833879173,
+          "total": 4.569372416939586
+        },
+        "sync_cpu_s": {
+          "mean": 0.8505527754000002,
+          "total": 4.252763877000001
+        },
+        "db_write_statements": 370,
+        "redis_commands": 5563,
+        "peak_rss_bytes": 164970496,
+        "peak_uss_bytes": 147275776,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "100-cold-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 4.7774755584076045,
+          "values": [
+            4.031747875036672,
+            4.893471291987225,
+            5.059819957939908,
+            4.005619250005111,
+            5.896719417069107
+          ]
+        },
+        "enqueues_per_operation": 4,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 1.9624074579915032,
+          "p95": 2.001547950063832,
+          "values": [
+            1.9624074579915032,
+            1.9992072499589995,
+            1.6252487089950591,
+            0.5669865420786664,
+            2.0021331250900403
+          ]
+        },
+        "sync_wait_s": {
+          "count": 15,
+          "p50": 7.50063918530941e-07,
+          "p95": 0.5540601294254883
+        },
+        "sync_wall_s": {
+          "mean": 0.3078097444027662,
+          "total": 4.617146166041493
+        },
+        "sync_cpu_s": {
+          "mean": 0.28931756099999995,
+          "total": 4.339763414999999
+        },
+        "db_write_statements": 405,
+        "redis_commands": 5732,
+        "peak_rss_bytes": 94273536,
+        "peak_uss_bytes": 77103104,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "100-warm-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 1.1515884332126007,
+          "values": [
+            1.1559048750204965,
+            1.1490382080664858,
+            1.15653533290606,
+            1.1404111250303686,
+            1.1560526250395924
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.0012812080094590783,
+          "p95": 0.0013879998121410608
+        },
+        "sync_wall_s": {
+          "mean": 0.6278866581851617,
+          "total": 3.1394332909258083
+        },
+        "sync_cpu_s": {
+          "mean": 0.5888406831999997,
+          "total": 2.944203415999999
+        },
+        "db_write_statements": 260,
+        "redis_commands": 2715,
+        "peak_rss_bytes": 93732864,
+        "peak_uss_bytes": 76529664,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "100-warm-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 4.810539983212948,
+          "values": [
+            4.053747750003822,
+            5.983752541942522,
+            4.011477041058242,
+            6.4431584579870105,
+            3.5605641250731423
+          ]
+        },
+        "enqueues_per_operation": 4,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 0.9269233329687268,
+          "p95": 1.9974213004112245,
+          "values": [
+            0.9269233329687268,
+            1.997688041999936,
+            0.897470208001323,
+            1.9963543340563774,
+            0.445356750045903
+          ]
+        },
+        "sync_wait_s": {
+          "count": 15,
+          "p50": 8.330680429935455e-07,
+          "p95": 0.8878425956936553
+        },
+        "sync_wall_s": {
+          "mean": 0.21415256114366155,
+          "total": 3.212288417154923
+        },
+        "sync_cpu_s": {
+          "mean": 0.20288829446666637,
+          "total": 3.0433244169999956
+        },
+        "db_write_statements": 295,
+        "redis_commands": 2925,
+        "peak_rss_bytes": 92880896,
+        "peak_uss_bytes": 75710464,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "10000-cold-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 6.729433199949563,
+          "values": [
+            8.122654124977998,
+            6.366221832926385,
+            6.41594841692131,
+            6.2998858749633655,
+            6.442455749958754
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.0019083339720964432,
+          "p95": 0.0024203669745475054
+        },
+        "sync_wall_s": {
+          "mean": 6.160401483019814,
+          "total": 30.80200741509907
+        },
+        "sync_cpu_s": {
+          "mean": 5.5103963249999985,
+          "total": 27.551981624999993
+        },
+        "db_write_statements": 2460,
+        "redis_commands": 58856,
+        "peak_rss_bytes": 132595712,
+        "peak_uss_bytes": 110952448,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "10000-cold-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 9.593418716825544,
+          "values": [
+            7.748637500102632,
+            10.38130045903381,
+            10.24234791600611,
+            9.503368792007677,
+            10.091438916977495
+          ]
+        },
+        "enqueues_per_operation": 4,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 1.5080547500401735,
+          "p95": 1.8610019494313748,
+          "values": [
+            0.36333779199048877,
+            1.880782166030258,
+            1.5080547500401735,
+            1.2760367079172283,
+            1.7818810830358416
+          ]
+        },
+        "sync_wait_s": {
+          "count": 15,
+          "p50": 1.6669509932398796e-06,
+          "p95": 0.002095371496398001
+        },
+        "sync_wall_s": {
+          "mean": 1.9748403054739658,
+          "total": 29.62260458210949
+        },
+        "sync_cpu_s": {
+          "mean": 1.8313023140000004,
+          "total": 27.469534710000005
+        },
+        "db_write_statements": 2495,
+        "redis_commands": 59120,
+        "peak_rss_bytes": 131153920,
+        "peak_uss_bytes": 106463232,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "10000-warm-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 6.082516958587803,
+          "values": [
+            6.230438750004396,
+            5.880880833952688,
+            6.246411792002618,
+            5.963566874968819,
+            6.091286542010494
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.0018980830209329724,
+          "p95": 0.0022043086355552077
+        },
+        "sync_wall_s": {
+          "mean": 5.524878099979833,
+          "total": 27.624390499899164
+        },
+        "sync_cpu_s": {
+          "mean": 5.039066183399996,
+          "total": 25.19533091699998
+        },
+        "db_write_statements": 2460,
+        "redis_commands": 58723,
+        "peak_rss_bytes": 129499136,
+        "peak_uss_bytes": 106348544,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "10000-warm-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 8.203190799988807,
+          "values": [
+            8.583985332981683,
+            8.31857941695489,
+            6.621730332961306,
+            9.22015199996531,
+            8.271506917080842
+          ]
+        },
+        "enqueues_per_operation": 3.8,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 1.0631621660431847,
+          "p95": 4.507515916833654,
+          "values": [
+            1.0631621660431847,
+            0.4863849589601159,
+            5.246174750034697,
+            1.5528805840294808,
+            0.3381330829579383
+          ]
+        },
+        "sync_wait_s": {
+          "count": 14,
+          "p50": 6.874906830489635e-07,
+          "p95": 0.0019325311412103472
+        },
+        "sync_wall_s": {
+          "mean": 1.96706212823379,
+          "total": 27.538869795273058
+        },
+        "sync_cpu_s": {
+          "mean": 1.8179981874285716,
+          "total": 25.451974624
+        },
+        "db_write_statements": 2512,
+        "redis_commands": 59043,
+        "peak_rss_bytes": 127778816,
+        "peak_uss_bytes": 106364928,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      }
+    },
+    "idle": {
+      "wall_s": 1800.0102438749745,
+      "executions": 0,
+      "enqueues_per_hour": 0.0,
+      "executions_per_hour": 0.0,
+      "cpu_s": 0.5682669999999987,
+      "samples": 30,
+      "steady_state_after_300s": {
+        "window_s": 1440.689674083027,
+        "executions": 0,
+        "enqueues": 0,
+        "executions_per_hour": 0.0,
+        "enqueues_per_hour": 0.0
+      }
+    }
+  },
+  "after": {
+    "cells": {
+      "100-cold-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 1.4502005918184295,
+          "values": [
+            1.4731098330812529,
+            1.4637364170048386,
+            1.465642249910161,
+            1.3741112500429153,
+            1.47440320905298
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.001426875009201467,
+          "p95": 0.0017371746012941002
+        },
+        "sync_wall_s": {
+          "mean": 0.8763976500136778,
+          "total": 4.381988250068389
+        },
+        "sync_cpu_s": {
+          "mean": 0.8242119248,
+          "total": 4.121059624
+        },
+        "db_write_statements": 370,
+        "redis_commands": 5556,
+        "peak_rss_bytes": 166428672,
+        "peak_uss_bytes": 148209664,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "100-cold-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 1.9255877579795198,
+          "values": [
+            2.0414640830131248,
+            1.910790374968201,
+            2.0531536659691483,
+            2.0218932909192517,
+            1.6006373750278726
+          ]
+        },
+        "enqueues_per_operation": 3,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 0.0019592089811339974,
+          "p95": 0.0032221914269030096,
+          "values": [
+            0.003253833041526377,
+            0.0019592089811339974,
+            0.001739791943691671,
+            0.0030956249684095383,
+            0.0017354999436065555
+          ]
+        },
+        "sync_wait_s": {
+          "count": 10,
+          "p50": 0.0006894374964758754,
+          "p95": 0.0018257853109389544
+        },
+        "sync_wall_s": {
+          "mean": 0.5854118875926361,
+          "total": 5.8541188759263605
+        },
+        "sync_cpu_s": {
+          "mean": 0.5226968083000004,
+          "total": 5.2269680830000045
+        },
+        "db_write_statements": 487,
+        "redis_commands": 6313,
+        "peak_rss_bytes": 123437056,
+        "peak_uss_bytes": 106184704,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 5
+        }
+      },
+      "100-warm-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 1.1528962167911232,
+          "values": [
+            1.1515955840004608,
+            1.1644860829692334,
+            1.146771042025648,
+            1.1535471249371767,
+            1.1480812500230968
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.0014384998939931393,
+          "p95": 0.0016665248200297357
+        },
+        "sync_wall_s": {
+          "mean": 0.6113979166373611,
+          "total": 3.0569895831868052
+        },
+        "sync_cpu_s": {
+          "mean": 0.5745066501999997,
+          "total": 2.8725332509999983
+        },
+        "db_write_statements": 260,
+        "redis_commands": 2715,
+        "peak_rss_bytes": 93503488,
+        "peak_uss_bytes": 76316672,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "100-warm-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 1.992850191402249,
+          "values": [
+            1.9353447910398245,
+            1.9388709170743823,
+            1.9363334579393268,
+            2.124976290971972,
+            2.0287254999857396
+          ]
+        },
+        "enqueues_per_operation": 3,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 0.001440958003513515,
+          "p95": 0.0015543000539764763,
+          "values": [
+            0.0014685000060126185,
+            0.0011932499473914504,
+            0.001440958003513515,
+            0.0015757500659674406,
+            0.0014117499813437462
+          ]
+        },
+        "sync_wait_s": {
+          "count": 10,
+          "p50": 0.0005964789888821542,
+          "p95": 0.0019850748416502025
+        },
+        "sync_wall_s": {
+          "mean": 0.40237388330278917,
+          "total": 4.023738833027892
+        },
+        "sync_cpu_s": {
+          "mean": 0.37525363759999947,
+          "total": 3.752536375999995
+        },
+        "db_write_statements": 375,
+        "redis_commands": 3460,
+        "peak_rss_bytes": 93536256,
+        "peak_uss_bytes": 76349440,
+        "invariants": {
+          "all_time_movie_plays": 100,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 5
+        }
+      },
+      "10000-cold-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 6.187288149818778,
+          "values": [
+            6.121176208020188,
+            6.200683790957555,
+            6.2079666670178995,
+            6.190342041081749,
+            6.216272042016499
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.002096957992762327,
+          "p95": 0.002682266826741397
+        },
+        "sync_wall_s": {
+          "mean": 5.6353664333932105,
+          "total": 28.17683216696605
+        },
+        "sync_cpu_s": {
+          "mean": 5.290505274999999,
+          "total": 26.452526374999998
+        },
+        "db_write_statements": 2460,
+        "redis_commands": 58838,
+        "peak_rss_bytes": 129417216,
+        "peak_uss_bytes": 111198208,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "10000-cold-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 6.684743208601139,
+          "values": [
+            6.464103457983583,
+            6.86410695896484,
+            6.576261417008936,
+            6.866429000045173,
+            6.652815209003165
+          ]
+        },
+        "enqueues_per_operation": 3,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 0.001986999996006489,
+          "p95": 0.003048524656333029,
+          "values": [
+            0.0015214999439194798,
+            0.001986999996006489,
+            0.0015675000613555312,
+            0.0032012080773711205,
+            0.0024377909721806645
+          ]
+        },
+        "sync_wait_s": {
+          "count": 10,
+          "p50": 0.0007945414981804788,
+          "p95": 0.0018783396400976924
+        },
+        "sync_wall_s": {
+          "mean": 3.0542117914767006,
+          "total": 30.542117914767005
+        },
+        "sync_cpu_s": {
+          "mean": 2.8322770209,
+          "total": 28.322770208999998
+        },
+        "db_write_statements": 2575,
+        "redis_commands": 59613,
+        "peak_rss_bytes": 129925120,
+        "peak_uss_bytes": 109379584,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 5
+        }
+      },
+      "10000-warm-idle": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 5.729066725028678,
+          "values": [
+            5.909581333049573,
+            5.690029500052333,
+            5.696926499949768,
+            5.776761042070575,
+            5.572035250021145
+          ]
+        },
+        "enqueues_per_operation": 1,
+        "probe_wait_s": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "values": []
+        },
+        "sync_wait_s": {
+          "count": 5,
+          "p50": 0.0018726249691098928,
+          "p95": 0.0024491999996826054
+        },
+        "sync_wall_s": {
+          "mean": 5.1510805081576105,
+          "total": 25.755402540788054
+        },
+        "sync_cpu_s": {
+          "mean": 4.808605308199995,
+          "total": 24.043026540999975
+        },
+        "db_write_statements": 2460,
+        "redis_commands": 58705,
+        "peak_rss_bytes": 129318912,
+        "peak_uss_bytes": 105218048,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 0
+        }
+      },
+      "10000-warm-loaded": {
+        "runs": 5,
+        "operation_wall_s": {
+          "mean": 6.068906550202518,
+          "values": [
+            5.993442917009816,
+            6.023461999953724,
+            6.304740166990086,
+            5.91255212505348,
+            6.110335542005487
+          ]
+        },
+        "enqueues_per_operation": 3,
+        "probe_wait_s": {
+          "count": 5,
+          "p50": 0.0016350839287042618,
+          "p95": 0.0026228504022583364,
+          "values": [
+            0.0016350839287042618,
+            0.0019495839951559901,
+            0.0014477090444415808,
+            0.002791167004033923,
+            0.0015818749088793993
+          ]
+        },
+        "sync_wait_s": {
+          "count": 10,
+          "p50": 0.0007907079998403788,
+          "p95": 0.0018603775359224525
+        },
+        "sync_wall_s": {
+          "mean": 2.7432879290077836,
+          "total": 27.432879290077835
+        },
+        "sync_cpu_s": {
+          "mean": 2.5602608124000015,
+          "total": 25.602608124000014
+        },
+        "db_write_statements": 2575,
+        "redis_commands": 59479,
+        "peak_rss_bytes": 130056192,
+        "peak_uss_bytes": 107610112,
+        "invariants": {
+          "all_time_movie_plays": 10000,
+          "dirty_days": 0,
+          "snapshots": 11,
+          "stale_snapshots": 5
+        }
+      }
+    },
+    "idle": {
+      "wall_s": 1800.003720000037,
+      "executions": 2,
+      "enqueues_per_hour": 0.0,
+      "executions_per_hour": 3.9999917333503356,
+      "cpu_s": 0.4686230000000009,
+      "samples": 30,
+      "steady_state_after_300s": {
+        "window_s": 1440.5957566660363,
+        "executions": 0,
+        "enqueues": 0,
+        "executions_per_hour": 0.0,
+        "enqueues_per_hour": 0.0
+      }
+    }
+  },
+  "deltas": {
+    "100-cold-idle": {
+      "probe_p95_s": {
+        "before": null,
+        "after": null,
+        "percent": null
+      },
+      "operation_wall_s": {
+        "before": 1.5010199666256085,
+        "after": 1.4502005918184295,
+        "percent": -3.385656149626331
+      },
+      "sync_cpu_s": {
+        "before": 4.252763877000001,
+        "after": 4.121059624,
+        "percent": -3.0969096053578378
+      },
+      "db_write_statements": {
+        "before": 370,
+        "after": 370,
+        "percent": 0.0
+      },
+      "redis_commands": {
+        "before": 5563,
+        "after": 5556,
+        "percent": -0.1258313859428366
+      }
+    },
+    "100-cold-loaded": {
+      "probe_p95_s": {
+        "before": 2.001547950063832,
+        "after": 0.0032221914269030096,
+        "percent": -99.83901502700446
+      },
+      "operation_wall_s": {
+        "before": 4.7774755584076045,
+        "after": 1.9255877579795198,
+        "percent": -59.694450878125615
+      },
+      "sync_cpu_s": {
+        "before": 4.339763414999999,
+        "after": 5.2269680830000045,
+        "percent": 20.44361830724372
+      },
+      "db_write_statements": {
+        "before": 405,
+        "after": 487,
+        "percent": 20.246913580246915
+      },
+      "redis_commands": {
+        "before": 5732,
+        "after": 6313,
+        "percent": 10.136078157711095
+      }
+    },
+    "100-warm-idle": {
+      "probe_p95_s": {
+        "before": null,
+        "after": null,
+        "percent": null
+      },
+      "operation_wall_s": {
+        "before": 1.1515884332126007,
+        "after": 1.1528962167911232,
+        "percent": 0.11356345208106326
+      },
+      "sync_cpu_s": {
+        "before": 2.944203415999999,
+        "after": 2.8725332509999983,
+        "percent": -2.434280342537327
+      },
+      "db_write_statements": {
+        "before": 260,
+        "after": 260,
+        "percent": 0.0
+      },
+      "redis_commands": {
+        "before": 2715,
+        "after": 2715,
+        "percent": 0.0
+      }
+    },
+    "100-warm-loaded": {
+      "probe_p95_s": {
+        "before": 1.9974213004112245,
+        "after": 0.0015543000539764763,
+        "percent": -99.92218466611644
+      },
+      "operation_wall_s": {
+        "before": 4.810539983212948,
+        "after": 1.992850191402249,
+        "percent": -58.57325376451337
+      },
+      "sync_cpu_s": {
+        "before": 3.0433244169999956,
+        "after": 3.752536375999995,
+        "percent": 23.30385663251491
+      },
+      "db_write_statements": {
+        "before": 295,
+        "after": 375,
+        "percent": 27.11864406779661
+      },
+      "redis_commands": {
+        "before": 2925,
+        "after": 3460,
+        "percent": 18.29059829059829
+      }
+    },
+    "10000-cold-idle": {
+      "probe_p95_s": {
+        "before": null,
+        "after": null,
+        "percent": null
+      },
+      "operation_wall_s": {
+        "before": 6.729433199949563,
+        "after": 6.187288149818778,
+        "percent": -8.05632560755411
+      },
+      "sync_cpu_s": {
+        "before": 27.551981624999993,
+        "after": 26.452526374999998,
+        "percent": -3.9904761296819977
+      },
+      "db_write_statements": {
+        "before": 2460,
+        "after": 2460,
+        "percent": 0.0
+      },
+      "redis_commands": {
+        "before": 58856,
+        "after": 58838,
+        "percent": -0.030583118118798422
+      }
+    },
+    "10000-cold-loaded": {
+      "probe_p95_s": {
+        "before": 1.8610019494313748,
+        "after": 0.003048524656333029,
+        "percent": -99.83618906700961
+      },
+      "operation_wall_s": {
+        "before": 9.593418716825544,
+        "after": 6.684743208601139,
+        "percent": -30.31948874620667
+      },
+      "sync_cpu_s": {
+        "before": 27.469534710000005,
+        "after": 28.322770208999998,
+        "percent": 3.1061155858944396
+      },
+      "db_write_statements": {
+        "before": 2495,
+        "after": 2575,
+        "percent": 3.2064128256513023
+      },
+      "redis_commands": {
+        "before": 59120,
+        "after": 59613,
+        "percent": 0.8338971583220568
+      }
+    },
+    "10000-warm-idle": {
+      "probe_p95_s": {
+        "before": null,
+        "after": null,
+        "percent": null
+      },
+      "operation_wall_s": {
+        "before": 6.082516958587803,
+        "after": 5.729066725028678,
+        "percent": -5.810920642976492
+      },
+      "sync_cpu_s": {
+        "before": 25.19533091699998,
+        "after": 24.043026540999975,
+        "percent": -4.573483792675699
+      },
+      "db_write_statements": {
+        "before": 2460,
+        "after": 2460,
+        "percent": 0.0
+      },
+      "redis_commands": {
+        "before": 58723,
+        "after": 58705,
+        "percent": -0.030652384925838258
+      }
+    },
+    "10000-warm-loaded": {
+      "probe_p95_s": {
+        "before": 4.507515916833654,
+        "after": 0.0026228504022583364,
+        "percent": -99.94181162195206
+      },
+      "operation_wall_s": {
+        "before": 8.203190799988807,
+        "after": 6.068906550202518,
+        "percent": -26.017732633857555
+      },
+      "sync_cpu_s": {
+        "before": 25.451974624,
+        "after": 25.602608124000014,
+        "percent": 0.5918342377175397
+      },
+      "db_write_statements": {
+        "before": 2512,
+        "after": 2575,
+        "percent": 2.5079617834394905
+      },
+      "redis_commands": {
+        "before": 59043,
+        "after": 59479,
+        "percent": 0.7384448622190607
+      }
+    }
+  }
+}
