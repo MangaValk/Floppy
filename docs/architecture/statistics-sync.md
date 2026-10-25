@@ -175,7 +175,7 @@ on every claim. Every state-touching operation is fenced on it:
   a takeover can publish newer days before the old Redis write arrives, and
   a subsequent lease check cannot undo that overwrite. Snapshot publication
   avoids this race through durable revision validation; day readers do not
-  have that protocol. See the [DATA-02 investigation](../plans/Floppy_Performance_Master_Backlog/DATA-02/REPORT.md).
+  have that protocol.
 * **Markers** (`hot/heavy_synced_generation`, `synced_day`) advance
   monotonically (`Greatest`) and only under the caller's token, so a stale pass
   cannot regress what a successor recorded; the full-sweep clear is likewise

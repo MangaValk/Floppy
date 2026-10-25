@@ -184,8 +184,8 @@ delete that new output directory to dispose of it. No production speedup claimed
 ## BENCH-10 attribution extension
 
 The v2 matrix retains the BENCH-06 lock, quotas, offline workers, correctness
-checks and host-noise threshold. See [the retained investigation](plans/Floppy_Performance_Master_Backlog/BENCH-10/README.md)
-for source/image hashes, raw failures and the exact scoped validation commands.
+checks and host-noise threshold. Each run retains source/image hashes, raw
+failures and scoped validation receipts in its chosen local output directory.
 No production behavior or CI timing gate changes.
 
 Each cell records setup, workload launch, application exit, support shutdown,
