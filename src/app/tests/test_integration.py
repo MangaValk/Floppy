@@ -363,6 +363,43 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
                         self.page.locator("div.fixed.inset-0:visible")
                     ).to_have_count(0)
 
+    def test_episode_track_modal_fills_viewport_in_card_and_list_layouts(self):
+        """Episode surface blur must not confine the tracker to its row."""
+        self.page.set_viewport_size({"width": 1600, "height": 1000})
+        for theme in ("glass", "custom"):
+            with self.subTest(theme=theme):
+                self.user.theme = theme
+                self.user.save(update_fields=["theme"])
+                self.page.goto(
+                    self.live_server_url
+                    + reverse(
+                        "season_details",
+                        kwargs={
+                            "source": Sources.TMDB.value,
+                            "media_id": "1396",
+                            "title": "breaking-bad",
+                            "season_number": 1,
+                        },
+                    ),
+                )
+                for layout in ("Card view", "List view"):
+                    self.page.get_by_role("button", name=layout, exact=True).click()
+                    suffix = "-list" if layout == "List view" else ""
+                    track_button = self.page.locator(
+                        f'button[hx-target="#track-episode-1396-1-1{suffix}"]',
+                    )
+                    expect(track_button).to_be_visible()
+                    track_button.click()
+                    modal = self.page.locator("[data-track-modal-root]:visible")
+                    expect(modal).to_be_visible()
+                    self._assert_visible_overlay_fills_viewport()
+                    modal.get_by_role("button", name="Close", exact=True).click()
+                    expect(modal).to_have_count(0)
+                    track_button.click()
+                    expect(modal).to_be_visible()
+                    self.page.keyboard.press("Escape")
+                    expect(modal).to_have_count(0)
+
     def set_date_input(self, locator, value):
         """Set a hidden date-picker input and dispatch its change events."""
         locator.evaluate(

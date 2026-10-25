@@ -7,6 +7,7 @@
   {% if track_button_variant == "episode" %}
     <div x-data="{ trackOpen: false }">
       {% include "app/components/detail_episode_track_button.html" with episode=episode detail_return_url=detail_return_url request=request track_button_oob=False only %}
+      <template x-teleport="body">
       <div x-show="trackOpen"
       @mousedown.self="trackOpen = false"
            x-cloak
@@ -18,6 +19,7 @@
           <div id="{% component_id 'track' episode %}"></div>
         </div>
       </div>
+      </template>
     </div>
   {% elif track_button_variant != "episode" %}
     <div x-data="{ trackOpen: false }">
