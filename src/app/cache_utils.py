@@ -296,15 +296,12 @@ def clear_home_row_cache_for_user(user_id: int) -> None:
     if not keys:
         return
 
-    deleted = 0
-    for key in keys:
-        if cache.delete(key):
-            deleted += 1
-    cache.delete(registry_key)
+    keys = list(keys)
+    cache.delete_many([*keys, registry_key])
 
     logger.debug(
         "Cleared %s home_row cache entries for user %s",
-        deleted,
+        len(keys),
         user_id,
     )
 
@@ -359,14 +356,11 @@ def clear_media_list_cache_for_user(user_id: int) -> None:
     if not keys:
         return
 
-    deleted = 0
-    for key in keys:
-        if cache.delete(key):
-            deleted += 1
-    cache.delete(registry_key)
+    keys = list(keys)
+    cache.delete_many([*keys, registry_key])
 
     logger.debug(
         "Cleared %s media_list cache entries for user %s",
-        deleted,
+        len(keys),
         user_id,
     )
