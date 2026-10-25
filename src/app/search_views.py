@@ -1,4 +1,5 @@
 import logging
+import re
 
 from django.conf import settings
 from django.contrib import messages
@@ -20,6 +21,8 @@ from app.models import (
     AlbumTracker,
     ArtistTracker,
     BasicMedia,
+    CollectionEntry,
+    CollectionField,
     Item,
     ItemTag,
     MediaTypes,
@@ -162,6 +165,41 @@ def _tagged_untracked_items(user, media_type, query, library_ids):
     )
 
 
+_BARCODE_RE = re.compile(r"\d{8,18}|\d{9}[\dX]")
+
+
+def _barcode_owned_items(user, media_type, query):
+    """Return the user's ``media_type`` items whose Barcode field matches *query*.
+
+    A scan reads the 12 or 13 digit code, while a CLZ export may carry a 2 or
+    5 digit supplement after it, so a stored barcode matches on its start.
+    """
+    code = re.sub(r"[\s-]", "", query).upper()
+    if not _BARCODE_RE.fullmatch(code):
+        return []
+    field_ids = [
+        str(field_id)
+        for field_id in CollectionField.objects.filter(
+            group__user=user,
+            label__iexact="Barcode",
+        ).values_list("id", flat=True)
+    ]
+    if not field_ids:
+        return []
+
+    item_ids = {}
+    entries = CollectionEntry.objects.filter(
+        user=user,
+        item__media_type=media_type,
+    ).values_list("item_id", "custom_field_values")
+    for item_id, values in entries:
+        for field_id in field_ids:
+            stored = re.sub(r"[\s-]", "", str((values or {}).get(field_id) or ""))
+            if stored.upper().startswith(code):
+                item_ids[item_id] = None
+    return list(Item.objects.filter(id__in=item_ids).order_by("title", "id"))
+
+
 def _merge_by_title(entries, extra_items, limit):
     """Merge ``MediaListEntry`` rows with media-less items by title, capped at ``limit``."""
     merged = list(entries)
@@ -173,8 +211,12 @@ def _merge_by_title(entries, extra_items, limit):
 class PodcastShowAdapter:
     """Adapter to make PodcastShowTracker compatible with media components."""
 
-    def __init__(self, tracker):
-        """Copy the tracker's fields and find or create the show's Item."""
+    def __init__(self, tracker, item=None):
+        """Copy the tracker's fields and find or create the show's Item.
+
+        ``item`` is the show's already-fetched Item, when the caller batched
+        the lookup; otherwise it is fetched or created here.
+        """
         self.tracker = tracker
         self.id = tracker.id
         self.status = tracker.status
@@ -185,15 +227,17 @@ class PodcastShowAdapter:
         self.created_at = tracker.created_at
         self.updated_at = tracker.updated_at
 
-        self.item, _ = Item.objects.get_or_create(
-            media_id=tracker.show.podcast_uuid,
-            source=tracker.show.source,
-            media_type=MediaTypes.PODCAST.value,
-            defaults={
-                "title": tracker.show.title,
-                "image": tracker.show.image or settings.IMG_NONE,
-            },
-        )
+        if item is None:
+            item, _ = Item.objects.get_or_create(
+                media_id=tracker.show.podcast_uuid,
+                source=tracker.show.source,
+                media_type=MediaTypes.PODCAST.value,
+                defaults={
+                    "title": tracker.show.title,
+                    "image": tracker.show.image or settings.IMG_NONE,
+                },
+            )
+        self.item = item
         show_image = tracker.show.image or settings.IMG_NONE
         if self.item.title != tracker.show.title or self.item.image != show_image:
             self.item.title = tracker.show.title
@@ -224,6 +268,17 @@ def _local_podcast_results(user, query, limit):
         .order_by("title", "id")
     )
     total = show_trackers.count() + tagged_only.count()
+    page_trackers = list(
+        show_trackers.select_related("show").order_by("show__title")[:limit],
+    )
+    # One query for the shows' existing Items instead of a get_or_create each.
+    existing_items = {
+        (item.media_id, item.source): item
+        for item in Item.objects.filter(
+            media_type=MediaTypes.PODCAST.value,
+            media_id__in=[t.show.podcast_uuid for t in page_trackers],
+        )
+    }
     results = [
         {
             "item": media.item,
@@ -231,8 +286,13 @@ def _local_podcast_results(user, query, limit):
             "matched_title": _matched_title(media.item, query, user),
         }
         for media in (
-            PodcastShowAdapter(tracker)
-            for tracker in show_trackers.order_by("show__title")[:limit]
+            PodcastShowAdapter(
+                tracker,
+                item=existing_items.get(
+                    (tracker.show.podcast_uuid, tracker.show.source),
+                ),
+            )
+            for tracker in page_trackers
         )
     ]
     results += [
@@ -439,6 +499,23 @@ def media_search(request):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Local search failed: %s", exception_summary(exc))
 
+    if (
+        request.user.is_authenticated
+        and page == 1
+        and local_results_kind == "media"
+        and media_type != MediaTypes.PODCAST.value
+    ):
+        shown = {result["item"].id for result in local_results}
+        owned = [
+            item
+            for item in _barcode_owned_items(request.user, media_type, query)
+            if item.id not in shown
+        ]
+        local_results = [
+            {"item": item, "media": None, "matched_title": None} for item in owned
+        ] + local_results
+        local_results_total += len(owned)
+
     source_options = metadata_resolution.available_metadata_sources(
         media_type,
         request.user,
@@ -468,6 +545,15 @@ def media_search(request):
                     user=request.user,
                     language=metadata_resolution.metadata_language_default(request.user),
                 )
+    except services.ProviderNotConfiguredError as exc:
+        logger.warning(
+            "Search skipped for media_type=%s query=%s: %s",
+            media_type,
+            query,
+            exception_summary(exc),
+        )
+        messages.error(request, str(exc))
+        data = {"page": 1, "total_results": 0, "total_pages": 0, "results": []}
     except services.ProviderAPIError as exc:
         logger.warning(
             "Search failed for media_type=%s query=%s: %s",

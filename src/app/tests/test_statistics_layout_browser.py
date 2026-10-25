@@ -125,6 +125,47 @@ class StatisticsLayoutTests(SerialStaticLiveServerTestCase):
                 )
                 self.assertTrue(inside)
 
+    def test_boosted_sidebar_navigation_initialises_the_page(self):
+        # hx-boost swaps the body, and Alpine used to run before the externally
+        # loaded date-range.js, leaving the whole component uninitialised (#1667).
+        # Build the snapshot through the test client first: a cold Statistics
+        # response can take longer than the boosted swap's timeout on CI, and
+        # this test is about the swap, not the first build.
+        self.client.force_login(
+            get_user_model().objects.get(username=self.credentials["username"]),
+        )
+        self.assertEqual(self.client.get("/statistics").status_code, 200)
+        context = self.browser.new_context(viewport={"width": 1280, "height": 800})
+        self.addCleanup(context.close)
+        page = context.new_page()
+        page.goto(f"{self.live_server_url}/")
+        page.get_by_placeholder("Enter your username").fill(
+            self.credentials["username"],
+        )
+        page.get_by_placeholder("Enter your password").fill(
+            self.credentials["password"],
+        )
+        page.get_by_role("button", name="Sign in").click()
+        # Wait for the post-login document and its deferred Home rows, otherwise
+        # the login/navigation can finish after the marker is set or the boosted
+        # request can queue behind them on the serial test server.
+        expect(page.locator("#sidebar-nav")).to_be_visible()
+        page.wait_for_load_state("networkidle")
+
+        # A full page load would drop this marker; a boosted swap keeps it.
+        page.evaluate("window.__floppyBoostMarker = 'home'")
+        page.locator("#sidebar-nav a[href$='/statistics']").click()
+
+        expect(page.locator(".stats-hero-title").nth(1)).to_contain_text(
+            "4 titles",
+            timeout=15000,
+        )
+        expect(page.locator(".stats-range-button .stats-button-title")).not_to_be_empty()
+        expect(
+            page.locator(".stats-summary-row").get_by_text("Wednesday"),
+        ).to_be_visible()
+        self.assertEqual(page.evaluate("window.__floppyBoostMarker"), "home")
+
     def test_dropdown_menus_stay_on_a_short_screen(self):
         # 640px is where the toolbar wraps and the "Updated ... ago" line pushes the
         # menus further down, so the room left below them is smaller than at 1100px.

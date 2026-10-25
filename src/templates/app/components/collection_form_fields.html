@@ -119,14 +119,16 @@
                      :style="{ maxHeight: `${dropdownMaxHeight}px` }"
                      class="absolute left-0 right-0 py-1 bg-[var(--color-panel)] rounded-md shadow-lg overflow-y-auto z-50 border border-gray-600">
                   {% for value, label in field.field.widget.choices %}
-                    <button type="button"
-                            data-choice
-                            data-choice-value="{{ value|default_if_none:'' }}"
-                            data-choice-label="{% translate label %}"
-                            @click="choose('{{ value|default_if_none:''|escapejs }}', '{% translate label as media_dynamic_label %}{{ media_dynamic_label|escapejs }}')"
-                            class="block w-full px-3 py-2 text-left text-sm transition-colors {% if value == '' %}text-[var(--color-text-muted)]{% else %}text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-strong)] hover:text-[var(--color-text)]{% endif %}">
-                      {% translate label %}
-                    </button>
+                    {% with label=label|stringformat:"s" %}
+                      <button type="button"
+                              data-choice
+                              data-choice-value="{{ value|default_if_none:'' }}"
+                              data-choice-label="{% translate label %}"
+                              @click="choose('{{ value|default_if_none:''|escapejs }}', '{% translate label as media_dynamic_label %}{{ media_dynamic_label|escapejs }}')"
+                              class="block w-full px-3 py-2 text-left text-sm transition-colors {% if value == '' %}text-[var(--color-text-muted)]{% else %}text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-strong)] hover:text-[var(--color-text)]{% endif %}">
+                        {% translate label %}
+                      </button>
+                    {% endwith %}
                   {% endfor %}
                 </div>
                 <input type="hidden" name="{{ field.name }}" x-model="selectedValue">

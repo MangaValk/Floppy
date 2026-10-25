@@ -774,6 +774,14 @@ def media_rewatch(request):
     media = get_object_or_404(model, pk=instance_id, user=request.user)
 
     if action == "stop":
+        from app.services.progress_breakdown import build_progress_breakdown
+        from app.services.rewatch_progress import cancel_run, resolve_rewatch
+
+        tv = media if media_type == MediaTypes.TV.value else media.related_tv
+        breakdown = build_progress_breakdown(tv=tv)
+        inferred = resolve_rewatch(tv, breakdown.seasons, include_explicit=False, include_candidates=True)
+        if inferred is not None:
+            cancel_run(tv, inferred)
         # Each model resolves its own season(s) against their own episode
         # counts — a show's seasons can have different lengths.
         media.stop_rewatch()
@@ -1069,6 +1077,7 @@ def _write_episode_save_oob(
         {
             "detail-progress-updated": {
                 "id": related_season.id,
+                "tv_id": related_season.related_tv_id,
                 "completed": related_season.completed_episode_count,
                 "watched_once": len(related_season.watched_once_numbers),
                 "rewatching": related_season.is_rewatching,
@@ -1344,6 +1353,7 @@ def episode_drop(request):
 
 
 POLL_LOOKBACK_SECONDS = 45  # > poll interval, tolerates jitter/delay
+POLL_MAX_GAP_SECONDS = 24 * 60 * 60  # hidden-tab catch-up cap
 
 
 @require_GET
@@ -1355,7 +1365,12 @@ def episode_history_poll(request, season_id):
     so the season page polls this endpoint to catch up.
     """
     related_season = get_object_or_404(Season, pk=season_id, user=request.user)
-    since = timezone.now() - timedelta(seconds=POLL_LOOKBACK_SECONDS)
+    try:
+        gap = min(max(int(request.GET.get("gap", 0)), 0), POLL_MAX_GAP_SECONDS)
+    except ValueError:
+        gap = 0
+    lookback = gap + POLL_LOOKBACK_SECONDS
+    since = timezone.now() - timedelta(seconds=lookback)
 
     recent_item_ids = (
         Episode.objects.filter(related_season=related_season, created_at__gte=since)
@@ -1409,6 +1424,7 @@ def episode_history_poll(request, season_id):
         {
             "detail-progress-updated": {
                 "id": related_season.id,
+                "tv_id": related_season.related_tv_id,
                 "completed": related_season.completed_episode_count,
                 "watched_once": len(related_season.watched_once_numbers),
                 "rewatching": related_season.is_rewatching,

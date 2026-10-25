@@ -166,6 +166,7 @@ def _record_backfill_failure(
     state, _ = MetadataBackfillState.objects.get_or_create(item=item, field=field)
     state.fail_count = min(state.fail_count + 1, 9999)
     state.last_attempt_at = now
+    state.terminal = terminal
     if error_message:
         state.last_error = str(error_message)[:500]
     if terminal:
@@ -187,6 +188,7 @@ def _record_backfill_failure(
         "next_retry_at",
         "last_error",
         "give_up",
+        "terminal",
     ]
     if strategy_version is not None:
         state.strategy_version = int(strategy_version)
@@ -245,6 +247,7 @@ def _record_backfill_pending(
     state.last_attempt_at = now
     state.last_success_at = None
     state.give_up = False
+    state.terminal = False
     delay_seconds = _backfill_delay_seconds(
         state.fail_count, METADATA_BACKFILL_PENDING_MAX_DELAY_SECONDS
     )
@@ -260,6 +263,7 @@ def _record_backfill_pending(
         "last_success_at",
         "last_error",
         "give_up",
+        "terminal",
     ]
     if strategy_version is not None:
         state.strategy_version = int(strategy_version)
@@ -289,6 +293,7 @@ def _record_backfill_success(
     state.last_success_at = now
     state.last_error = ""
     state.give_up = False
+    state.terminal = False
     update_fields = [
         "fail_count",
         "last_attempt_at",
@@ -296,6 +301,7 @@ def _record_backfill_success(
         "last_success_at",
         "last_error",
         "give_up",
+        "terminal",
     ]
     if strategy_version is not None:
         state.strategy_version = int(strategy_version)
@@ -314,6 +320,7 @@ def _reset_genre_backfill_state(item: Item) -> None:
         next_retry_at=None,
         last_success_at=None,
         last_error="",
+        terminal=False,
     )
 
 
@@ -333,6 +340,7 @@ def reset_backfill_state_for_identity_change(items) -> None:
         next_retry_at=None,
         last_success_at=None,
         last_error="",
+        terminal=False,
     )
 
 
@@ -557,7 +565,19 @@ def _schedule_metadata_statistics_refresh(items, field: str, reason: str):
             # Day payloads carry no credits (talent is aggregated per range
             # from the database), so re-aggregating is enough. Rebuilding the
             # days turned every backfill batch into hundreds of day builds.
-            statistics_cache.invalidate_statistics_cache(user_id)
+            # Coalesced: a backfill batch lands about every minute, and
+            # marking each one kept the Statistics sync running back to back
+            # against the same SQLite writer (#1706).
+            from app import statistics_sync
+
+            if not statistics_sync.request_credits_statistics_refresh(user_id):
+                logger.debug(
+                    "metadata_refresh_coalesced user_id=%s field=%s reason=%s",
+                    user_id,
+                    field,
+                    reason,
+                )
+                continue
         else:
             statistics_cache.invalidate_statistics_days(
                 user_id, day_keys, reason=reason

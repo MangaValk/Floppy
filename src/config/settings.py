@@ -346,6 +346,14 @@ if ENABLE_DEBUG_TOOLBAR:
 PERF_LOG_ENABLED = config("PERF_LOG_ENABLED", default=True, cast=bool)
 PERF_LOG_SLOW_REQUEST_MS = config("PERF_LOG_SLOW_REQUEST_MS", default=500, cast=int)
 PERF_LOG_SLOW_TASK_MS = config("PERF_LOG_SLOW_TASK_MS", default=5000, cast=int)
+# A transaction open longer than this is logged with its request/task and
+# duration. SQLite has one writer, so a long transaction is the usual reason
+# every other writer waits out busy_timeout (#1609).
+PERF_LOG_SLOW_TRANSACTION_MS = config(
+    "PERF_LOG_SLOW_TRANSACTION_MS",
+    default=1000,
+    cast=int,
+)
 PERF_LOG_QUERY_COUNT_THRESHOLD = config(
     "PERF_LOG_QUERY_COUNT_THRESHOLD",
     default=75,
@@ -551,7 +559,7 @@ else:
 
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.sqlite3",
+            "ENGINE": "config.sqlite_backend",
             "NAME": FLOPPY_DB_PATH,
             "OPTIONS": {
                 "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
@@ -790,6 +798,7 @@ LANGUAGES = [
     ("es", "Español"),
     ("fr", "Français"),
     ("ru", "Русский"),
+    ("it", "Italiano"),
 ]
 
 LOCALE_PATHS = [BASE_DIR / "locale"]
@@ -1593,6 +1602,7 @@ if os.environ.get("FLOPPY_PROCESS_ROLE") == "interactive":
     )
 else:
     CELERY_IMPORTS = (
+        "app.tasks_game_groups",
         "integrations.tasks._change_log",
         "integrations.tasks._jellyfin_pull",
         "integrations.tasks._koito",
@@ -1712,6 +1722,16 @@ STATISTICS_SYNC_HEAVY_SETTLE_SECONDS = config(
 STATISTICS_SYNC_HEAVY_MAX_DELAY_SECONDS = config(
     "STATISTICS_SYNC_HEAVY_MAX_DELAY_SECONDS", default=600, cast=int
 )
+# A credits backfill finishes a batch roughly every minute, and marking every
+# batch made the Statistics sync run back to back for the whole backfill -
+# competing with the credits writes for SQLite's single writer and the CPU
+# (#1706). Credits changes are coalesced to this interval, with one trailing
+# mark so the last credits written are still published. Kept at the heavy-range
+# max delay: a shorter interval would make every mark settle the heavy ranges
+# sooner and rebuild them more often than today.
+STATISTICS_CREDITS_MARK_SECONDS = config(
+    "STATISTICS_CREDITS_MARK_SECONDS", default=600, cast=int
+)
 
 CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default=None) or REDIS_URL
@@ -1731,6 +1751,7 @@ CELERY_TASK_ROUTES = {
     "Cleanup task results": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Repair Celery broker bindings": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Cleanup image cache": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
+    "Purge expired Discover caches": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Write database snapshot": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Backfill item metadata": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure genre backfill reconcile": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
@@ -1743,6 +1764,7 @@ CELERY_TASK_ROUTES = {
     "Ensure podcast website backfill reconcile": {
         "priority": CELERY_TASK_PRIORITY_BACKGROUND,
     },
+    "Ensure watch state repair": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Nightly metadata quality backfill": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Refresh IMDB game credits from datasets": {
         "priority": CELERY_TASK_PRIORITY_BACKGROUND
@@ -1782,16 +1804,24 @@ CELERY_TASK_ROUTES = {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Budget-bounded, and yields to webhooks. See
-    # docs/architecture/statistics-sync.md.
+    # Budget-bounded bulk derived work: ordinary syncs stay off the interactive
+    # lane so webhooks and manual refreshes never wait behind a range aggregate.
+    # The task itself overrides the queue to interactive for urgent requests.
+    # See docs/architecture/statistics-sync.md.
     "app.tasks.statistics_sync_task": {
+        "queue": "celery",
+        "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
+    },
+    # The trailing half of the credits Statistics debounce: one state update
+    # and a sync enqueue, so a delayed mark never waits behind background work.
+    "app.tasks.mark_credits_statistics_refresh": {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Rebuilds a talent section the viewer already sees a stale copy of; same
-    # priority as the sync so webhook scrobbles still run first.
+    # Rebuilds a talent section the viewer already sees a stale copy of. It is a
+    # full talent scan, so it belongs with the other bulk derived work.
     "Refresh statistics talent fragment": {
-        "queue": "interactive",
+        "queue": "celery",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
     # Cheap (one query, then enqueues). On the interactive worker so a long
@@ -1993,6 +2023,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "Cleanup image cache",
         "schedule": crontab(hour=4, minute=0),
     },
+    "purge_expired_discover_caches": {
+        "task": "Purge expired Discover caches",
+        "schedule": crontab(hour=4, minute=15),
+    },
     "write_database_snapshot": {
         "task": "Write database snapshot",
         "schedule": crontab(hour=DB_SNAPSHOT_HOUR, minute=DB_SNAPSHOT_MINUTE),
@@ -2074,6 +2108,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "Ensure podcast website backfill reconcile",
         "schedule": RECONCILE_INTERVAL_SECONDS,
     },
+    # One-shot like the podcast sweep: the startup hook starts it, and this
+    # resumes a library too large to finish in one run (app/tasks_watch_state.py).
+    "ensure_watch_state_repair": {
+        "task": "Ensure watch state repair",
+        "schedule": RECONCILE_INTERVAL_SECONDS,
+    },
     "warm_discover_api_cache": {
         "task": "Warm Discover API Cache",
         "schedule": by_tier(60 * 60 * 6, 60 * 60 * 3, 60 * 60),
@@ -2085,11 +2125,6 @@ CELERY_BEAT_SCHEDULE = {
     "refresh_discover_profiles": {
         "task": "Refresh Discover Profiles",
         "schedule": crontab(hour=4, minute=0),  # every day at 4 AM
-    },
-    "migrate_tv_shows_to_preferred_provider": {
-        "task": "Migrate TV shows to preferred metadata provider",
-        "schedule": crontab(hour=3, minute=45),  # every day at 3:45 AM
-        "kwargs": {"batch_size": _scaled(200)},
     },
     "sync_imdb_ratings": {
         "task": "Sync IMDB ratings from datasets",

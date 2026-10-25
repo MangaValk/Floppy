@@ -65,9 +65,12 @@ HEAVY_RANGES = (
     "All Time",
 )
 WARM_DAY_COUNT = 2
-# The dedicated worker runs one task at a time, so a sync yields at its next
-# boundary to anything queued at webhook priority instead of making it wait.
+# Ordinary syncs are bulk derived work and run on the background worker, so a
+# webhook or a manual refresh never shares the interactive worker's only slot
+# with a range aggregate. The sync still yields at each boundary when webhook
+# work is queued, because both workers write the same SQLite database.
 INTERACTIVE_QUEUE = "interactive"
+BACKGROUND_QUEUE = "celery"
 # What a range cost the last time it was built, so a task can tell whether the
 # next one fits in what is left of its budget.
 RANGE_COST_TIMEOUT = 7 * 24 * 60 * 60
@@ -179,6 +182,13 @@ def _gate_key(user_id: int) -> str:
     return f"stats:sync:enqueued:{user_id}"
 
 
+def _pending_key(user_id: int) -> str:
+    # Spans a queued-but-not-started message, unlike the 5-second interactive
+    # gate. The task deletes it as soon as it starts, so it only expires when a
+    # published message was lost before delivery.
+    return f"stats:sync:pending:{user_id}"
+
+
 def _day_epoch_key(user_id: int) -> str:
     # Written without a TTL, so volatile-lru never evicts it: its absence means
     # the cache was flushed and every day payload has to be checked.
@@ -284,6 +294,52 @@ def mark_aggregate(
     _after_mark(user_id, reason, 0)
 
 
+def _credits_mark_key(user_id: int) -> str:
+    return f"stats:credits_mark:{user_id}"
+
+
+def _credits_trailing_key(user_id: int) -> str:
+    return f"stats:credits_trailing:{user_id}"
+
+
+def request_credits_statistics_refresh(user_id: int) -> bool:
+    """Record a credits change, coalesced to one mark per interval.
+
+    A backfill drain completes a batch about every minute; recording each one
+    as its own generation made the Statistics sync run back to back for the
+    whole backfill, next to the same single SQLite writer (#1706). Mark on the
+    leading edge and leave one trailing mark behind so credits written while
+    marks are coalesced are still published. Returns True when the generation
+    was bumped now.
+    """
+    if not user_id:
+        return False
+    interval = int(settings.STATISTICS_CREDITS_MARK_SECONDS)
+    if cache.add(_credits_mark_key(user_id), True, interval):
+        mark_aggregate(user_id, reason="credits_backfill")
+        return True
+    if cache.add(_credits_trailing_key(user_id), True, interval):
+        from app.tasks_interactive import mark_credits_statistics_refresh
+
+        mark_credits_statistics_refresh.apply_async(
+            args=[user_id],
+            countdown=interval,
+        )
+    return False
+
+
+def mark_credits_statistics_refresh(user_id: int) -> None:
+    """Trailing half of the coalescing: mark credits left by throttled batches."""
+    if not user_id:
+        return
+    interval = int(settings.STATISTICS_CREDITS_MARK_SECONDS)
+    cache.delete(_credits_trailing_key(user_id))
+    # A mark that landed while this task waited already covered the credits;
+    # only bump when the interval really lapsed.
+    if cache.add(_credits_mark_key(user_id), True, interval):
+        mark_aggregate(user_id, reason="credits_backfill")
+
+
 def mark_rows(user_id: int, rows, reason: str | None = None) -> int:
     """Mark the activity days of rows written without signals (bulk writes)."""
     days = [
@@ -319,17 +375,28 @@ def request_manual_refresh(user, range_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def ensure_sync(user_id: int, *, urgent: bool = False, bypass_gate=False) -> bool:
+def ensure_sync(user_id: int, *, urgent: bool = False, scheduled=False) -> bool:
     """Queue a sync for the user unless one was queued moments ago.
 
     Losing this message is harmless: the reconciler finds unfinished work. The
     eager/test path skips it and the read path syncs inline instead.
+
+    ``scheduled`` is for the reconciler and its self-follow-up: it queues at
+    most one message per user until the task starts, instead of one per tick
+    while the message waits behind a busy worker. The pending marker expires
+    after the lease window so a message lost before delivery is still recovered.
     """
     if not user_id or _eager_mode():
         return False
     if _bulk_import_active(user_id) or (not urgent and interactive_request_active()):
         return False
-    if not (urgent or bypass_gate) and not cache.add(
+    pending_seconds = _lease_seconds()
+    if scheduled:
+        # The shorter interactive gate would expire between reconciler ticks
+        # and cannot show a message still waiting in the queue.
+        if not cache.add(_pending_key(user_id), True, pending_seconds):
+            return False
+    elif not urgent and not cache.add(
         _gate_key(user_id), True, _enqueue_gate_seconds()
     ):
         return False
@@ -341,11 +408,22 @@ def ensure_sync(user_id: int, *, urgent: bool = False, bypass_gate=False) -> boo
             if urgent
             else settings.CELERY_TASK_PRIORITY_STATISTICS_SYNC
         )
-        statistics_sync_task.apply_async(args=[user_id], priority=priority)
+        # Urgent means the user is waiting (manual refresh, first build), so it
+        # keeps the interactive lane. Everything a playback merely marked is
+        # bulk work on the background lane.
+        queue = INTERACTIVE_QUEUE if urgent else BACKGROUND_QUEUE
+        statistics_sync_task.apply_async(
+            args=[user_id], priority=priority, queue=queue
+        )
     except Exception as exc:  # pragma: no cover - broker unavailable
         cache.delete(_gate_key(user_id))
+        if scheduled:
+            cache.delete(_pending_key(user_id))
         logger.warning("stats_sync_enqueue_failed user_id=%s error=%s", user_id, exc)
         return False
+    # Any successful publication counts as pending, so a mark that queued a
+    # message debounces the next reconciler tick too.
+    cache.set(_pending_key(user_id), True, pending_seconds)
     return True
 
 
@@ -973,21 +1051,28 @@ def _aggregate_range(
     credit_hints: int,
     deadline=None,
     lease_token: str | None = None,
+    timings: dict | None = None,
 ) -> dict:
     from app.statistics_aggregator import _aggregate_statistics_from_days
     from app.statistics_highlights import normalize_highlight_images
     from app.statistics_refresh import _get_predefined_range_dates, _resolve_day_list
 
+    timings = {} if timings is None else timings
     start_date, end_date = _get_predefined_range_dates(range_name)
     day_list = _resolve_day_list(user, start_date, end_date)
     # A bounded range walks every calendar day, and a day never built (most
     # are empty) would otherwise be built one at a time inside the aggregate,
     # ~13 queries each. Build them first with one prefetch per slice.
     missing = sorted(_missing_days(user.id, day_list), reverse=True)
+    timings["missing_days"] = len(missing)
     if missing:
-        credit_hints += _build_days(
-            user, missing, deadline, {}, lease_token=lease_token
-        )
+        build_started = time.monotonic()
+        try:
+            credit_hints += _build_days(
+                user, missing, deadline, {}, lease_token=lease_token
+            )
+        finally:
+            timings["days_ms"] = (time.monotonic() - build_started) * 1000
     data = _aggregate_statistics_from_days(
         user,
         day_list,
@@ -1176,8 +1261,14 @@ def run_sync(
             if not only_ranges:
                 _check_range_fits(user_id, range_name, deadline, bool(published))
             range_started = time.monotonic()
+            range_timings: dict[str, float] = {}
             data = _aggregate_range(
-                user, range_name, credit_hints, deadline, lease_token=lease_token
+                user,
+                range_name,
+                credit_hints,
+                deadline,
+                lease_token=lease_token,
+                timings=range_timings,
             )
             publish_snapshot(
                 user_id, range_name, data, generation, lease_token=lease_token
@@ -1192,11 +1283,14 @@ def run_sync(
                 timeout=RANGE_COST_TIMEOUT,
             )
             logger.info(
-                "stats_range_summary user_id=%s range=%s generation=%s elapsed_ms=%.2f",
+                "stats_range_summary user_id=%s range=%s generation=%s elapsed_ms=%.2f "
+                "missing_days=%s days_ms=%.2f",
                 user_id,
                 range_name,
                 generation,
                 range_seconds * 1000,
+                range_timings.get("missing_days", 0),
+                range_timings.get("days_ms", 0.0),
             )
 
         # Cleared only once the pass completes: a continuation must still see
@@ -1293,7 +1387,7 @@ def run_sync(
         and not (yield_to_interactive and interactive_request_active())
         and (status == "continued" or _has_hot_work(user_id))
     ):
-        ensure_sync(user_id, bypass_gate=True)
+        ensure_sync(user_id, scheduled=True)
     return {"status": status, "published": published}
 
 
@@ -1309,6 +1403,7 @@ def _has_hot_work(user_id: int) -> bool:
 def sync_task_body(user_id: int) -> dict:
     """Body of the Celery sync task: bounded by the task budget."""
     cache.delete(_gate_key(user_id))
+    cache.delete(_pending_key(user_id))
     return run_sync(user_id, budget_seconds=_task_budget_seconds())
 
 
@@ -1377,7 +1472,7 @@ def reconcile() -> int:
     _bootstrap_states()
     limit = _setting("STATISTICS_SYNC_RECONCILE_USER_LIMIT", 100) or None
     user_ids = users_needing_sync(limit)
-    queued = sum(1 for user_id in user_ids if ensure_sync(user_id, bypass_gate=True))
+    queued = sum(1 for user_id in user_ids if ensure_sync(user_id, scheduled=True))
     if user_ids:
         logger.info("stats_reconcile candidates=%s queued=%s", len(user_ids), queued)
     return queued

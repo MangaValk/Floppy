@@ -239,6 +239,18 @@ class Item(CalendarTriggerMixin, models.Model):
         default="",
         help_text="Provider collection/franchise name",
     )
+    provider_franchise_id = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Provider franchise id",
+    )
+    provider_franchise_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Provider franchise name",
+    )
     # When provider metadata was last written to this row. Null means it has
     # not been refreshed since this field existed, which is a different claim
     # from "refreshed long ago" and is reported as such.

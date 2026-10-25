@@ -400,6 +400,17 @@ def render_page(
 ) -> str:
     """Build the page. The written file is the same page without the buttons."""
     port = validate_port(port, source="recovery page port")
+    if status and status.get("error_class") == "startup_admission" and (
+        not report or report.get("status") == "resolved"
+    ):
+        return _document(
+            "<h1>SQLite startup needs maintenance</h1>"
+            f"<p>{html.escape(str(status.get('error_message', 'Inspect the container logs.')))}</p>"
+            "<p>Stop all application containers and database writers before preparing "
+            "migrations or recovery. Run maintenance with the same image and database "
+            "mounts, then restart Floppy. No database rows were changed by admission.</p>"
+            + _help_card()
+        )
     if status and status.get("status") == "timeout":
         body = (
             _timeout_body()

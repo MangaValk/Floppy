@@ -51,6 +51,12 @@ Surfaces whose unit is not one item keep their own pipeline:
   between pages.
   - `random` is a seeded hash of the id. Home carries the seed through
     load-more.
+  - **"Last Watched" is activity; "End Date" is completion.** The media list
+    and Home map their `end_date` choice to the `last_watched` key, which uses
+    `end_date` when set and `progressed_at` otherwise, so an in-progress item
+    sorts by when it was last played. Custom list detail keeps `end_date` as
+    the literal completion date because its label says "End Date". The API
+    accepts both: `end_date` is unchanged, `last_watched` is opt-in.
 
 ## Two paths, derived rather than listed
 
@@ -70,8 +76,9 @@ needs Python. A sort's SQL form is either `sql` (one value) or `sql_order`
   - Memory is bounded by the batch and the page. Computing values in Python is
     still one pass over the narrowed candidates.
 
-Home caches a Python-ordered shelf's id order for the row-cache lifetime, so
-"load more" costs one page.
+Home caches a Python-ordered shelf's id order for longer than the rendered
+section, so "load more" and a warm revisit cost one page. A random shelf keeps
+the short row lifetime: each new seed is a different order.
 
 ## Where filters come from
 

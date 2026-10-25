@@ -5,7 +5,7 @@ import posixpath
 import re
 from http import HTTPStatus as HTTP  # noqa: N814
 from unittest.mock import patch
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from django.contrib.auth import get_user_model
 from django.urls import resolve, reverse
@@ -16,6 +16,7 @@ from integrations.models import IntegrationToken
 
 SUBMIT_URL = "/apis/listenbrainz/1/submit-listens"
 VALIDATE_URL = "/apis/listenbrainz/1/validate-token"
+USER_LISTENS_URL = "/apis/listenbrainz/1/user/{username}/listens"
 
 
 def _listen(listened_at=1700000000, **metadata):
@@ -233,6 +234,139 @@ class ListenBrainzIngestTests(ListenBrainzTestCase):
 
         self.assertEqual(Music.objects.filter(user=self.user).count(), 1)
         self.assertEqual(Music.objects.filter(user=other).count(), 0)
+
+
+class UserListensTests(ListenBrainzTestCase):
+    """GET user listens gives Multi-Scrobbler the history it dedupes against."""
+
+    def listens_url(self, username=None, **params):
+        """Build the user-listens URL for this user."""
+        url = USER_LISTENS_URL.format(username=username or self.user.username)
+        if params:
+            url = f"{url}?{urlencode(params)}"
+        return url
+
+    def test_recorded_plays_are_returned_newest_first(self):
+        """Each recorded play is a listen, ordered like ListenBrainz."""
+        self.submit(
+            {
+                "listen_type": "import",
+                "payload": [
+                    _listen(1700000000, track_name="Roygbiv"),
+                    _listen(1700000300, track_name="Olson"),
+                ],
+            },
+        )
+
+        response = self.client.get(self.listens_url(), **self.auth)
+
+        self.assertEqual(response.status_code, HTTP.OK)
+        payload = response.json()["payload"]
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(
+            [listen["track_metadata"]["track_name"] for listen in payload["listens"]],
+            ["Olson", "Roygbiv"],
+        )
+        self.assertEqual(payload["listens"][0]["listened_at"], 1700000300)
+        self.assertEqual(
+            payload["listens"][0]["track_metadata"]["artist_name"],
+            "Boards of Canada",
+        )
+        self.assertEqual(
+            payload["listens"][0]["track_metadata"]["release_name"],
+            "Music Has the Right to Children",
+        )
+        self.assertEqual(payload["latest_listen_ts"], 1700000300)
+        self.assertEqual(payload["oldest_listen_ts"], 1700000000)
+
+    def test_repeated_plays_of_one_track_are_separate_listens(self):
+        """A track played twice has one listen per play, not one per row."""
+        self.submit(
+            {
+                "listen_type": "import",
+                "payload": [_listen(1700000000), _listen(1700003600)],
+            },
+        )
+
+        payload = self.client.get(self.listens_url(), **self.auth).json()["payload"]
+
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(
+            [listen["listened_at"] for listen in payload["listens"]],
+            [1700003600, 1700000000],
+        )
+
+    def test_time_window_and_count_filter_the_page(self):
+        """min_ts and max_ts are exclusive, and count bounds the page."""
+        self.submit(
+            {
+                "listen_type": "import",
+                "payload": [
+                    _listen(1700000000, track_name="One"),
+                    _listen(1700000300, track_name="Two"),
+                    _listen(1700000600, track_name="Three"),
+                ],
+            },
+        )
+
+        payload = self.client.get(
+            self.listens_url(min_ts=1700000000, max_ts=1700000600, count=1),
+            **self.auth,
+        ).json()["payload"]
+
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["listens"][0]["listened_at"], 1700000300)
+        self.assertEqual(
+            payload["listens"][0]["track_metadata"]["track_name"],
+            "Two",
+        )
+
+    def test_listens_are_scoped_to_the_token_owner(self):
+        """Another account's account token cannot read these plays."""
+        other = get_user_model().objects.create_user(username="lbz-other")
+        other.music_enabled = True
+        other.save()
+        other_auth = {"HTTP_AUTHORIZATION": f"Token {other.token}"}
+        self.submit({"listen_type": "single", "payload": [_listen()]})
+
+        response = self.client.get(
+            self.listens_url(username=other.username),
+            **other_auth,
+        )
+
+        self.assertEqual(response.status_code, HTTP.OK)
+        self.assertEqual(response.json()["payload"]["count"], 0)
+
+    def test_unknown_username_is_not_found(self):
+        """A username that is not the token owner is a 404."""
+        response = self.client.get(
+            self.listens_url(username="someone-else"),
+            **self.auth,
+        )
+
+        self.assertEqual(response.status_code, HTTP.NOT_FOUND)
+        self.assertEqual(response.json()["code"], HTTP.NOT_FOUND)
+
+    def test_invalid_time_window_is_rejected(self):
+        """A non-numeric bound is a 400 rather than silently ignored."""
+        response = self.client.get(
+            self.listens_url(min_ts="yesterday"),
+            **self.auth,
+        )
+
+        self.assertEqual(response.status_code, HTTP.BAD_REQUEST)
+
+    def test_token_is_required(self):
+        """The endpoint is not public."""
+        response = self.client.get(self.listens_url())
+
+        self.assertEqual(response.status_code, HTTP.UNAUTHORIZED)
+
+    def test_trailing_slash_is_routed(self):
+        """Both spellings resolve, as with the other ingest routes."""
+        response = self.client.get(self.listens_url() + "/", **self.auth)
+
+        self.assertEqual(response.status_code, HTTP.OK)
 
 
 class ListenBrainzMetadataTests(ListenBrainzTestCase):

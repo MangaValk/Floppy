@@ -280,11 +280,15 @@ def _existing_grouped_tracking(
     series_id: str,
     mal_ids=(),
 ) -> bool:
-    """Return whether the user already tracks this series as grouped anime.
+    """Return whether the user already tracks this series under the TV shape.
 
     The series can be tracked under the other grouped provider: a show added
     through TMDB is the same show as its TVDB series. Missing that created a
     second, TVDB-sourced show beside the one the user already had.
+
+    A regular TV-library row on the same Item collides with the grouped row
+    this migration creates (`unique(user, item)`), so it counts even though it
+    is not stored in the anime library.
     """
     identities = Q(source=provider, media_id=series_id) | Q(
         provider_links__provider=provider,
@@ -299,14 +303,17 @@ def _existing_grouped_tracking(
     target_items = Item.objects.filter(
         identities,
         media_type=MediaTypes.TV.value,
-        library_media_type=MediaTypes.ANIME.value,
     )
-    return TV.objects.filter(user_id=user_id, item__in=target_items).exists() or (
-        MetadataProviderPreference.objects.filter(
-            user_id=user_id,
-            item__in=target_items,
-        ).exists()
-    )
+    if TV.objects.filter(user_id=user_id, item__in=target_items).exists():
+        return True
+    # A preference alone also means the user has claimed this grouped show,
+    # but only anime-library items count here: the TV check above already
+    # covers a regular TV row on the same Item.
+    return MetadataProviderPreference.objects.filter(
+        user_id=user_id,
+        item__in=target_items,
+        item__library_media_type=MediaTypes.ANIME.value,
+    ).exists()
 
 
 def _entry_payload(

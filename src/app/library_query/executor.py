@@ -538,9 +538,19 @@ def _attach_media(user, batch: list[Candidate], needs: set[str]) -> None:
             user=user,
             item_id__in=[candidate.item.pk for candidate in candidates],
         ).select_related("item")
+        if filter_registry.NEEDS_WATCH_PROVIDERS not in needs:
+            # The scan's candidate queryset defers this blob; the tracker rows
+            # must not bring it back through their own select_related.
+            rows = rows.defer("item__watch_providers")
         # Progress and derived status read episodes and seasons; fetch them
-        # once for the batch instead of once per row.
-        rows = BasicMedia.objects._apply_prefetch_related(rows, media_type, compact_episodes=True)
+        # once for the batch instead of once per row. Ranking only reads the
+        # compact episode fields unless runtime is part of the sort/filter.
+        rows = BasicMedia.objects._apply_prefetch_related(
+            rows,
+            media_type,
+            list_mode=filter_registry.NEEDS_RUNTIME not in needs,
+            compact_episodes=True,
+        )
         aggregated = BasicMedia.objects._aggregate_duplicate_data(rows, user, media_type)
         latest = {}
         for media in aggregated:

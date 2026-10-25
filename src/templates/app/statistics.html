@@ -851,7 +851,9 @@
       {% if user.book_enabled %}{value: 'book', label: 'Books'},{% endif %}
       {% if user.comic_enabled %}{value: 'comic', label: 'Comics'},{% endif %}
     ]
-  })" x-init="init()">
+  })"
+       data-date-format="{{ user_django_date_format }}"
+       x-init="init()">
     {% if statistics_built_at %}
       <div class="flex justify-end mb-1">
         <span class="hidden sm:inline text-xs text-[var(--color-text-muted)] whitespace-nowrap"
@@ -2249,10 +2251,6 @@
 {% endblock content %}
 
 {% block js %}
-  <script src="{% static 'js/stats-media-merge.js' %}{% get_static_file_mtime 'js/stats-media-merge.js' %}"></script>
-  <script src="{% static 'js/date-range.js' %}{% get_static_file_mtime 'js/date-range.js' %}"
-          data-date-format="{{ user_django_date_format }}"></script>
-
   <script>
     function highlightCarousel() {
       return {

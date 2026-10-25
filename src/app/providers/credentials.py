@@ -464,7 +464,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
             group=GROUP_ACCOUNTS,
             user_scope=True,
             label="SIMKL",
-            description="SIMKL account import.",
+            description="SIMKL account import. Needs a “Server apps & services” app's Client ID and secret.",
             docs_url="https://simkl.com/settings/developer/",
             fields=(
                 CredentialField("client_id", "Client ID", "SIMKL_ID"),

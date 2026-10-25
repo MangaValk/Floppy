@@ -261,6 +261,39 @@ def _queue_task_quietly(task, *args, **kwargs):
     return True
 
 
+def _webhook_request_fields(payload, provider, user_id):
+    """Return correlation fields shared by receipt and worker logs.
+
+    The id ties the HTTP receipt, the queued task and its outcome together;
+    ``received_at`` is the arrival time, so the worker can report queue wait
+    and ignore an older event that overtakes a newer one. See
+    docs/architecture/webhook-delivery.md.
+    """
+    event = metadata = None
+    if isinstance(payload, dict):
+        event = payload.get("event") or payload.get("Event")
+        metadata = payload.get("Metadata") or payload.get("Item") or {}
+    rating_key = None
+    if isinstance(metadata, dict):
+        rating_key = (
+            metadata.get("ratingKey")
+            or metadata.get("ratingkey")
+            or metadata.get("Id")
+            or metadata.get("id")
+        )
+    event_id = secrets.token_hex(8)
+    received_at = timezone.now().isoformat()
+    logger.info(
+        "webhook_received event_id=%s provider=%s event=%s user_id=%s rating_key=%s",
+        event_id,
+        provider,
+        event,
+        user_id,
+        rating_key,
+    )
+    return {"received_at": received_at, "event_id": event_id}
+
+
 def _integration_redirect(request, *, connected_slug=None, next_url=None):
     """Redirect back to `next` (e.g. the onboarding wizard) if present.
 
@@ -1313,6 +1346,22 @@ def import_simkl_private(request):
 
     redirect_uri = state_data.get("redirect_uri")
     return_to = state_data.get("return_to")
+
+    if state_data.get("code_verifier") and request.GET.get("iss") != "https://simkl.com":
+        # AUTH V2 callbacks must come from SIMKL itself, not another provider.
+        logger.warning("SIMKL OAuth callback carried an unexpected issuer")
+        messages.error(request, "Invalid or expired SIMKL authorization request.")
+        return _integration_redirect(request, next_url=return_to)
+
+    if request.GET.get("error"):
+        # AUTH V2 reports a declined consent through the callback, unlike V1.
+        messages.error(request, "SIMKL authorization was cancelled or denied.")
+        return _integration_redirect(request, next_url=return_to)
+
+    if not request.GET.get("code"):
+        messages.error(request, "SIMKL authorization did not return a code.")
+        return _integration_redirect(request, next_url=return_to)
+
     try:
         oauth_callback = simkl.get_token(
             request,
@@ -5655,7 +5704,13 @@ def jellyfin_webhook(request, token):
         return HttpResponse("Invalid JSON", status=400)
     if not isinstance(payload, dict):
         return HttpResponse("Invalid payload", status=400)
-    if not _queue_task_quietly(tasks.process_webhook, "jellyfin", payload, user.id):
+    if not _queue_task_quietly(
+        tasks.process_webhook,
+        "jellyfin",
+        payload,
+        user.id,
+        **_webhook_request_fields(payload, "jellyfin", user.id),
+    ):
         return HttpResponse(status=503)
     return HttpResponse(status=200)
 
@@ -5691,12 +5746,14 @@ def plex_webhook(request, token):
         user.mark_plex_webhook_error("Invalid JSON payload in Plex webhook request")
         return HttpResponse("Invalid payload", status=400)
 
-    event_type = payload.get("event")
-    logger.info(
-        "Received Plex webhook request - Event: %s, User: %s", event_type, user.username
+    request_fields = _webhook_request_fields(payload, "plex", user.id)
+    queued = _queue_task_quietly(
+        tasks.process_webhook,
+        "plex",
+        payload,
+        user.id,
+        **request_fields,
     )
-
-    queued = _queue_task_quietly(tasks.process_webhook, "plex", payload, user.id)
     payload_usernames = extract_plex_webhook_usernames(payload)
     for share in PlexWebhookShare.objects.filter(
         owner=user,
@@ -5710,6 +5767,7 @@ def plex_webhook(request, token):
                 payload,
                 share.recipient_id,
                 share_id=share.id,
+                **request_fields,
             )
     if not queued:
         return HttpResponse(status=503)
@@ -5743,7 +5801,13 @@ def emby_webhook(request, token):
         return HttpResponse("Invalid JSON", status=400)
     if not isinstance(payload, dict):
         return HttpResponse("Invalid payload", status=400)
-    if not _queue_task_quietly(tasks.process_webhook, "emby", payload, user.id):
+    if not _queue_task_quietly(
+        tasks.process_webhook,
+        "emby",
+        payload,
+        user.id,
+        **_webhook_request_fields(payload, "emby", user.id),
+    ):
         return HttpResponse(status=503)
     return HttpResponse(status=200)
 
@@ -5866,7 +5930,13 @@ def kodi_webhook(request, token):
         logger.warning("Invalid JSON payload in Kodi webhook request")
         return HttpResponse("Invalid JSON", status=400)
 
-    if not _queue_task_quietly(tasks.process_webhook, "kodi", payload, user.id):
+    if not _queue_task_quietly(
+        tasks.process_webhook,
+        "kodi",
+        payload,
+        user.id,
+        **_webhook_request_fields(payload, "kodi", user.id),
+    ):
         return HttpResponse(status=503)
     return HttpResponse(status=200)
 

@@ -15,11 +15,14 @@ import json
 import logging
 from dataclasses import dataclass, field
 
+from django.db.models import Prefetch, prefetch_related_objects
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
-from app.models import Season, Status
+from app.models import Episode, Season, Status
 from app.providers import services
 from app.services.bulk_episode_tracking import coerce_episode_datetime
+from app.services.rewatch_progress import RewatchRun, resolve_rewatch
 from app.templatetags.app_tags import media_url
 
 logger = logging.getLogger(__name__)
@@ -41,6 +44,7 @@ class SeasonProgress:
     catalogue_missing: bool = False
     count_unaired: bool = False
     episodes: list = field(default_factory=list)
+    tracker: Season | None = field(default=None, repr=False, compare=False)
 
     @property
     def counted(self):
@@ -109,6 +113,7 @@ class ProgressBreakdown:
     seasons: list
     catalogue_unavailable: bool = False
     single_season: bool = False
+    rewatch_run: RewatchRun | None = None
 
     @property
     def overall(self):
@@ -140,11 +145,67 @@ class ProgressBreakdown:
         )
 
     @property
+    def rewatch_total(self):
+        """Name the scope denominator, independently of its position on the bar."""
+        if self.rewatch_run and not self.rewatch_run.explicit and not self.single_season:
+            return len(self.rewatch_run.keys)
+        return self.total
+
+    @property
+    def rewatch_offset(self):
+        """Position a season-only replay over its part of the show."""
+        if not self.rewatch_run or self.single_season or not self.total:
+            return 0
+        keys = [(season.number, ep["number"]) for season in self.overall for ep in season.counted]
+        first = self.rewatch_run.keys[0] if self.rewatch_run.keys else None
+        return round(keys.index(first) / self.total * 100, 4) if first in keys else 0
+
+    @property
+    def rewatch_width(self):
+        """The glow's width uses the bar denominator, not the scope denominator."""
+        return round(self.rewatch_watched / self.total * 100, 4) if self.total else 0
+
+    @property
+    def rewatch_season(self):
+        """Identify a local run when shown against the whole show."""
+        if self.rewatch_run and not self.single_season and not self.rewatch_run.explicit:
+            return self.rewatch_run.season_number
+        return None
+
+    @property
+    def rewatch_label(self):
+        """A scoped label for a glow which may sit in the middle of the bar."""
+        if self.rewatch_percent is None:
+            return ""
+        if self.rewatch_season is not None:
+            return _("Season %(season)s rewatch · %(watched)s/%(total)s · %(percent)s%%") % {
+                "season": self.rewatch_season,
+                "watched": self.rewatch_watched,
+                "total": self.rewatch_total,
+                "percent": self.rewatch_percent,
+            }
+        return _("Rewatching · %(percent)s%%") % {"percent": self.rewatch_percent}
+
+    @property
+    def run_key(self):
+        """Identify only a run visible in this particular progress surface."""
+        return self.rewatch_run.key if self.rewatch_run and self.rewatching else ""
+
+    def display_payload(self, instance_id, media_type):
+        """Share the same values with Alpine after a fragment refresh."""
+        return {
+            "id": instance_id, "media_type": media_type,
+            "percent": self.percent, "rewatch": self.rewatch_percent,
+            "offset": self.rewatch_offset, "width": self.rewatch_width,
+            "label": self.rewatch_label, "run_key": self.run_key,
+        }
+
+    @property
     def rewatch_percent(self):
         """Return the overall current-pass percentage while rewatching, else None."""
         if not self.rewatching or not self.total:
             return None
-        return round(self.rewatch_watched / self.total * 100)
+        return round(self.rewatch_watched / self.rewatch_total * 100)
 
     @property
     def left(self):
@@ -287,21 +348,31 @@ def build_progress_breakdown(*, tv=None, season=None):
 
     if season is not None:
         tv = season.related_tv
-        tracked = [season]
-        media_id, source = season.item.media_id, season.item.source
-        requested = [season.item.season_number]
-    else:
-        tracked = list(
-            Season.objects.filter(related_tv=tv)
-            .select_related("item")
-            .prefetch_related("episodes__item"),
-        )
-        media_id, source = tv.tracking_media_id, tv.tracking_source
-        requested = None
+    tracked = list(
+        Season.objects.filter(related_tv=tv)
+        .select_related("item"),
+    )
+    if season is not None:
+        tracked = [season if row.pk == season.pk else row for row in tracked]
+    prefetch_related_objects(
+        [row for row in tracked if row.is_rewatching],
+        Prefetch("episodes", queryset=Episode.objects.select_related("item").only(
+            "id", "related_season_id", "status", "end_date", "created_at",
+            "item__id", "item__episode_number",
+        )),
+    )
+    media_id, source = tv.tracking_media_id, tv.tracking_source
 
     title = tv.item.title
-    payloads = _season_payloads(media_id, source, requested)
+    payloads = _season_payloads(media_id, source, None)
     by_number = {tracked_season.item.season_number: tracked_season for tracked_season in tracked}
+    watched_by_season = {}
+    watched_rows = (
+        Episode.objects.filter(related_season__in=tracked, status=Status.COMPLETED.value)
+        .order_by().values_list("related_season_id", "item__episode_number").distinct()
+    )
+    for season_id, episode_number in watched_rows:
+        watched_by_season.setdefault(season_id, set()).add(episode_number)
     now = timezone.now()
 
     def link_for(season_number):
@@ -324,10 +395,11 @@ def build_progress_breakdown(*, tv=None, season=None):
         tracked_season = by_number.get(number)
         payload = payloads.get(number)
         watched_numbers = (
-            tracked_season.watched_once_numbers if tracked_season else set()
+            watched_by_season.get(tracked_season.pk, set()) if tracked_season else set()
         )
         pass_numbers = (
-            tracked_season.completed_episode_numbers if tracked_season else set()
+            tracked_season.completed_episode_numbers
+            if tracked_season and tracked_season.is_rewatching else watched_numbers
         )
         default_title = "Specials" if number == 0 else f"Season {number}"
         seasons.append(
@@ -347,8 +419,9 @@ def build_progress_breakdown(*, tv=None, season=None):
                     tracked_season and tracked_season.status == Status.DROPPED.value,
                 ),
                 rewatching=bool(tracked_season and tracked_season.is_rewatching),
+                tracker=tracked_season,
                 catalogue_missing=payload is None,
-                count_unaired=season is not None,
+                count_unaired=season is not None and number == season.item.season_number,
                 episodes=_episode_rows(
                     payload,
                     watched_numbers,
@@ -359,9 +432,18 @@ def build_progress_breakdown(*, tv=None, season=None):
             ),
         )
 
+    run = resolve_rewatch(tv, seasons)
+    if run is not None and not run.explicit:
+        for row in seasons:
+            row.rewatching = any(key[0] == row.number for key in run.keys)
+            for episode in row.episodes:
+                episode["rewatched"] = (row.number, episode["number"]) in run.completed
+    if season is not None:
+        seasons = [row for row in seasons if row.number == season.item.season_number]
     return ProgressBreakdown(
         title=title,
         seasons=seasons,
+        rewatch_run=run,
         catalogue_unavailable=not payloads,
         single_season=season is not None,
     )

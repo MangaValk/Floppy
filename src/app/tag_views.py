@@ -230,6 +230,7 @@ def _render_tag_modal_response(
             "user_tags": _user_tags_for_item(request.user, item),
             "preview_genres_json": json.dumps(preview_genres),
             "preview_implied_genres_json": json.dumps(preview_implied_genres or []),
+            "tag_surface": request.POST.get("tag_surface") or "modal",
         },
         request=request,
     )

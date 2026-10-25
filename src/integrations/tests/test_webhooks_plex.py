@@ -18,6 +18,7 @@ from app.models import (
     ItemProviderLink,
     MediaTypes,
     Movie,
+    PlaybackProgress,
     ProviderMetadataStatus,
     Season,
     Sources,
@@ -25,6 +26,7 @@ from app.models import (
 )
 from app.providers import tmdb
 from app.providers.services import ProviderAPIError
+from integrations import tasks
 from integrations.models import (
     ExternalReference,
     ExternalReferenceReviewStatus,
@@ -230,6 +232,58 @@ class PlexWebhookTests(TestCase):
         url = reverse("plex_webhook", kwargs={"token": "invalid-token"})
         response = self.client.post(url, data={}, content_type="application/json")
         self.assertEqual(response.status_code, 401)
+
+    def test_local_provider_link_resolves_show_when_tmdb_find_misses(self):
+        """A tracked show resolves by TVDB link without a fresh TMDB lookup.
+
+        Regression for #1703: Plex supplies TVDB/IMDb but no TMDB id, and a
+        TMDB find miss used to drop the scrobble even though the show was
+        already in the user's library.
+        """
+        tv_item = Item.objects.create(
+            media_id="81924",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Schooled",
+        )
+        TV.objects.create(
+            item=tv_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        ItemProviderLink.objects.create(
+            item=tv_item,
+            provider=Sources.TVDB.value,
+            provider_media_type=MediaTypes.TV.value,
+            provider_media_id="360289",
+        )
+
+        response = self._post_payload(
+            {
+                "event": "media.scrobble",
+                "Account": {"title": "testuser"},
+                "Metadata": {
+                    "type": "episode",
+                    "grandparentTitle": "Schooled",
+                    "title": "The Goldbergs",
+                    "parentIndex": 1,
+                    "index": 1,
+                    "Guid": [
+                        {"id": "tvdb://360289"},
+                        {"id": "imdb://tt6485512"},
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            Episode.objects.filter(
+                item__media_id="81924",
+                item__season_number=1,
+                item__episode_number=1,
+            ).exists(),
+        )
 
     def test_tv_episode_mark_played(self):
         """Test webhook handles TV episode mark played event."""
@@ -488,6 +542,45 @@ class PlexWebhookTests(TestCase):
         self.assertEqual(movie.status, Status.COMPLETED.value)
         self.assertEqual(movie.start_date, started)
         self.assertGreater(movie.end_date, movie.start_date)
+
+    def test_late_queued_play_does_not_clear_a_scrobble(self):
+        """A play received before the scrobble but processed after it loses (#1708)."""
+        metadata = {
+            "type": "movie",
+            "title": "The Matrix",
+            "ratingKey": "rk-movie-order",
+            "duration": 8100000,
+            "Guid": [{"id": "tmdb://603"}],
+        }
+        base = {"Account": {"title": "testuser"}, "Metadata": metadata}
+        now = timezone.now()
+
+        tasks.process_webhook(
+            "plex",
+            {**base, "event": "media.scrobble", "Metadata": {**metadata, "viewOffset": 8000000}},
+            self.user.id,
+            received_at=(now - timedelta(seconds=2)).isoformat(),
+            event_id="scrobble-1",
+        )
+        tasks.process_webhook(
+            "plex",
+            {**base, "event": "media.play", "Metadata": {**metadata, "viewOffset": 0}},
+            self.user.id,
+            received_at=(now - timedelta(seconds=3)).isoformat(),
+            event_id="play-1",
+        )
+
+        movie = Movie.objects.get(item__media_id="603", user=self.user)
+        self.assertEqual(movie.status, Status.COMPLETED.value)
+        progress = PlaybackProgress.objects.get(
+            user=self.user,
+            item__media_id="603",
+        )
+        self.assertTrue(progress.completed)
+        self.assertGreater(progress.position_seconds, 0)
+        state = live_playback.get_user_playback_state(self.user.id)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["event_type"], "media.scrobble")
 
     def test_movie_scrobble_with_cold_cache_does_not_invent_a_start_date(self):
         """No earlier Play (e.g. after a restart) leaves the start date unset."""
@@ -1415,6 +1508,60 @@ class PlexWebhookTests(TestCase):
         )
         self.assertEqual(season.status, Status.IN_PROGRESS.value)
         self.assertEqual(season.related_tv.status, Status.IN_PROGRESS.value)
+
+    def test_duplicate_scrobble_does_not_reopen_completed_season(self):
+        """A re-delivered final scrobble must not undo season/show completion."""
+        self.user.anime_enabled = False
+        processor = PlexWebhookProcessor()
+
+        def payload(episode_number):
+            return {
+                "event": "media.scrobble",
+                "Metadata": {
+                    "type": "episode",
+                    "grandparentTitle": "Friends",
+                    "parentTitle": "Season 1",
+                    "index": episode_number,
+                    "parentIndex": 1,
+                    "duration": 1440000,
+                },
+            }
+
+        for episode_number in (1, 2):
+            processor._handle_tv_episode(
+                "1668",
+                1,
+                episode_number,
+                payload(episode_number),
+                self.user,
+            )
+
+        season = Season.objects.get(
+            item__media_id="1668",
+            item__season_number=1,
+            user=self.user,
+        )
+        self.assertEqual(season.status, Status.COMPLETED.value)
+        self.assertEqual(season.related_tv.status, Status.COMPLETED.value)
+
+        processor._handle_tv_episode(
+            "1668",
+            1,
+            2,
+            payload(2),
+            self.user,
+        )
+
+        season.refresh_from_db()
+        self.assertEqual(season.status, Status.COMPLETED.value)
+        self.assertEqual(season.related_tv.status, Status.COMPLETED.value)
+        self.assertEqual(
+            Episode.objects.filter(
+                related_season=season,
+                item__episode_number=2,
+            ).count(),
+            1,
+        )
 
     @patch("app.providers.tmdb.search", return_value={"results": []})
     @patch(

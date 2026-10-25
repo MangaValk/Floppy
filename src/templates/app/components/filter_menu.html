@@ -55,6 +55,18 @@
                   x-show="filterLabel() === gettext('All')">{% translate "Active" %}</span>
           </button>
 
+          {% if filter_data.show_group_by %}
+            <div class="border-t border-gray-700 my-1"></div>
+            <button class="flex items-center w-full px-4 py-2 text-left text-sm transition-colors cursor-pointer text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                    @click="view = 'groupBy'"
+                    type="button">
+              <span class="flex-shrink-0 mr-3">{% translate "Group By" %}</span>
+              <span class="ml-auto text-xs text-[var(--color-text-muted)] block min-w-0 truncate max-w-[8rem]"
+                    x-text="groupByLabels[group_by] || groupByLabels.item"></span>
+              <span class="ml-2">{% include "app/icons/chevron-right.svg" with classes="w-3.5 h-3.5" %}</span>
+            </button>
+          {% endif %}
+
           {% if filter_show_media_types %}
             <div class="border-t border-gray-700 my-1"></div>
             <button class="flex items-center w-full px-4 py-2 text-left text-sm transition-colors cursor-pointer text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
@@ -301,6 +313,27 @@
             </button>
           {% endif %}
         </div>
+
+        {% if filter_data.show_group_by %}
+        <div x-show="view === 'groupBy'" x-cloak>
+          <div class="flex items-center gap-2 px-4 py-2 border-b border-gray-700">
+            <button class="p-1 rounded hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer"
+                    @click="view = 'root'"
+                    type="button">{% include "app/icons/chevron-left.svg" with classes="w-4 h-4" %}</button>
+            <div class="text-xs uppercase tracking-wide text-[var(--color-text-secondary)]">{% translate "Group By" %}</div>
+          </div>
+          {% for value, label in group_by_choices %}
+            <button class="flex items-center w-full px-4 py-2 text-left text-sm transition-colors cursor-pointer text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                    @click="setGroupBy('{{ value }}'); open = false"
+                    type="button">
+              <span>{% translate label %}</span>
+              <span class="ml-auto" x-show="group_by === '{{ value }}'">
+                {% include "app/icons/checkmark.svg" with classes="w-4 h-4 text-green-400" %}
+              </span>
+            </button>
+          {% endfor %}
+        </div>
+        {% endif %}
 
         <div x-show="view === 'mediaType'" x-cloak>
           <div class="flex items-center gap-2 px-4 py-2 border-b border-gray-700">

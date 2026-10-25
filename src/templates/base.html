@@ -11,7 +11,8 @@
   <head>
     {# Required meta tags #}
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="keywords" content="Floppy, Media Tracker">
     <meta name="description" content="Search and track media on Floppy.">
     <meta name="mobile-web-app-capable" content="yes">
@@ -36,8 +37,8 @@
       <script type="module" src="{% static 'debug_toolbar/js/toolbar.js' %}"></script>
     {% endif %}
 
-    <script src="{% javascript_catalog_url %}"></script>
-    <script src="{% static 'js/libraries/htmx-2.0.4.min.js' %}"></script>
+    <script defer src="{% javascript_catalog_url %}"></script>
+    <script defer src="{% static 'js/libraries/htmx-2.0.4.min.js' %}"></script>
     <script src="{% static 'js/artwork-loading.js' %}{% get_static_file_mtime 'js/artwork-loading.js' %}"></script>
     <script>
       (function() {
@@ -118,6 +119,8 @@
     <script src="{% static 'js/libraries/lazysizes-5.3.2.min.js' %}" async></script>
     <script defer
             src="{% static 'js/image-fallback.js' %}{% get_static_file_mtime 'js/image-fallback.js' %}"></script>
+    <script defer
+            src="{% static 'js/safari-rail.js' %}{% get_static_file_mtime 'js/safari-rail.js' %}"></script>
     {# Barcode scanning loads the ZXing library on first use, not on every page. #}
     <script defer
             src="{% static 'js/barcode-scanner.js' %}{% get_static_file_mtime 'js/barcode-scanner.js' %}"
@@ -205,12 +208,12 @@
        hx-preserve="true"></p>
     {% block body %}
       {# Main container for the layout #}
-      <div class="flex min-h-screen bg-[var(--color-page-bg)] text-[var(--color-text)]"
+      <div class="app-shell flex min-h-screen bg-[var(--color-page-bg)] text-[var(--color-text)]"
            x-data="{ isMobileMenuOpen: false }">
 
         {# Mobile menu overlay #}
         <div x-show="isMobileMenuOpen"
-             class="fixed inset-0 bg-black/50 z-[42] lg:hidden"
+             class="app-menu-overlay fixed inset-0 bg-black/50 z-[42] lg:hidden"
              @click="isMobileMenuOpen = false"></div>
 
         {# Sidebar #}
@@ -226,13 +229,13 @@
                        height="48"
                        class="h-9 w-[158px] object-cover object-center">
                 {% else %}
-                <img src="{% static 'img/floppy-logo.png' %}"
-                     srcset="{% static 'img/floppy-logo.png' %} 1x,
-                             {% static 'img/floppy-logo@2x.png' %} 2x"
-                     alt="Floppy"
-                     width="158"
-                     height="48"
-                     class="h-9 w-auto">
+                  <img src="{% static 'img/floppy-logo.png' %}"
+                       srcset="{% static 'img/floppy-logo.png' %} 1x,
+                               {% static 'img/floppy-logo@2x.png' %} 2x"
+                       alt="Floppy"
+                       width="158"
+                       height="48"
+                       class="h-9 w-auto">
                 {% endif %}
               </h1>
             </div>
@@ -451,7 +454,7 @@
         {# Main content #}
         <div class="flex-1 flex flex-col min-h-screen min-w-0">
           {# Top bar #}
-          <div class="sticky top-0 z-50 pt-[var(--header-safe-top)] bg-[var(--color-sidebar)] border-b border-[var(--color-border)] shadow-md">
+          <div class="app-topbar sticky top-0 z-50 pt-[var(--header-safe-top)] bg-[var(--color-sidebar)] border-b border-[var(--color-border)] shadow-md">
             <div class="app-topbar__inner container mx-auto max-lg:max-w-none pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))]">
               <div class="flex items-center justify-between lg:justify-center gap-2 h-16 min-w-0">
                 {# Mobile: sidebar toggle button #}
@@ -502,7 +505,7 @@
                                  hx-swap="innerHTML"
                                  hx-include="[name='media_type']"
                                  class="w-full py-2 pl-10 pr-4 text-sm text-[var(--color-text-secondary)] bg-[var(--color-panel)] rounded-l-md focus:outline-none focus:ring-2 focus:ring-(--color-accent) focus:ring-inset placeholder-[var(--color-text-muted)]"
-                                 :class="selectedType.value === 'book' ? 'pr-10' : ''">
+                                 :class="['book', 'manga', 'comic', 'comicissue'].includes(selectedType.value) ? 'pr-10' : ''">
                           <button type="submit"
                                   x-ref="searchButton"
                                   aria-label="{% translate 'Search' %}"
@@ -510,14 +513,14 @@
                             {% include "app/icons/magnifying-glass.svg" with classes="w-5 h-5" %}
 
                           </button>
-                          {# Camera button (only visible for books) #}
+                          {# Camera button (only visible for types sold with a book barcode) #}
                           <button type="button"
-                                  x-show="selectedType.value === 'book'"
+                                  x-show="['book', 'manga', 'comic', 'comicissue'].includes(selectedType.value)"
                                   @click="$refs.barcodeInput?.click()"
                                   x-bind:disabled="barcodeScanning"
                                   class="absolute right-2 top-1/2 transform -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-(--color-accent) rounded-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                   title="{% translate "Scan barcode" %}"
-                                  aria-label="{% translate "Scan book barcode" %}">
+                                  aria-label="{% translate "Scan barcode" %}">
                             <span x-show="barcodeScanning" class="block">
                               <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-[var(--color-text-muted)]"></div>
                             </span>
@@ -540,7 +543,8 @@
                                 @click="isOpen = !isOpen"
                                 @click.away="isOpen = false"
                                 class="flex items-center justify-between shrink-0 px-3 sm:px-4 py-2 text-sm text-[var(--color-text-secondary)] bg-[var(--color-panel)] rounded-r-md focus:outline-none focus:ring-2 focus:ring-(--color-accent) focus:ring-inset hover:bg-[var(--color-surface)] transition-colors duration-200 cursor-pointer">
-                          <span class="whitespace-nowrap max-[24rem]:sr-only" x-text="selectedType.display"></span>
+                          <span class="whitespace-nowrap max-[24rem]:sr-only"
+                                x-text="selectedType.display"></span>
                           {% include "app/icons/chevron-down.svg" with classes="w-4 h-4 ml-2" %}
 
                         </button>
@@ -903,6 +907,9 @@
     <script src="{% static 'js/libraryFilterState.js' %}{% get_static_file_mtime 'js/libraryFilterState.js' %}"></script>
     <script src="{% static 'js/savedViews.js' %}{% get_static_file_mtime 'js/savedViews.js' %}"></script>
     <script src="{% static 'js/collectionCustomFields.js' %}{% get_static_file_mtime 'js/collectionCustomFields.js' %}"></script>
+    {# Loaded globally so a boosted Statistics body swap cannot run Alpine before these define its controller (#1667). #}
+    <script src="{% static 'js/stats-media-merge.js' %}{% get_static_file_mtime 'js/stats-media-merge.js' %}"></script>
+    <script src="{% static 'js/date-range.js' %}{% get_static_file_mtime 'js/date-range.js' %}"></script>
     <script src="{% static 'js/searchShortcut.js' %}{% get_static_file_mtime 'js/searchShortcut.js' %}"></script>
     <script src="{% static 'js/searchAutocomplete.js' %}{% get_static_file_mtime 'js/searchAutocomplete.js' %}"></script>
     <script src="{% static 'js/horizontal-scroll.js' %}{% get_static_file_mtime 'js/horizontal-scroll.js' %}"></script>

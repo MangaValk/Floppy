@@ -25,7 +25,7 @@ from app.statistics_aggregator import (
     _build_platform_breakdown,
     _build_weekday_hour_charts,
 )
-from app.statistics_day_cache import _normalize_day_value
+from app.statistics_day_cache import STATISTICS_DAY_PREFIX, _normalize_day_value
 
 
 class StatisticsDayBatchingTests(SimpleTestCase):
@@ -131,7 +131,9 @@ class StatisticsRefreshSchedulingTests(TestCase):
         cache.clear()
 
     @patch("app.tasks_interactive.statistics_sync_task.apply_async")
-    def test_background_sync_yields_to_webhooks_but_not_to_imports(self, enqueue):
+    def test_background_sync_runs_on_the_bulk_lane_but_keeps_its_priority(
+        self, enqueue
+    ):
         scheduled = statistics_cache.schedule_statistics_refresh(
             self.user.id, "This Month", allow_inline=False
         )
@@ -141,11 +143,12 @@ class StatisticsRefreshSchedulingTests(TestCase):
         self.assertEqual(priority, settings.CELERY_TASK_PRIORITY_STATISTICS_SYNC)
         self.assertGreater(priority, settings.CELERY_TASK_PRIORITY_INTERACTIVE)
         self.assertLess(priority, settings.CELERY_TASK_PRIORITY_FOLLOWUP)
+        self.assertEqual(enqueue.call_args.kwargs["queue"], "celery")
         route = settings.CELERY_TASK_ROUTES["app.tasks.statistics_sync_task"]
-        self.assertEqual(route["queue"], "interactive")
+        self.assertEqual(route["queue"], "celery")
 
     @patch("app.tasks_interactive.statistics_sync_task.apply_async")
-    def test_forced_refresh_is_queued_ahead_of_other_syncs(self, enqueue):
+    def test_forced_refresh_stays_on_the_interactive_lane(self, enqueue):
         statistics_cache.schedule_statistics_refresh(
             self.user.id, "This Month", force=True
         )
@@ -154,6 +157,11 @@ class StatisticsRefreshSchedulingTests(TestCase):
             enqueue.call_args.kwargs["priority"],
             settings.CELERY_TASK_PRIORITY_INTERACTIVE,
         )
+        self.assertEqual(enqueue.call_args.kwargs["queue"], "interactive")
+
+    def test_talent_fragment_rebuild_runs_on_the_bulk_lane(self):
+        route = settings.CELERY_TASK_ROUTES["Refresh statistics talent fragment"]
+        self.assertEqual(route["queue"], "celery")
 
     def test_schedule_all_ranges_refresh_records_a_change(self):
         before = statistics_sync.current_generation(self.user.id)
@@ -1153,6 +1161,31 @@ class HighlightArtworkRequestPathTests(TestCase):
         mock_cached.assert_not_called()
         mock_resolve.assert_not_called()
 
+    def test_today_release_candidates_are_scanned_once_per_window(self):
+        """Every range and media type of a sync pass shares one library scan.
+
+        The scan cannot use a date index (it matches a month/day across all
+        years), so repeating it per range is what made range rebuilds slow.
+        """
+        release = timezone.now().replace(year=2001)
+        item = Item.objects.create(
+            media_id="release-cache-1",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Released today once",
+            release_datetime=release,
+        )
+        Movie.objects.create(
+            user=self.user, item=item, status=Status.COMPLETED.value
+        )
+
+        statistics_cache._get_today_release_entry(self.user)
+        with self.assertNumQueries(0):
+            entry, year = statistics_cache._get_today_release_entry(self.user)
+
+        self.assertEqual(year, 2001)
+        self.assertEqual(entry["item"].pk, item.pk)
+
 
 class RequestPathDayBuildTests(TestCase):
     """Custom-range statistics never build day caches inline in a request."""
@@ -1231,7 +1264,7 @@ class DayCacheContractTests(SimpleTestCase):
             with self.subTest(day=day):
                 self.assertEqual(
                     statistics_cache._day_cache_key(42, day),
-                    "stats:day:v8:42:2026-09-05",
+                    f"{STATISTICS_DAY_PREFIX}:42:2026-09-05",
                 )
         self.assertEqual(statistics_cache._day_cache_key(42, "invalid"), "")
 

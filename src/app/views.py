@@ -151,6 +151,7 @@ from app.forms import (
     CollectionEntryForm,
     EpisodeForm,
     ManualItemForm,
+    PodcastShowTrackerForm,
     get_form_class,
 )
 from app.history_views import (
@@ -402,7 +403,11 @@ from integrations import anime_mapping
 from integrations.models import CollectionSourceState
 from lists.models import CustomList
 from lists.views_helpers import get_public_list_for_item
-from users.home_screen import build_home_page_groups
+from users.home_screen import (
+    build_home_page_groups,
+    build_home_page_manifest,
+    build_home_row,
+)
 from users.models import (
     HomeSortChoices,
     MediaSortChoices,
@@ -443,9 +448,15 @@ def home(request):
         except (TypeError, ValueError):
             load_row_seed = None
 
-        # First paint renders only the first group; the rest hydrates via
-        # home_rest_fragment. Row-append requests build only their target shelf.
+        # First paint renders only the first group; the rest arrive one row
+        # at a time via home_row_fragment. Row-append requests build only
+        # their target shelf.
         defer_remaining_groups = load_row_id is None
+        manifest = (
+            build_home_page_manifest(request.user)
+            if defer_remaining_groups
+            else None
+        )
         home_groups = build_home_page_groups(
             request.user,
             items_limit,
@@ -455,7 +466,29 @@ def home(request):
             append_only=bool(request.headers.get("HX-Request") and load_row_id),
             only_row_id=load_row_id if request.headers.get("HX-Request") else None,
             first_group_only=defer_remaining_groups,
+            groups=manifest,
         )
+
+        deferred_groups = []
+        if manifest and home_groups:
+            first_media_type = home_groups[0]["media_type"]
+            first_index = next(
+                (
+                    index
+                    for index, group in enumerate(manifest)
+                    if group["media_type"] == first_media_type
+                ),
+                len(manifest),
+            )
+            deferred_groups = [
+                {
+                    "media_type": group["media_type"],
+                    "label": group["label"],
+                    "icon_svg": group["icon_svg"],
+                    "row_ids": [row.id for row in group["rows"]],
+                }
+                for group in manifest[first_index + 1 :]
+            ]
 
         if request.headers.get("HX-Request") and load_row_id:
             target_row = next(
@@ -497,13 +530,8 @@ def home(request):
             ),
             "MediaTypes": MediaTypes,
             "IMG_NONE": settings.IMG_NONE,
-            "defer_remaining_groups": defer_remaining_groups and bool(home_groups),
-            "artwork_poll_row_ids": [
-                row["row_id"]
-                for group in home_groups
-                for row in group["rows"]
-                if row.get("poll_for_covers")
-            ],
+            "defer_remaining_groups": bool(deferred_groups),
+            "deferred_groups": deferred_groups,
         }
         return render(request, "app/home.html", context)
     except OperationalError:
@@ -518,32 +546,27 @@ def home(request):
             "MediaTypes": MediaTypes,
             "IMG_NONE": settings.IMG_NONE,
             "defer_remaining_groups": False,
-            "artwork_poll_row_ids": [],
+            "deferred_groups": [],
         }
         return render(request, "app/home.html", context)
 
 
 @require_GET
-def home_rest_fragment(request):
-    """Deferred home content: every group after the first.
-
-    The shell renders the first group synchronously; this fragment supplies
-    the rest (served from the per-row cache when warm) plus an out-of-band
-    update of the artwork poller covering all groups.
-    """
-    home_groups = build_home_page_groups(request.user, items_limit=14)
+def home_row_fragment(request, row_id: int):
+    """One deferred Home row, fetched independently as its data becomes ready."""
+    try:
+        row = build_home_row(request.user, row_id, items_limit=14)
+    except OperationalError:
+        logger.exception("Database error in deferred home row")
+        return HttpResponse(status=503)
+    if row is None:
+        return HttpResponse("")
     return render(
         request,
-        "app/components/home_rest_fragment.html",
+        "app/components/_scrollable_row.html",
         {
+            "row": row,
             "user": request.user,
-            "home_groups": home_groups[1:],
-            "artwork_poll_row_ids": [
-                row["row_id"]
-                for group in home_groups
-                for row in group["rows"]
-                if row.get("poll_for_covers")
-            ],
             "MediaTypes": MediaTypes,
             "IMG_NONE": settings.IMG_NONE,
             "return_url": reverse("home"),
@@ -627,11 +650,20 @@ def home_rows_artwork_refresh(request):
     """
     raw_ids = request.GET.get("ids", "")
     row_ids = {int(part) for part in raw_ids.split(",") if part.strip().isdigit()}
+    # Deferred rows can still be loading after the first poll. Keep polling
+    # cheaply until they settle instead of re-arming the poller from each
+    # row fragment (which would replace the poller and re-render rows).
+    raw_pending = request.GET.get("pending", "")
+    rows_pending = raw_pending.isdigit() and int(raw_pending) > 0
     if not row_ids:
         return render(
             request,
             "app/components/home_artwork_poller.html",
-            {"poll_row_ids": []},
+            {
+                "poll_row_ids": [],
+                "active": rows_pending,
+                "retry_soon": rows_pending,
+            },
         )
 
     cover_state = _artwork_cover_fingerprint(request.user)
@@ -644,7 +676,11 @@ def home_rows_artwork_refresh(request):
         return render(
             request,
             "app/components/home_artwork_poller.html",
-            {"poll_row_ids": sorted(row_ids)},
+            {
+                "poll_row_ids": sorted(row_ids),
+                "active": rows_pending,
+                "retry_soon": rows_pending,
+            },
         )
 
     home_groups = build_home_page_groups(
@@ -679,6 +715,8 @@ def home_rows_artwork_refresh(request):
             "poll_row_ids": sorted(
                 row["row_id"] for row in rows if row.get("poll_for_covers")
             ),
+            "active": rows_pending,
+            "retry_soon": rows_pending,
         },
         request=request,
     )
@@ -1255,6 +1293,43 @@ def music_bulk_save(request):
     return redirect(helpers.safe_return_url(request, request.POST.get("return_url")))
 
 
+def _create_manual_podcast_show(request, form):
+    """Create a manual podcast as a show plus the user's show tracker.
+
+    Podcasts are tracked at the show level (PodcastShow/PodcastShowTracker), so
+    a custom entry has to create those instead of the legacy per-episode Item
+    and Podcast rows the generic manual path would otherwise produce.
+    """
+    updated_request = request.POST.copy()
+    updated_request["show_id"] = "0"
+    tracker_form = PodcastShowTrackerForm(updated_request, user=request.user)
+
+    if not tracker_form.is_valid():
+        logger.error(tracker_form.errors.as_json())
+        helpers.form_error_messages(tracker_form, request)
+        return redirect("create_entry")
+
+    item = form.save()
+    show = PodcastShow.objects.create(
+        podcast_uuid=item.media_id,
+        source=Sources.MANUAL.value,
+        title=item.title,
+        image=item.image or "",
+        description=item.synopsis or "",
+    )
+
+    tracker = tracker_form.save(commit=False)
+    tracker.user = request.user
+    tracker.show = show
+    tracker.save()
+
+    msg = gettext("%(value_1)s added successfully.") % {"value_1": item}
+    messages.success(request, msg)
+    logger.info(msg)
+
+    return redirect("create_entry")
+
+
 @require_http_methods(["GET", "POST"])
 def create_entry(request):
     """Return the form for manually adding media items."""
@@ -1276,6 +1351,9 @@ def create_entry(request):
         logger.error(form.errors.as_json())
         helpers.form_error_messages(form, request)
         return redirect("create_entry")
+
+    if form.cleaned_data["media_type"] == MediaTypes.PODCAST.value:
+        return _create_manual_podcast_show(request, form)
 
     # Try to save the item
     try:

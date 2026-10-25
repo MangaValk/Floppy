@@ -40,6 +40,10 @@ class StatisticsSyncTestCase(TestCase):
 
     def setUp(self):
         cache.clear()
+        # Non-eager tests must not inspect the developer's live broker queues.
+        self.enterContext(
+            patch("app.statistics_sync.higher_priority_task_waiting", return_value=False)
+        )
         self.user = get_user_model().objects.create_user(
             username=f"sync-{self.id()[-40:]}", password="secret123"
         )
@@ -299,7 +303,8 @@ class BulkImportStatisticsTests(StatisticsSyncTestCase):
     def test_sqlite_defers_other_users_but_postgres_does_not(self):
         other = get_user_model().objects.create_user(username="other-import")
         ImportRun.objects.create(user=other, source="mdblist")
-        self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
+        with patch.object(statistics_sync.connection, "vendor", "sqlite"):
+            self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
         with patch.object(statistics_sync.connection, "vendor", "postgresql"):
             self.assertFalse(statistics_sync._bulk_import_active(self.user.id))
 
@@ -691,6 +696,14 @@ class SliceBoundTests(StatisticsSyncTestCase):
                 cache.get(statistics_sync._range_cost_key(self.user.id, range_name))
             )
 
+    def test_a_range_summary_says_how_much_was_day_building(self):
+        with self.assertLogs("app.statistics_sync", level="INFO") as logs:
+            self.full_sync()
+
+        line = next(row for row in logs.output if "stats_range_summary" in row)
+        self.assertIn("missing_days=", line)
+        self.assertIn("days_ms=", line)
+
     def test_a_sync_far_past_its_budget_names_its_slowest_range(self):
         with (
             patch.object(statistics_sync, "OVERRUN_WARNING_SECONDS", -1000),
@@ -725,11 +738,17 @@ class HighlightHistoryDayTests(StatisticsSyncTestCase):
 
 class ReconcilerTests(StatisticsSyncTestCase):
     @NON_EAGER
+    # The recovered sync must finish in one task; the default 10s budget
+    # leaves it "continued" on a slower machine.
+    @override_settings(STATISTICS_SYNC_TASK_BUDGET_SECONDS=600)
     def test_a_dropped_sync_message_is_recovered(self):
         """#1272: the message that should rebuild the page never arrives."""
         with patch(SYNC_TASK) as dropped, self.captureOnCommitCallbacks(execute=True):
             statistics_sync.mark_days(self.user.id, [self.day(0)], reason="scrobble")
         dropped.assert_called_once()  # published, then lost
+        # A message waits for the task to start; only after the pending window
+        # expires does the reconciler treat it as lost and publish a retry.
+        cache.delete(statistics_sync._pending_key(self.user.id))
 
         with patch(SYNC_TASK) as enqueue:
             queued = statistics_sync.reconcile()
@@ -742,6 +761,43 @@ class ReconcilerTests(StatisticsSyncTestCase):
             "hours_per_media_type",
             statistics_cache.get_statistics_data(self.user, None, None, "Today"),
         )
+
+    @NON_EAGER
+    @patch(SYNC_TASK)
+    def test_reconcile_queues_once_while_a_message_waits_behind_the_worker(self, enqueue):
+        self.mark([self.day(3)])
+
+        self.assertEqual(statistics_sync.reconcile(), 1)
+        self.assertEqual(statistics_sync.reconcile(), 0)
+        self.assertEqual(statistics_sync.reconcile(), 0)
+        self.assertEqual(enqueue.call_count, 1)
+        self.assertIsNotNone(cache.get(statistics_sync._pending_key(self.user.id)))
+
+    @NON_EAGER
+    @patch(SYNC_TASK)
+    def test_starting_the_task_clears_the_pending_marker(self, _enqueue):
+        self.mark([self.day(3)])
+        statistics_sync.reconcile()
+
+        with patch.object(
+            statistics_sync, "run_sync", return_value={"status": "done", "published": {}}
+        ):
+            statistics_sync.sync_task_body(self.user.id)
+
+        self.assertIsNone(cache.get(statistics_sync._pending_key(self.user.id)))
+        # Durable work is still unfinished, so the next tick can queue again.
+        self.assertEqual(statistics_sync.reconcile(), 1)
+
+    @NON_EAGER
+    @patch(SYNC_TASK)
+    def test_reconcile_retries_after_the_pending_window_expires(self, enqueue):
+        self.mark([self.day(3)])
+        self.assertEqual(statistics_sync.reconcile(), 1)
+
+        cache.delete(statistics_sync._pending_key(self.user.id))
+
+        self.assertEqual(statistics_sync.reconcile(), 1)
+        self.assertEqual(enqueue.call_count, 2)
 
     def test_a_live_lease_is_left_alone_and_an_expired_one_is_retried(self):
         self.mark([self.day(3)])
@@ -757,10 +813,28 @@ class ReconcilerTests(StatisticsSyncTestCase):
     def test_midnight_rollover_is_found_without_any_change(self):
         self.full_sync()
         self.assertEqual(statistics_sync.users_needing_sync(), [])
+        generation = self.state().generation
 
         tomorrow = timezone.now() + timedelta(days=1)
         with patch("django.utils.timezone.now", return_value=tomorrow):
             self.assertEqual(statistics_sync.users_needing_sync(), [self.user.id])
+            result = self.full_sync()
+            self.assertEqual(self.state().generation, generation)
+            self.assertEqual(
+                set(result["published"]),
+                set(statistics_sync.HOT_RANGES + statistics_sync.HEAVY_RANGES),
+            )
+            # Even All Time contains today's history card and calendar label.
+            # An unchanged generation alone cannot make yesterday's payload fresh.
+            for payload in result["published"].values():
+                self.assertEqual(
+                    payload["history_highlights"]["today_day"],
+                    timezone.localdate().day,
+                )
+                self.assertEqual(
+                    payload["history_highlights"]["today_month"],
+                    timezone.localdate().month,
+                )
 
     def test_users_without_state_are_bootstrapped_for_warming(self):
         StatisticsSyncState.objects.filter(user_id=self.user.id).delete()
@@ -962,3 +1036,64 @@ class SnapshotSerializationTests(StatisticsSyncTestCase):
                 for movie in entry["data"].get("top_rated", [])
             )
         )
+
+
+class CreditsStatisticsCoalescingTests(StatisticsSyncTestCase):
+    """A credits backfill must not rebuild Statistics back to back (#1706)."""
+
+    def setUp(self):
+        super().setUp()
+        statistics_sync._ensure_state(self.user.id)
+        self.before = self.state().generation
+
+    def request(self):
+        return statistics_sync.request_credits_statistics_refresh(self.user.id)
+
+    def test_the_first_credits_batch_marks_the_generation(self):
+        self.assertTrue(self.request())
+        self.assertEqual(self.state().generation, self.before + 1)
+
+    @patch("app.tasks_interactive.mark_credits_statistics_refresh.apply_async")
+    def test_later_batches_are_coalesced_and_schedule_one_trailing_mark(self, enqueue):
+        self.assertTrue(self.request())
+        marked = self.state().generation
+
+        self.assertFalse(self.request())
+        self.assertFalse(self.request())
+
+        self.assertEqual(self.state().generation, marked)
+        enqueue.assert_called_once_with(args=[self.user.id], countdown=600)
+
+    def test_the_trailing_mark_publishes_the_last_coalesced_credits(self):
+        self.request()
+        marked = self.state().generation
+        cache.delete(statistics_sync._credits_mark_key(self.user.id))
+
+        statistics_sync.mark_credits_statistics_refresh(self.user.id)
+
+        self.assertEqual(self.state().generation, marked + 1)
+
+    def test_the_trailing_mark_does_not_duplicate_a_fresh_mark(self):
+        self.request()
+        marked = self.state().generation
+
+        statistics_sync.mark_credits_statistics_refresh(self.user.id)
+
+        self.assertEqual(self.state().generation, marked)
+
+    @patch("app.tasks_interactive.mark_credits_statistics_refresh.apply_async")
+    def test_credits_batches_coalesce_through_the_backfill_scheduler(self, enqueue):
+        from app.models import MetadataBackfillField
+        from app.tasks_backfill_state import _schedule_metadata_statistics_refresh
+
+        items = [movie.item for movie in self.movies]
+        _schedule_metadata_statistics_refresh(
+            items, MetadataBackfillField.CREDITS, "credits_backfill"
+        )
+        marked = self.state().generation
+        _schedule_metadata_statistics_refresh(
+            items, MetadataBackfillField.CREDITS, "credits_backfill"
+        )
+
+        self.assertEqual(self.state().generation, marked)
+        enqueue.assert_called_once()

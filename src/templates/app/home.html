@@ -86,27 +86,14 @@
       {% endif %}
     </div>
     {% include "app/components/home_groups.html" %}
-    {% if defer_remaining_groups %}
+    {% if deferred_groups %}
       {% comment %}
-        Remaining groups hydrate asynchronously so first paint only pays
-        for the first group's rows.
+        Remaining groups render in place; each row loads on its own so a slow
+        shelf cannot hold back the rest.
       {% endcomment %}
-      <div hx-get="{% url 'home_rest_fragment' %}"
-           hx-trigger="load"
-           hx-swap="outerHTML"
-           class="space-y-4 sm:space-y-8">
-        <section class="space-y-4 animate-pulse" aria-hidden="true">
-          <div class="h-6 w-40 bg-gray-700 rounded"></div>
-          <div class="flex gap-4 overflow-hidden">
-            <div class="home-row-card w-44 aspect-[41/64] self-start shrink-0 bg-[var(--color-surface)] rounded-lg"></div>
-            <div class="home-row-card w-44 aspect-[41/64] self-start shrink-0 bg-[var(--color-surface)] rounded-lg"></div>
-            <div class="home-row-card w-44 aspect-[41/64] self-start shrink-0 bg-[var(--color-surface)] rounded-lg"></div>
-            <div class="home-row-card w-44 aspect-[41/64] self-start shrink-0 bg-[var(--color-surface)] rounded-lg"></div>
-          </div>
-        </section>
-      </div>
+      {% include "app/components/home_deferred_groups.html" %}
     {% endif %}
-    {% include "app/components/home_artwork_poller.html" with poll_row_ids=artwork_poll_row_ids initial=True %}
+    {% include "app/components/home_artwork_poller.html" with active=True initial=True %}
     {% if not home_groups %}
       <div class="flex flex-col items-center justify-center py-16 sm:py-32 px-3 sm:px-4 bg-[var(--color-surface)] rounded-lg">
         <div class="bg-[var(--color-surface-strong)] rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">

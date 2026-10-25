@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, time, timedelta
 from unittest import mock
 
 from django.conf import settings
@@ -26,6 +26,7 @@ from app.models import (
     Episode,
     Game,
     Item,
+    ItemTag,
     Manga,
     MediaTypes,
     Movie,
@@ -33,6 +34,7 @@ from app.models import (
     Season,
     Sources,
     Status,
+    Tag,
     Video,
 )
 from app.templatetags import app_tags
@@ -92,6 +94,16 @@ class MediaListViewTests(TestCase):
                 for i in range(1, 6)
             ],
         )
+
+    def test_infinite_scroll_has_no_global_pagination_guard(self):
+        """The htmx per-element `once` trigger is the only pagination gate.
+
+        A page-wide in-progress flag swallowed the next trigger when its rows
+        arrived inside the re-arm window, stalling the scroll for good.
+        """
+        response = self.client.get(reverse("medialist", args=["movie"]))
+        self.assertNotContains(response, "paginationInProgress")
+        self.assertNotContains(response, "PAGINATION_")
 
     def _create_game_entry(
         self,
@@ -1903,6 +1915,41 @@ class MediaListViewTests(TestCase):
             ["Caught Up TV"],
         )
 
+    def test_tv_progress_ignores_date_only_episode_on_its_release_date(self):
+        """An episode with only a release date is not released that morning."""
+        from events.calendar.helpers import date_parser
+
+        self._create_tv_seasonal_entry(
+            "tv-unknown-time-release",
+            "Unknown Time Release TV",
+            [
+                {
+                    "season_number": 1,
+                    "status": Status.IN_PROGRESS.value,
+                    "released_episodes": 2,
+                    "watched_episodes": 1,
+                },
+            ],
+        )
+        today = timezone.localdate()
+        episode = Item.objects.get(
+            media_id="tv-unknown-time-release",
+            media_type=MediaTypes.EPISODE.value,
+            episode_number=2,
+        )
+        episode.release_datetime = date_parser(today)
+        episode.save(update_fields=["release_datetime"])
+
+        now = datetime.combine(today, time(14, 0), tzinfo=UTC)
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            response = self.client.get(
+                f"{reverse('medialist', args=[MediaTypes.TV.value])}"
+                "?progress=not_caught_up",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["media_list"].paginator.count, 0)
+
     def test_tv_progress_filter_ignores_dropped_seasons(self):
         """Dropped seasons should not keep a fully released show out of caught-up."""
         self._create_tv_seasonal_entry(
@@ -2652,6 +2699,66 @@ class MediaListViewTests(TestCase):
         air_date = BasicMedia.objects._next_episode_air_date_value(tv)
         self.assertEqual(air_date, season2_release)
 
+    def test_tv_next_episode_air_date_uses_events_on_a_duplicate_season_item(self):
+        """Events written to another Item for the same season still date the show.
+
+        The calendar attaches events to whichever Item row it resolves for a
+        show/season identity, and that can differ from the row a tracked
+        Season row points at (the library can hold the same identity in more
+        than one bucket). Reading only the tracked row's own events leaves the
+        TV page blank while the calendar still lists the episodes (#1531).
+        """
+        base_now = timezone.now().replace(hour=12, minute=0, second=0, microsecond=0)
+        season1_release = base_now - timedelta(days=30)
+        season2_premiere = base_now + timedelta(days=3)
+
+        tv, _season1 = self._create_tv_next_episode_air_date_entry(
+            "tv-next-episode-duplicate-row",
+            "Duplicate Row TV",
+            [season1_release, season1_release + timedelta(days=7)],
+            progress=2,
+        )
+        tracked_season2_item = Item.objects.create(
+            media_id="tv-next-episode-duplicate-row",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            library_media_type=MediaTypes.TV.value,
+            title="Duplicate Row TV Season 2",
+            image="http://example.com/tv-next-episode-season2.jpg",
+            season_number=2,
+        )
+        Season.objects.create(
+            item=tracked_season2_item,
+            user=self.user,
+            related_tv=tv,
+            status=Status.IN_PROGRESS.value,
+        )
+        event_season2_item = Item.objects.create(
+            media_id="tv-next-episode-duplicate-row",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            library_media_type=MediaTypes.SEASON.value,
+            title="Duplicate Row TV Season 2",
+            image="http://example.com/tv-next-episode-season2.jpg",
+            season_number=2,
+        )
+        Event.objects.create(
+            item=event_season2_item,
+            content_number=1,
+            datetime=season2_premiere,
+            notification_sent=False,
+        )
+
+        tv = BasicMedia.objects._apply_prefetch_related(
+            TV.objects.filter(pk=tv.pk),
+            MediaTypes.TV.value,
+            list_mode=True,
+        ).get()
+        self.assertEqual(
+            BasicMedia.objects._next_episode_air_date_value(tv),
+            season2_premiere,
+        )
+
     def test_tv_next_episode_air_date_ignores_a_dropped_season(self):
         """A dropped season is outside the show's progress, so outside its events too (#1531)."""
         base_now = timezone.now().replace(hour=12, minute=0, second=0, microsecond=0)
@@ -2831,6 +2938,57 @@ class MediaListViewTests(TestCase):
         )
         self.assertContains(response, "Nintendo Switch")
         self.assertContains(response, "PlayStation 5")
+
+    def test_game_last_played_sort_includes_in_progress_items_by_activity(self):
+        """The Last Played sort follows progress, not only completion dates."""
+        finished_item = Item.objects.create(
+            media_id="game-last-played-finished",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="Finished Long Ago",
+            image="http://example.com/game.jpg",
+        )
+        playing_item = Item.objects.create(
+            media_id="game-last-played-playing",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="Playing Now",
+            image="http://example.com/game.jpg",
+        )
+        Game.objects.bulk_create(
+            [
+                Game(
+                    item=finished_item,
+                    user=self.user,
+                    status=Status.DROPPED.value,
+                    progress=60,
+                    end_date=timezone.now() - timedelta(days=10),
+                ),
+                Game(
+                    item=playing_item,
+                    user=self.user,
+                    status=Status.IN_PROGRESS.value,
+                    progress=60,
+                ),
+            ],
+        )
+        Game.objects.filter(item=playing_item, user=self.user).update(
+            progressed_at=timezone.now(),
+        )
+
+        response = self.client.get(
+            reverse("medialist", args=[MediaTypes.GAME.value])
+            + "?layout=grid&sort=end_date&direction=desc",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [
+                media.item.title
+                for media in response.context["media_list"].object_list
+            ],
+            ["Playing Now", "Finished Long Ago"],
+        )
 
     def test_game_platform_filter_uses_latest_aggregated_status(self):
         """Status filtering should honor latest aggregated status for duplicate sessions."""
@@ -3306,6 +3464,120 @@ class MediaListViewTests(TestCase):
         self.assertContains(response, "Array.from(form.elements)")
         self.assertContains(response, "const persistedKeys = Array.from(")
         self.assertNotContains(response, "const persistedKeys = [")
+
+    def test_saved_tv_tag_exclusion_tracks_tags_added_after_save(self):
+        """A saved NOT-tag filter re-evaluates TV associations on every request."""
+        tagged_before_save = self._create_tv_runtime_entry(
+            "saved-tag-tv-1", "Tagged before save", [24]
+        )
+        tagged_later_one = self._create_tv_runtime_entry(
+            "saved-tag-tv-2", "Tagged later one", [24]
+        )
+        tagged_later_two = self._create_tv_runtime_entry(
+            "saved-tag-tv-3", "Tagged later two", [24]
+        )
+        tag = Tag.objects.create(user=self.user, name="BunnyEarsTV")
+        self.client.post(
+            reverse("tag_item_toggle"),
+            {"tag_id": tag.id, "item_id": tagged_before_save.id},
+        )
+
+        saved_response = self.client.post(
+            reverse("saved_view_create"),
+            {
+                "media_type": MediaTypes.TV.value,
+                "name": "Un-tagged in-progress TV",
+                "status": Status.IN_PROGRESS.value,
+                "tag": tag.name,
+                "tag_mode": "not",
+            },
+        )
+        self.assertEqual(saved_response.status_code, 200)
+        saved_url = saved_response.json()["url"]
+
+        initial = self.client.get(saved_url)
+        initial_ids = {
+            entry.item.id for entry in initial.context["media_list"].object_list
+        }
+        self.assertNotIn(tagged_before_save.id, initial_ids)
+        self.assertIn(tagged_later_one.id, initial_ids)
+        self.assertIn(tagged_later_two.id, initial_ids)
+
+        for item in (tagged_later_one, tagged_later_two):
+            toggle_response = self.client.post(
+                reverse("tag_item_toggle"),
+                {"tag_id": tag.id, "item_id": item.id},
+            )
+            self.assertEqual(toggle_response.status_code, 200)
+            self.assertTrue(ItemTag.objects.filter(tag=tag, item=item).exists())
+
+        refreshed = self.client.get(saved_url)
+        refreshed_ids = {
+            entry.item.id for entry in refreshed.context["media_list"].object_list
+        }
+        self.assertNotIn(tagged_before_save.id, refreshed_ids)
+        self.assertNotIn(tagged_later_one.id, refreshed_ids)
+        self.assertNotIn(tagged_later_two.id, refreshed_ids)
+
+        # The same exclusion remains active after returning through the saved URL.
+        reopened = self.client.get(saved_url)
+        reopened_ids = {
+            entry.item.id for entry in reopened.context["media_list"].object_list
+        }
+        self.assertEqual(reopened_ids, refreshed_ids)
+
+    def test_tag_exclusion_handles_retag_multiple_tags_and_other_media(self):
+        """NOT excludes any matching tag while preserving other media types."""
+        tv_item = self._create_tv_runtime_entry(
+            "saved-tag-tv-retag", "Retagged TV", [24]
+        )
+        movie_item = Item.objects.create(
+            media_id="saved-tag-movie",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Tagged Movie",
+            image="http://example.com/tagged-movie.jpg",
+        )
+        Movie.objects.create(
+            item=movie_item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+        )
+        excluded = Tag.objects.create(user=self.user, name="BunnyEarsTV")
+        other = Tag.objects.create(user=self.user, name="AlsoExcluded")
+
+        toggle_url = reverse("tag_item_toggle")
+        for _ in range(3):
+            self.client.post(
+                toggle_url, {"tag_id": excluded.id, "item_id": tv_item.id}
+            )
+        self.client.post(toggle_url, {"tag_id": other.id, "item_id": tv_item.id})
+        self.client.post(toggle_url, {"tag_id": excluded.id, "item_id": movie_item.id})
+        self.assertTrue(ItemTag.objects.filter(tag=excluded, item=tv_item).exists())
+        self.assertTrue(ItemTag.objects.filter(tag=other, item=tv_item).exists())
+        self.assertTrue(ItemTag.objects.filter(tag=excluded, item=movie_item).exists())
+
+        tv_response = self.client.get(
+            reverse("medialist", args=[MediaTypes.TV.value]),
+            {
+                "status": Status.IN_PROGRESS.value,
+                "tag": [excluded.name, other.name],
+                "tag_mode": "not",
+            },
+        )
+        tv_ids = {
+            entry.item.id for entry in tv_response.context["media_list"].object_list
+        }
+        self.assertNotIn(tv_item.id, tv_ids)
+
+        movie_response = self.client.get(
+            reverse("medialist", args=[MediaTypes.MOVIE.value]),
+            {"status": Status.IN_PROGRESS.value, "tag": excluded.name, "tag_mode": "not"},
+        )
+        movie_ids = {
+            entry.item.id for entry in movie_response.context["media_list"].object_list
+        }
+        self.assertNotIn(movie_item.id, movie_ids)
 
     def test_media_list_layout_toggle_uses_shared_filter_serializer(self):
         """Grid/table links should reuse the shared serializer instead of manual query strings."""
@@ -4042,3 +4314,279 @@ class MediaListRelativeCompletedDateTests(TestCase):
             "platform_mode",
         ):
             self.assertIn(f'name="{name}"', content, name)
+
+
+class GameGroupingViewTests(TestCase):
+    """The Games library can roll up tracked games by catalog relationship."""
+
+    def setUp(self):
+        cache.clear()
+        self.credentials = {"username": "grouping", "password": "12345"}
+        self.user = get_user_model().objects.create_user(**self.credentials)
+        self.client.login(**self.credentials)
+        self.url = reverse("medialist", kwargs={"media_type": MediaTypes.GAME.value})
+
+    def _game(
+        self,
+        media_id,
+        title,
+        *,
+        status=Status.IN_PROGRESS.value,
+        progress=0,
+        score=None,
+        release_datetime=None,
+        collection=("", ""),
+        franchise=("", ""),
+        image="",
+    ):
+        item = Item.objects.create(
+            media_id=str(media_id),
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title=title,
+            image=image,
+            release_datetime=release_datetime,
+            provider_collection_id=collection[0],
+            provider_collection_name=collection[1],
+            provider_franchise_id=franchise[0],
+            provider_franchise_name=franchise[1],
+        )
+        Game.objects.create(
+            item=item,
+            user=self.user,
+            status=status,
+            progress=progress,
+            score=score,
+            end_date=timezone.now() if status == Status.COMPLETED.value else None,
+        )
+        return item
+
+    def test_series_groups_use_igdb_collections(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            progress=120,
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "Mario Kart",
+            status=Status.COMPLETED.value,
+            progress=300,
+            collection=("2", "Mario Kart"),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "series"})
+
+        self.assertEqual(response.status_code, 200)
+        groups = response.context["media_groups"]
+        self.assertEqual(
+            [group["name"] for group in groups],
+            ["Mario Kart", "Super Mario"],
+        )
+        mario_kart = next(group for group in groups if group["name"] == "Mario Kart")
+        self.assertEqual(mario_kart["game_count"], 1)
+        self.assertEqual(mario_kart["played_count"], 1)
+        self.assertEqual(mario_kart["completed_count"], 1)
+        self.assertEqual(mario_kart["playtime_minutes"], 300)
+
+    def test_franchise_groups_merge_their_series(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "Mario Kart",
+            collection=("2", "Mario Kart"),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        groups = response.context["media_groups"]
+        self.assertEqual([group["name"] for group in groups], ["Mario"])
+        self.assertEqual(groups[0]["game_count"], 2)
+
+    def test_missing_provider_groups_render_as_ungrouped(self):
+        self._game(1, "Local Game")
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        groups = response.context["media_groups"]
+        self.assertEqual([group["name"] for group in groups], ["Ungrouped"])
+
+    def test_ungrouped_games_are_paginated(self):
+        for index in range(40):
+            self._game(index + 1, f"Local Game {index + 1}")
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        ungrouped_page = response.context["ungrouped_page"]
+        self.assertEqual(len(ungrouped_page.object_list), 32)
+        self.assertTrue(ungrouped_page.has_next())
+        self.assertIn("ug_page=2", response.context["ungrouped_next_url"])
+
+    def test_ungrouped_pagination_loads_more_cards(self):
+        for index in range(40):
+            self._game(index + 1, f"Local Game {index + 1}")
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "ug_page": "2"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.decode().count("media-card "), 8)
+        self.assertNotIn('id="grouped-ungrouped', response.content.decode())
+
+    def test_group_cards_sort_by_total_playtime(self):
+        self._game(
+            1,
+            "Short Game",
+            progress=60,
+            franchise=("10", "Small Franchise"),
+        )
+        self._game(
+            2,
+            "Long Game",
+            progress=600,
+            franchise=("20", "Big Franchise"),
+        )
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "sort": "progress", "direction": "desc"},
+        )
+
+        self.assertEqual(
+            [group["name"] for group in response.context["media_groups"]],
+            ["Big Franchise", "Small Franchise"],
+        )
+
+    def test_group_rating_is_the_average_of_rated_games(self):
+        self._game(1, "Mario 1", score=8, franchise=("10", "Mario"))
+        self._game(2, "Mario 2", score=6, franchise=("10", "Mario"))
+        self._game(3, "Unrated", franchise=("10", "Mario"))
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertEqual(group["average_score"], 7.0)
+        self.assertNotIn("media-card-rate-button", response.content.decode())
+
+    def test_group_release_subtitle_is_a_year_range(self):
+        self._game(
+            1,
+            "Old Game",
+            release_datetime=datetime(2007, 1, 1, tzinfo=UTC),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "New Game",
+            release_datetime=datetime(2024, 1, 1, tzinfo=UTC),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertEqual(group["release_range"], "2007-2024")
+        self.assertEqual(group["display_item"].display_release_year, "2007-2024")
+
+    def test_grouped_count_is_groups_plus_ungrouped_games(self):
+        self._game(1, "Mario 1", franchise=("10", "Mario"))
+        self._game(2, "Mario 2", franchise=("10", "Mario"))
+        self._game(3, "Zelda", franchise=("20", "Zelda"))
+        self._game(4, "Local Game")
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        self.assertEqual(response.context["result_count"], 3)
+
+    def test_group_drilldown_count_is_games_in_that_group(self):
+        self._game(1, "Mario 1", franchise=("10", "Mario"))
+        self._game(2, "Mario 2", franchise=("10", "Mario"))
+        self._game(3, "Zelda", franchise=("20", "Zelda"))
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "group": "id:10"},
+        )
+
+        self.assertEqual(response.context["result_count"], 2)
+
+    def test_group_card_uses_a_member_game_poster(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            franchise=("10", "Mario"),
+            image="https://example.com/mario.jpg",
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertEqual(group["image"], "https://example.com/mario.jpg")
+        self.assertContains(response, "https://example.com/mario.jpg")
+
+    def test_group_cards_link_to_that_group(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+
+        response = self.client.get(self.url, {"group_by": "franchise"})
+
+        group = response.context["media_groups"][0]
+        self.assertIn("group_by=franchise", group["href"])
+        self.assertIn("group=id%3A10", group["href"])
+
+    def test_opening_a_group_shows_its_games_as_regular_cards(self):
+        self._game(
+            1,
+            "Super Mario Bros.",
+            collection=("1", "Super Mario"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            2,
+            "Mario Kart",
+            collection=("2", "Mario Kart"),
+            franchise=("10", "Mario"),
+        )
+        self._game(
+            3,
+            "Donkey Kong Country",
+            collection=("3", "Donkey Kong Country"),
+            franchise=("20", "Donkey Kong"),
+        )
+
+        response = self.client.get(
+            self.url,
+            {"group_by": "franchise", "group": "id:10"},
+        )
+
+        self.assertEqual(response.context["current_game_group_name"], "Mario")
+        self.assertCountEqual(
+            [entry.item.title for entry in response.context["media_list"]],
+            ["Super Mario Bros.", "Mario Kart"],
+        )
+        self.assertEqual(response.context["media_groups"], [])
+        self.assertContains(response, "All Franchise")
+
+    def test_group_by_does_not_change_a_flat_library(self):
+        self._game(1, "Super Mario Bros.", collection=("1", "Super Mario"))
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.context["current_group_by"], "item")
+        self.assertEqual(response.context["media_groups"], [])

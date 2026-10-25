@@ -58,6 +58,9 @@ class EmbyWebhookProcessor(BaseWebhookProcessor):
             EMBY_EVENT_MAP[event_type],
             played=self._is_played(payload),
             position_seconds=self._get_position_seconds(payload),
+            duration_seconds=_ticks_to_seconds(
+                (payload.get("Item") or {}).get("RunTimeTicks"),
+            ),
         ):
             return
 
@@ -240,6 +243,7 @@ class EmbyWebhookProcessor(BaseWebhookProcessor):
             duration_seconds=duration_seconds,
             store_progress=event_type != "media.stop",
             provider_completed=provider_completed,
+            event_ts=getattr(self, "_event_ts", None),
         )
         return {
             "event_type": event_type,

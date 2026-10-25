@@ -114,6 +114,21 @@ class MediaCoreTests(FloppyApiTestCase):
                 },
             )
 
+    def test_media_list_accepts_last_watched_sort(self):
+        """The opt-in activity sort is a valid media-list sort."""
+        response = self.call_api(
+            "get",
+            "api_media_list",
+            params={
+                "media_type": MediaTypes.MOVIE.value,
+                "sort": "last_watched",
+            },
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("results", response.json())
+
     def test_tv_media_list_reports_released_and_total_remaining_episodes(self):
         """TV list responses expose released and provider-total remaining counts."""
         self._prepare_tv_progress_fixture(future_episode_number=3)
@@ -428,6 +443,41 @@ class MediaCoreTests(FloppyApiTestCase):
         self.assertEqual(str(UUID(manual_media_id)), manual_media_id)
         self.assertEqual(payload["item"]["source"], "manual")
         self.assertEqual(payload["item"]["media_type"], MediaTypes.MOVIE.value)
+
+    @patch("api.views.services.get_media_metadata")
+    def test_media_type_list_post_lock_returns_machine_readable_503(
+        self,
+        mock_metadata,
+    ):
+        """A writer starvation must not look like an invalid game payload."""
+        mock_metadata.return_value = {
+            "media_id": "9992186",
+            "source": Sources.IGDB.value,
+            "media_type": MediaTypes.GAME.value,
+            "title": "Contended Game",
+            "image": "",
+        }
+        error = OperationalError("database is locked")
+        error.sqlite_errorcode = 5
+
+        with patch.object(Item.objects, "create", side_effect=error):
+            response = self.call_api(
+                "post",
+                "api_media_type_list",
+                args=(MediaTypes.GAME.value,),
+                payload={
+                    "source": Sources.IGDB.value,
+                    "media_id": "9992186",
+                    "status": 3,
+                },
+                headers=self.auth_headers,
+            )
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.json()
+        self.assertEqual(payload["code"], "DATABASE_BUSY")
+        self.assertFalse(payload["retryable"])
+        self.assertIn("detail", payload)
 
     def test_media_type_list_post_accepts_multipart(self):
         """Multipart create should validate exactly like the JSON path (#1043)."""
@@ -2681,7 +2731,10 @@ class MediaCoreTests(FloppyApiTestCase):
         )
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("detail", response.json())
+        payload = response.json()
+        self.assertEqual(payload["code"], "DATABASE_BUSY")
+        self.assertFalse(payload["retryable"])
+        self.assertIn("detail", payload)
 
     def test_media_list_detail_put_invalid_list_id_returns_not_found(self):
         """Media list detail PUT should reject unknown list ids."""

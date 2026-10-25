@@ -604,6 +604,8 @@ class Media(models.Model):
         if self.item.media_type == MediaTypes.SEASON.value and season_number:
             # For a Season: query episodes in this season where episode_number > progress
             # Only count episodes that have actually been released (have aired)
+            from events.models import released_q
+
             current_datetime = timezone.now()
             unwatched_episodes = (
                 Item.objects.filter(
@@ -614,8 +616,8 @@ class Media(models.Model):
                     episode_number__gt=self.progress,
                     runtime_minutes__isnull=False,
                     release_datetime__isnull=False,  # Only count episodes with air dates
-                    release_datetime__lte=current_datetime,  # Only count episodes that have aired
                 )
+                .filter(released_q("release_datetime", current_datetime))
                 .exclude(
                     runtime_minutes=RUNTIME_UNKNOWN_FAILED,  # Exclude placeholder for unknown runtime
                 )
@@ -878,6 +880,11 @@ class Anime(Media):
         otherwise leave its (provider-mapped) episode list showing unwatched. When
         it becomes COMPLETED we convert it into grouped TV-style tracking, which
         creates real Episode records for every watched episode.
+
+        The conversion changes the entry's library shape and metadata provider,
+        so it stays behind the same opt-in as a scrobble-driven conversion
+        (``group_scrobbled_anime``). Without it, completing a MAL entry keeps
+        its MAL identity and detail URL.
         """
         is_create = self._state.adding
         status_changed = self.tracker.has_changed("status")
@@ -896,6 +903,7 @@ class Anime(Media):
             and self.migrated_to_item_id is None
             and self.item.source == Sources.MAL.value
             and self.item.media_type == MediaTypes.ANIME.value
+            and getattr(self.user, "group_scrobbled_anime", False)
         ):
             self._auto_migrate_completed_flat_anime()
 
