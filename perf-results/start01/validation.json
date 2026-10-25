@@ -1,8 +1,0 @@
-{
-  "accepted_samples": 12,
-  "protocol": "sequential-health-then-library-v2",
-  "group_counts": "3 per size and verification",
-  "integrity_counts_migrations_and_webhook_rejection": "passed",
-  "verification_fast_path_and_warm_physical_reads": "passed",
-  "scope_matches_measured_sha": true
-}

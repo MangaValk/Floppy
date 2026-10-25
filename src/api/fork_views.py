@@ -2,6 +2,7 @@
 # views.py so future feat/add-api syncs stay clean. URL wiring lives in
 # fork_urls.py (included from urls.py with a single line).
 import logging
+import unicodedata
 from http import HTTPStatus as HTTP  # noqa: N814
 
 from django.db import IntegrityError, transaction
@@ -36,6 +37,16 @@ from .helpers import (
 from .serializers import serialize_data
 
 logger = logging.getLogger(__name__)
+
+
+def _format_key(value):
+    """Return a comparison key for a collection format.
+
+    Folds Unicode form and case and keeps only letters and digits, so
+    "Blu-ray", "bluray" and "BLU RAY" match while "Blu-ray" and "DVD" don't.
+    """
+    text = unicodedata.normalize("NFKC", value or "").casefold()
+    return "".join(char for char in text if char.isalnum())
 
 
 def _resolve_user_media(user, media_id, media_type, source, season_number=None):
@@ -284,6 +295,14 @@ class MediaCollectionView(drf_views.APIView):
 
     _SOURCE = "api"
     _TEXT_FIELDS = ("media_type", "resolution", "hdr", "audio_codec", "audio_channels")
+    _LIBRARY_PARAMETER = OpenApiParameter(
+        "library_media_type",
+        OpenApiTypes.STR,
+        description=(
+            "The show's library bucket, e.g. `anime`; episodes in the anime "
+            "library are only found with it."
+        ),
+    )
 
     def _identity(self, media_type, source, season_number, episode_number):
         """Return ``(lookup_media_type, error_response)`` for the route."""
@@ -314,6 +333,30 @@ class MediaCollectionView(drf_views.APIView):
             )
         return lookup_media_type, None
 
+    def _find_item(self, request, media_id, source, media_type, season_number, episode_number):
+        """Return the addressed item in the requested library, else the default one.
+
+        A PUT for a show Floppy doesn't have yet creates the episode in the
+        default library even with ``library_media_type=anime``, so calls with
+        the same parameter fall back there to find it.
+        """
+        library_media_type = request.query_params.get("library_media_type")
+
+        def lookup(bucket):
+            return resolve_item_queryset(
+                media_id,
+                source,
+                media_type,
+                season_number=season_number,
+                episode_number=episode_number,
+                library_media_type=bucket,
+            ).first()
+
+        item = lookup(library_media_type)
+        if item is None and library_media_type:
+            item = lookup(None)
+        return item
+
     def _api_entries(self, user, item):
         """Return the user's copies of the item that this API created."""
         return CollectionEntry.objects.filter(
@@ -321,6 +364,22 @@ class MediaCollectionView(drf_views.APIView):
             item=item,
             source_records__source=self._SOURCE,
         )
+
+    def _reusable_entry(self, user, item, media_type):
+        """Return a copy added elsewhere that this call may update, or None.
+
+        Without a sent ``media_type`` any copy is reused. With one, only a
+        copy of the same format (see ``_format_key``) or one without a format
+        is, so a PUT for a digital copy never rewrites a Blu-ray added by hand.
+        """
+        copies = CollectionEntry.objects.filter(user=user, item=item)
+        if not media_type:
+            return copies.first()
+        wanted = _format_key(media_type)
+        copies = list(copies)
+        same_format = [c for c in copies if _format_key(c.media_type) == wanted]
+        no_format = [c for c in copies if not _format_key(c.media_type)]
+        return next(iter(same_format or no_format), None)
 
     def _entry_fields(self, data):
         """Return ``(fields, error_response)`` for the optional body fields.
@@ -408,6 +467,7 @@ class MediaCollectionView(drf_views.APIView):
 
     @extend_schema(
         request=OpenApiTypes.OBJECT,
+        parameters=[_LIBRARY_PARAMETER],
         responses={
             200: OpenApiTypes.OBJECT,
             201: OpenApiTypes.OBJECT,
@@ -431,7 +491,9 @@ class MediaCollectionView(drf_views.APIView):
         body fields `media_type`, `resolution`, `hdr`, `is_3d`, `audio_codec`,
         `audio_channels`, `bitrate` and `collected_at` are stored on the entry
         and replace the stored values on a repeat call, so a quality upgrade
-        updates the same entry.
+        updates the same entry. Without an API-created copy, a copy added
+        elsewhere is reused when its `media_type` is empty or matches the sent
+        one (any copy when none is sent); otherwise a new copy is created.
         """
         season_number = int(season_number) if season_number is not None else None
         episode_number = int(episode_number) if episode_number is not None else None
@@ -453,21 +515,33 @@ class MediaCollectionView(drf_views.APIView):
         if error:
             return error
 
-        item, error = get_or_create_provider_item(
-            lookup_media_type,
-            source,
+        item = self._find_item(
+            request,
             media_id,
-            user=request.user,
-            season_number=season_number,
-            episode_number=episode_number,
+            source,
+            lookup_media_type,
+            season_number,
+            episode_number,
         )
-        if error:
-            return error
+        if item is None:
+            item, error = get_or_create_provider_item(
+                lookup_media_type,
+                source,
+                media_id,
+                user=request.user,
+                season_number=season_number,
+                episode_number=episode_number,
+                library_media_type=request.query_params.get("library_media_type"),
+            )
+            if error:
+                return error
 
-        entry = (
-            self._api_entries(request.user, item).first()
-            or CollectionEntry.objects.filter(user=request.user, item=item).first()
-        )
+        entry = self._api_entries(request.user, item).first()
+        if entry is None:
+            entry = self._reusable_entry(request.user, item, fields.get("media_type"))
+            if entry is not None and entry.media_type:
+                # Same format: keep the copy's own spelling ("Blu-ray").
+                fields.pop("media_type", None)
         created = False
         if entry is None:
             entry, created = self._create_entry(request.user, item, fields)
@@ -494,6 +568,7 @@ class MediaCollectionView(drf_views.APIView):
                 OpenApiTypes.BOOL,
                 description="Also remove copies that were not created through the API.",
             ),
+            _LIBRARY_PARAMETER,
         ],
         responses={
             204: None,
@@ -522,13 +597,14 @@ class MediaCollectionView(drf_views.APIView):
         if error:
             return error
 
-        item = resolve_item_queryset(
+        item = self._find_item(
+            request,
             media_id,
             source,
             lookup_media_type,
-            season_number=season_number,
-            episode_number=episode_number,
-        ).first()
+            season_number,
+            episode_number,
+        )
         if item is None:
             return Response(
                 {"detail": "Collection entry not found."},

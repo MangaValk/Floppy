@@ -176,6 +176,7 @@ from app.tasks_credits import (  # noqa: E402
 )
 from app.tasks_db_backup import write_database_snapshot  # noqa: E402
 from app.tasks_discover import (  # noqa: E402
+    purge_expired_discover_caches,
     refresh_discover_profiles,
     refresh_discover_rows,
     refresh_discover_tab_cache,
@@ -314,6 +315,7 @@ from app.tasks_tv_provider_migration import (  # noqa: E402
 from app.tasks_watch_state import (  # noqa: E402
     backfill_user_watch_state,
     backfill_watch_state,
+    ensure_watch_state_repair,
 )
 
 RELEASE_BACKFILL_SOURCES = (
@@ -1404,6 +1406,7 @@ __all__ = [
     "ensure_genre_backfill_reconcile",
     "ensure_podcast_website_backfill_reconcile",
     "ensure_provider_backfill_reconcile",
+    "ensure_watch_state_repair",
     "fast_runtime_backfill_task",
     "is_external_ids_backfill_reconcile_complete",
     "is_genre_backfill_reconcile_complete",
@@ -1434,6 +1437,7 @@ __all__ = [
     "populate_trakt_popularity_data_for_items",
     "prefetch_album_covers_batch",
     "prefetch_artist_images_batch",
+    "purge_expired_discover_caches",
     "reconcile_external_ids_backfill",
     "reconcile_game_groups_backfill",
     "reconcile_genre_backfill",

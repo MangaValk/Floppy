@@ -1,10 +1,24 @@
 from datetime import UTC, datetime
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
 from app.activity_builders import _build_detail_activity_state
-from app.models import Book, Item, Manga, MediaTypes, Podcast, Sources, Status
+from app.models import (
+    TV,
+    BasicMedia,
+    Book,
+    Episode,
+    Item,
+    Manga,
+    MediaTypes,
+    Podcast,
+    Season,
+    Sources,
+    Status,
+)
 
 
 class PodcastActivityBuilderTests(TestCase):
@@ -115,3 +129,76 @@ class ReadingTimeActivityTests(TestCase):
         _, subtitle = self.state(MediaTypes.BOOK.value, Book, item, 0)
 
         self.assertIsNone(subtitle["duration_text"])
+
+
+class TvActivityQueryTests(TestCase):
+    """The TV subtitle reads the prefetched seasons and episodes, not the database."""
+
+    def build_show(self, seasons, episodes):
+        user = get_user_model().objects.create_user(username="tv-activity")
+        tv_item = Item.objects.create(
+            media_id="900",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Long Show",
+        )
+        tv = TV.objects.create(item=tv_item, user=user, status=Status.IN_PROGRESS.value)
+        for season_number in range(1, seasons + 1):
+            season_item = Item.objects.create(
+                media_id="900",
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Long Show",
+                season_number=season_number,
+            )
+            season = Season.objects.create(
+                item=season_item,
+                user=user,
+                related_tv=tv,
+                status=Status.COMPLETED.value,
+            )
+            for episode_number in range(1, episodes + 1):
+                episode_item = Item.objects.create(
+                    media_id="900",
+                    source=Sources.TMDB.value,
+                    media_type=MediaTypes.EPISODE.value,
+                    title="Long Show",
+                    season_number=season_number,
+                    episode_number=episode_number,
+                    runtime_minutes=30,
+                )
+                Episode.objects.create(
+                    item=episode_item,
+                    related_season=season,
+                    end_date=datetime(2026, 3, episode_number, tzinfo=UTC),
+                )
+        return user
+
+    def stats_for(self, user):
+        user_medias = list(
+            BasicMedia.objects.filter_media_prefetch(
+                user,
+                "900",
+                MediaTypes.TV.value,
+                Sources.TMDB.value,
+            ),
+        )
+        with CaptureQueriesContext(connection) as queries:
+            play_stats, _ = _build_detail_activity_state(
+                MediaTypes.TV.value,
+                {},
+                current_instance=user_medias[0],
+                user_medias=user_medias,
+            )
+        return play_stats, len(queries)
+
+    def test_activity_stats_issue_no_queries_per_season(self):
+        stats_small, queries_small = self.stats_for(self.build_show(2, 3))
+        self.assertEqual(stats_small["episode_count"], 6)
+        self.assertEqual(stats_small["total_minutes"], 180)
+        self.assertEqual(queries_small, 0)
+
+    def test_query_count_does_not_grow_with_seasons(self):
+        play_stats, queries = self.stats_for(self.build_show(6, 4))
+        self.assertEqual(play_stats["episode_count"], 24)
+        self.assertEqual(queries, 0)

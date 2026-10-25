@@ -1601,6 +1601,7 @@ if os.environ.get("FLOPPY_PROCESS_ROLE") == "interactive":
     )
 else:
     CELERY_IMPORTS = (
+        "app.tasks_game_groups",
         "integrations.tasks._change_log",
         "integrations.tasks._jellyfin_pull",
         "integrations.tasks._koito",
@@ -1749,6 +1750,7 @@ CELERY_TASK_ROUTES = {
     "Cleanup task results": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Repair Celery broker bindings": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Cleanup image cache": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
+    "Purge expired Discover caches": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Write database snapshot": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Backfill item metadata": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure genre backfill reconcile": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
@@ -1761,6 +1763,7 @@ CELERY_TASK_ROUTES = {
     "Ensure podcast website backfill reconcile": {
         "priority": CELERY_TASK_PRIORITY_BACKGROUND,
     },
+    "Ensure watch state repair": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Nightly metadata quality backfill": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Refresh IMDB game credits from datasets": {
         "priority": CELERY_TASK_PRIORITY_BACKGROUND
@@ -2019,6 +2022,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "Cleanup image cache",
         "schedule": crontab(hour=4, minute=0),
     },
+    "purge_expired_discover_caches": {
+        "task": "Purge expired Discover caches",
+        "schedule": crontab(hour=4, minute=15),
+    },
     "write_database_snapshot": {
         "task": "Write database snapshot",
         "schedule": crontab(hour=DB_SNAPSHOT_HOUR, minute=DB_SNAPSHOT_MINUTE),
@@ -2098,6 +2105,12 @@ CELERY_BEAT_SCHEDULE = {
     # first one the startup hook kicks off.
     "ensure_podcast_website_backfill_reconcile": {
         "task": "Ensure podcast website backfill reconcile",
+        "schedule": RECONCILE_INTERVAL_SECONDS,
+    },
+    # One-shot like the podcast sweep: the startup hook starts it, and this
+    # resumes a library too large to finish in one run (app/tasks_watch_state.py).
+    "ensure_watch_state_repair": {
+        "task": "Ensure watch state repair",
         "schedule": RECONCILE_INTERVAL_SECONDS,
     },
     "warm_discover_api_cache": {

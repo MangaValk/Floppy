@@ -116,6 +116,65 @@ class MatrixContractTests(SimpleTestCase):
                 harness.compatible(current, old)["mismatches"], ["quality_gate"]
             )
 
+    def test_cleanup_checks_only_owned_containers_and_records_shutdown(self):
+        from subprocess import CompletedProcess
+
+        with (
+            patch.object(
+                harness.subprocess, "run", return_value=CompletedProcess([], 0)
+            ) as run,
+            patch.object(harness, "run", return_value="") as inventory,
+        ):
+            receipt = harness.cleanup_owned(
+                {"application": "app-id", "postgresql": "pg-id"}
+            )
+        self.assertTrue(receipt["passed"])
+        self.assertEqual(
+            [e["event"] for e in receipt["events"]],
+            ["service_shutdown_start", "cleanup_verified"],
+        )
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(inventory.call_count, 2)
+        self.assertEqual(set(receipt["containers"]), {"application", "postgresql"})
+        with (
+            patch.object(
+                harness.subprocess, "run", return_value=CompletedProcess([], 0)
+            ),
+            patch.object(harness, "run", return_value="still-present"),
+        ):
+            self.assertFalse(
+                harness.cleanup_owned({"application": "still-present"})["passed"]
+            )
+
+    def test_support_cpu_is_owned_and_vm_remainder_stays_unknown(self):
+        counters = "usage_usec 123\nuser_usec 100\nVM\ncpu 1 2 3 4 5 6 7 8 9 10\nMEM\nMemAvailable: 42 kB\nPSI\nsome avg10=0 total=12"
+        with patch.object(harness, "run", return_value=counters):
+            result = harness.support_snapshot("owned-pg")
+        self.assertEqual(result["cpu_usage_usec"], 123)
+        self.assertEqual(result["memory_available_bytes"], 42 * 1024)
+        self.assertEqual(result["vm_cpu_ticks"], list(range(1, 9)))
+        self.assertIsNone(result["external_cpu_s"])
+        self.assertIsNone(harness.support_snapshot(None)["cpu_usage_usec"])
+
+    def test_actual_module_origin_mismatch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "scripts").mkdir()
+            (root / "scripts/work.py").write_text("pass")
+            (root / "source-manifest.json").write_text(
+                json.dumps({"scripts/work.py": "wrong"})
+            )
+            output = root / "origins.json"
+            with (
+                patch.object(harness, "ROOT", root),
+                patch.object(harness.runpy, "run_path"),
+            ):
+                with self.assertRaises(RuntimeError):
+                    harness.source_worker("work.py", [], output)
+            receipt = json.loads(output.read_text())
+            self.assertFalse(receipt["passed"])
+            self.assertIn("scripts/work.py", receipt["failures"])
+
     def test_snapshot_excludes_runtime_data_untracked_files_and_secrets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "source"
@@ -144,7 +203,7 @@ class MatrixContractTests(SimpleTestCase):
                         for p in one.rglob("*")
                         if p.is_file()
                     ],
-                    ["src/code.py"],
+                    ["source-manifest.json", "src/code.py"],
                 )
                 (root / "src/code.py").unlink()
                 (root / "src/code.py").symlink_to(root / ".env")

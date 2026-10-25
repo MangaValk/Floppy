@@ -11,6 +11,7 @@ RUN uv sync --locked --no-editable \
     && .venv/bin/python -c "import psutil, fakeredis"
 ENV PATH="/bench/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONHASHSEED=0 TZ=UTC
 FROM runtime AS benchmark
+COPY source-manifest.json ./source-manifest.json
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 ENTRYPOINT ["python", "scripts/benchmark_matrix.py", "--container"]

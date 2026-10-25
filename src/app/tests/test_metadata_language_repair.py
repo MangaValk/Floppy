@@ -8,11 +8,15 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
+from app import history_cache
 from app.models import (
+    TV,
     BackfillReconcileState,
+    Episode,
     Item,
     MetadataProviderPreference,
     Movie,
+    Season,
     Sources,
     Status,
 )
@@ -67,11 +71,224 @@ class MetadataLanguageRepairTests(TestCase):
     def due(self):
         BackfillReconcileState.objects.update(next_run_after=None)
 
+    @patch("app.history_cache.schedule_history_refresh")
+    def test_unchanged_and_synopsis_only_repairs_preserve_history(self, refresh):
+        item = self.movie(
+            title="El padrino",
+            localized_title="El padrino",
+            original_title="The Godfather",
+            synopsis=self.metadata.return_value["synopsis"],
+        )
+        keys = [
+            history_cache._cache_key(self.user.pk, style)
+            for style in ("sessions", "repeats")
+        ]
+        for synopsis in (item.synopsis, "Una sinopsis nueva."):
+            with self.subTest(synopsis=synopsis):
+                BackfillReconcileState.objects.all().delete()
+                self.metadata.return_value["synopsis"] = synopsis
+                for key in keys:
+                    cache.set(key, {"days": [], "sentinel": "valid"})
+                self.assertEqual(repair_metadata_language_batch(1)["success"], 1)
+                item.refresh_from_db()
+                self.assertEqual(item.synopsis, synopsis)
+                for key in keys:
+                    self.assertEqual(cache.get(key)["sentinel"], "valid")
+        self.assertEqual(self.metadata.call_count, 2)
+        refresh.assert_not_called()
+
+    @patch("app.history_cache.schedule_history_refresh")
+    def test_title_fields_invalidate_both_history_styles_for_all_owners(self, refresh):
+        item = self.movie()
+        other = get_user_model().objects.create_user(
+            username="shared-spanish",
+            metadata_language="es-ES",
+        )
+        Movie.objects.bulk_create(
+            [
+                Movie(item=item, user=other, status=Status.PLANNING.value),
+            ]
+        )
+        for field in ("title", "original_title", "localized_title"):
+            with self.subTest(field=field):
+                BackfillReconcileState.objects.all().delete()
+                Item.objects.filter(pk=item.pk).update(
+                    **{
+                        name: value
+                        for name, value in self.metadata.return_value.items()
+                        if name != "synopsis"
+                    },
+                )
+                Item.objects.filter(pk=item.pk).update(**{field: "Old value"})
+                keys = [
+                    history_cache._cache_key(owner.pk, style)
+                    for owner in (self.user, other)
+                    for style in ("sessions", "repeats")
+                ]
+                for key in keys:
+                    cache.set(key, {"days": []})
+                refresh.reset_mock()
+                self.assertEqual(repair_metadata_language_batch(1)["success"], 1)
+                for key in keys:
+                    self.assertIsNone(cache.get(key))
+                self.assertEqual(
+                    [call.args[0] for call in refresh.call_args_list],
+                    [self.user.pk, other.pk],
+                )
+
+    @patch("app.history_cache.schedule_history_refresh")
+    def test_changed_prefix_invalidates_history_despite_later_failure(self, refresh):
+        first = self.movie()
+        self.movie()
+        self.metadata.side_effect = [
+            self.metadata.return_value,
+            RuntimeError("offline"),
+        ]
+        key = history_cache._cache_key(self.user.pk, "repeats")
+        cache.set(key, {"days": []})
+
+        result = repair_metadata_language_batch(2)
+
+        self.assertEqual(result, {"attempted": 2, "success": 1, "errors": 1})
+        self.assertEqual(
+            BackfillReconcileState.objects.get().last_cursor_item_id, first.pk
+        )
+        self.assertGreater(
+            BackfillReconcileState.objects.get().next_run_after, timezone.now()
+        )
+        self.assertIsNone(cache.get(key))
+        refresh.assert_called_once_with(self.user.pk)
+        self.due()
+        self.metadata.side_effect = None
+        self.assertEqual(repair_metadata_language_batch(2)["success"], 1)
+
+    @patch("app.history_cache.schedule_history_refresh")
+    def test_changed_prefix_invalidates_history_on_reset_during_next_fetch(
+        self, refresh
+    ):
+        first = self.movie()
+        second = self.movie()
+        key = history_cache._cache_key(self.user.pk, "sessions")
+        cache.set(key, {"days": []})
+
+        def reset_second_fetch(*args, **kwargs):
+            if self.metadata.call_count == 2:
+                reset_metadata_language_repair(self.user.pk)
+            return self.metadata.return_value
+
+        self.metadata.side_effect = reset_second_fetch
+        repair_metadata_language_batch(2)
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.title, "El padrino")
+        self.assertEqual(second.title, "The Godfather")
+        self.assertIsNone(cache.get(key))
+        refresh.assert_called_once_with(self.user.pk)
+
+    @patch("app.history_cache.schedule_history_refresh")
+    def test_changed_prefix_invalidates_history_on_preference_change(self, refresh):
+        first = self.movie()
+        second = self.movie()
+
+        def change_second_fetch(*args, **kwargs):
+            if self.metadata.call_count == 2:
+                get_user_model().objects.filter(pk=self.user.pk).update(
+                    metadata_language="fr-FR",
+                )
+            return self.metadata.return_value
+
+        self.metadata.side_effect = change_second_fetch
+        repair_metadata_language_batch(2)
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.title, "El padrino")
+        self.assertEqual(second.title, "The Godfather")
+        refresh.assert_called_once_with(self.user.pk)
+
+    @patch("app.history_cache.schedule_history_refresh")
+    def test_terminal_failure_after_changed_item_still_refreshes_history(self, refresh):
+        first = self.movie()
+        self.movie()
+        response = requests.Response()
+        response.status_code = 404
+        self.metadata.side_effect = [
+            self.metadata.return_value,
+            requests.HTTPError(response=response),
+        ]
+
+        self.assertEqual(
+            repair_metadata_language_batch(2),
+            {"attempted": 2, "success": 1, "errors": 1},
+        )
+
+        first.refresh_from_db()
+        self.assertEqual(first.title, "El padrino")
+        refresh.assert_called_once_with(self.user.pk)
+
+    @patch("app.history_cache.schedule_history_refresh")
+    def test_episode_title_refreshes_each_related_season_owner(self, refresh):
+        other = get_user_model().objects.create_user(
+            username="episode-owner",
+            metadata_language="es-ES",
+        )
+        episode_item, tv_item, season_item = Item.objects.bulk_create(
+            [
+                Item(
+                    media_id="show",
+                    source=Sources.TMDB.value,
+                    media_type=kind,
+                    title="Old title",
+                    season_number=season,
+                    episode_number=episode,
+                )
+                for kind, season, episode in (
+                    ("episode", 1, 1),
+                    ("tv", None, None),
+                    ("season", 1, None),
+                )
+            ]
+        )
+        shows = TV.objects.bulk_create(
+            [
+                TV(item=tv_item, user=owner, status=Status.PLANNING.value)
+                for owner in (self.user, other)
+            ]
+        )
+        seasons = Season.objects.bulk_create(
+            [
+                Season(
+                    item=season_item,
+                    user=show.user,
+                    related_tv=show,
+                    status=Status.PLANNING.value,
+                )
+                for show in shows
+            ]
+        )
+        Episode.objects.bulk_create(
+            [Episode(item=episode_item, related_season=season) for season in seasons]
+        )
+
+        self.assertEqual(repair_metadata_language_batch(1)["success"], 1)
+
+        self.assertEqual(
+            [call.args[0] for call in refresh.call_args_list],
+            [self.user.pk, other.pk],
+        )
+        self.assertEqual(self.metadata.call_args.kwargs["episode_number"], 1)
+
     @patch("app.tasks.backfill_item_metadata_task.apply_async")
-    def test_active_browsing_defers_without_losing_automatic_continuation(self, publish):
+    def test_active_browsing_defers_without_losing_automatic_continuation(
+        self, publish
+    ):
         self.movie()
         with (
-            patch("app.tasks_metadata_language.interactive_request_active", return_value=True),
+            patch(
+                "app.tasks_metadata_language.interactive_request_active",
+                return_value=True,
+            ),
             self.captureOnCommitCallbacks(execute=True),
         ):
             repair_metadata_language_batch(1)
@@ -186,7 +403,9 @@ class MetadataLanguageRepairTests(TestCase):
         removed.refresh_from_db()
         self.assertEqual(valid.synopsis, "La historia de una familia.")
         self.assertEqual(removed.synopsis, "An English overview.")
-        self.assertEqual(BackfillReconcileState.objects.get().last_cursor_item_id, valid.pk)
+        self.assertEqual(
+            BackfillReconcileState.objects.get().last_cursor_item_id, valid.pk
+        )
 
     def test_blank_synopsis_preserves_existing_text(self):
         item = self.movie()

@@ -248,6 +248,109 @@ class MediaCollectionTests(FloppyApiTestCase):
         self.assertEqual(response.json()["id"], manual.id)
         self.assertFalse(CollectionEntrySource.objects.filter(entry=manual).exists())
 
+    def test_put_leaves_a_copy_of_another_format(self):
+        """A digital PUT adds its own copy instead of rewriting a Blu-ray."""
+        item = self.items_by_type[MediaTypes.MOVIE.value][0]
+        bluray = CollectionEntry.objects.create(
+            user=self.user1,
+            item=item,
+            media_type="Blu-ray",
+            resolution="1080p",
+        )
+
+        response = self._put(
+            item.media_id,
+            {"media_type": "digital", "resolution": "4K"},
+        )
+
+        self.assertEqual(response.status_code, HTTP.CREATED)
+        self.assertNotEqual(response.json()["id"], bluray.id)
+        bluray.refresh_from_db()
+        self.assertEqual(bluray.media_type, "Blu-ray")
+        self.assertEqual(bluray.resolution, "1080p")
+
+        again = self._put(item.media_id, {"media_type": "digital"})
+
+        self.assertEqual(again.status_code, HTTP.OK)
+        self.assertEqual(again.json()["id"], response.json()["id"])
+        self.assertEqual(
+            CollectionEntry.objects.filter(user=self.user1, item=item).count(),
+            2,
+        )
+
+    def test_put_reuses_a_copy_of_the_same_format_or_none(self):
+        """The format match ignores case and punctuation; no format matches too."""
+        movies = self.items_by_type[MediaTypes.MOVIE.value]
+        bluray = CollectionEntry.objects.create(
+            user=self.user1,
+            item=movies[0],
+            media_type="Blu-ray",
+        )
+        unknown = CollectionEntry.objects.create(user=self.user1, item=movies[1])
+
+        same = self._put(movies[0].media_id, {"media_type": "bluray"})
+        blank = self._put(movies[1].media_id, {"media_type": "digital"})
+
+        self.assertEqual(same.status_code, HTTP.OK)
+        self.assertEqual(same.json()["id"], bluray.id)
+        bluray.refresh_from_db()
+        self.assertEqual(bluray.media_type, "Blu-ray")
+        self.assertEqual(blank.status_code, HTTP.OK)
+        self.assertEqual(blank.json()["id"], unknown.id)
+        unknown.refresh_from_db()
+        self.assertEqual(unknown.media_type, "digital")
+
+    def test_put_prefers_the_same_format_over_a_copy_without_one(self):
+        """A matching copy wins over a newer copy that has no format."""
+        item = self.items_by_type[MediaTypes.MOVIE.value][0]
+        bluray = CollectionEntry.objects.create(
+            user=self.user1,
+            item=item,
+            media_type="Blu-ray",
+        )
+        # collected_at is auto_now_add, so make the Blu-ray the older copy here.
+        CollectionEntry.objects.filter(id=bluray.id).update(
+            collected_at=datetime(2020, 1, 1, tzinfo=UTC),
+        )
+        CollectionEntry.objects.create(user=self.user1, item=item)
+
+        response = self._put(item.media_id, {"media_type": "bluray"})
+
+        self.assertEqual(response.status_code, HTTP.OK)
+        self.assertEqual(response.json()["id"], bluray.id)
+
+    def test_put_does_not_take_a_non_latin_format_for_none(self):
+        """A format in another script is a format, not a blank one."""
+        item = self.items_by_type[MediaTypes.MOVIE.value][0]
+        disc = CollectionEntry.objects.create(
+            user=self.user1,
+            item=item,
+            media_type="ブルーレイ",
+        )
+
+        response = self._put(item.media_id, {"media_type": "digital"})
+
+        self.assertEqual(response.status_code, HTTP.CREATED)
+        disc.refresh_from_db()
+        self.assertEqual(disc.media_type, "ブルーレイ")
+
+    def test_put_without_a_format_reuses_any_copy(self):
+        """Without a sent media_type the first copy is reused, as before."""
+        item = self.items_by_type[MediaTypes.MOVIE.value][0]
+        bluray = CollectionEntry.objects.create(
+            user=self.user1,
+            item=item,
+            media_type="Blu-ray",
+        )
+
+        response = self._put(item.media_id, {"resolution": "4K"})
+
+        self.assertEqual(response.status_code, HTTP.OK)
+        self.assertEqual(response.json()["id"], bluray.id)
+        bluray.refresh_from_db()
+        self.assertEqual(bluray.media_type, "Blu-ray")
+        self.assertEqual(bluray.resolution, "4K")
+
     def test_delete_removes_only_the_copy_the_api_created(self):
         """DELETE leaves copies added elsewhere; a repeat DELETE is a 404."""
         item = self.items_by_type[MediaTypes.MOVIE.value][0]
@@ -354,6 +457,107 @@ class MediaEpisodeCollectionTests(FloppyApiTestCase):
             headers=self.auth_headers,
         )
         self.assertEqual(deleted.status_code, HTTP.NO_CONTENT)
+
+    @patch(METADATA_PATH)
+    def test_anime_parameter_finds_an_episode_created_outside_the_anime_library(
+        self, mock_metadata
+    ):
+        """A PUT creates a new episode in the default library; the same parameter finds it."""
+        mock_metadata.return_value = {
+            "media_id": "209867",
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.EPISODE.value,
+            "title": "Frieren: Beyond Journey's End",
+            "image": "https://example.com/still.jpg",
+        }
+        args = (MediaTypes.TV.value, Sources.TMDB.value, "209867", 1, 6)
+        params = {"library_media_type": MediaTypes.ANIME.value}
+
+        created = self.call_api(
+            "put",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            payload={"media_type": "digital"},
+            headers=self.auth_headers,
+        )
+        self.assertEqual(created.status_code, HTTP.CREATED)
+        item = Item.objects.get(
+            media_id="209867",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            season_number=1,
+            episode_number=6,
+        )
+        self.assertNotEqual(item.library_media_type, MediaTypes.ANIME.value)
+
+        repeated = self.call_api(
+            "put",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            payload={"media_type": "digital"},
+            headers=self.auth_headers,
+        )
+        self.assertEqual(repeated.status_code, HTTP.OK)
+        self.assertEqual(repeated.json()["id"], created.json()["id"])
+
+        deleted = self.call_api(
+            "delete",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            headers=self.auth_headers,
+        )
+        self.assertEqual(deleted.status_code, HTTP.NO_CONTENT)
+        self.assertFalse(
+            CollectionEntry.objects.filter(user=self.user1, item=item).exists(),
+        )
+        # The repeat PUT found the item without fetching its metadata again.
+        mock_metadata.assert_called_once()
+
+    @patch(METADATA_PATH)
+    def test_anime_library_episode_found_with_library_media_type(self, mock_metadata):
+        """PUT and DELETE reach an episode in the anime library when told so."""
+        item = Item.objects.create(
+            media_id="1429",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            library_media_type=MediaTypes.ANIME.value,
+            season_number=1,
+            episode_number=1,
+            title="Attack on Titan",
+        )
+        args = (MediaTypes.TV.value, Sources.TMDB.value, "1429", 1, 1)
+        params = {"library_media_type": MediaTypes.ANIME.value}
+
+        created = self.call_api(
+            "put",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            payload={"resolution": "1080p"},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(created.status_code, HTTP.CREATED)
+        self.assertTrue(
+            CollectionEntry.objects.filter(user=self.user1, item=item).exists(),
+        )
+        mock_metadata.assert_not_called()
+
+        deleted = self.call_api(
+            "delete",
+            "api_media_episode_collection",
+            args=args,
+            params=params,
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(deleted.status_code, HTTP.NO_CONTENT)
+        self.assertFalse(
+            CollectionEntry.objects.filter(user=self.user1, item=item).exists(),
+        )
 
     def test_non_tv_media_type_rejected(self):
         """The episode route only accepts tv."""

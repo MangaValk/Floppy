@@ -40,6 +40,10 @@ class StatisticsSyncTestCase(TestCase):
 
     def setUp(self):
         cache.clear()
+        # Non-eager tests must not inspect the developer's live broker queues.
+        self.enterContext(
+            patch("app.statistics_sync.higher_priority_task_waiting", return_value=False)
+        )
         self.user = get_user_model().objects.create_user(
             username=f"sync-{self.id()[-40:]}", password="secret123"
         )
@@ -299,7 +303,8 @@ class BulkImportStatisticsTests(StatisticsSyncTestCase):
     def test_sqlite_defers_other_users_but_postgres_does_not(self):
         other = get_user_model().objects.create_user(username="other-import")
         ImportRun.objects.create(user=other, source="mdblist")
-        self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
+        with patch.object(statistics_sync.connection, "vendor", "sqlite"):
+            self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
         with patch.object(statistics_sync.connection, "vendor", "postgresql"):
             self.assertFalse(statistics_sync._bulk_import_active(self.user.id))
 
@@ -733,6 +738,9 @@ class HighlightHistoryDayTests(StatisticsSyncTestCase):
 
 class ReconcilerTests(StatisticsSyncTestCase):
     @NON_EAGER
+    # The recovered sync must finish in one task; the default 10s budget
+    # leaves it "continued" on a slower machine.
+    @override_settings(STATISTICS_SYNC_TASK_BUDGET_SECONDS=600)
     def test_a_dropped_sync_message_is_recovered(self):
         """#1272: the message that should rebuild the page never arrives."""
         with patch(SYNC_TASK) as dropped, self.captureOnCommitCallbacks(execute=True):
@@ -805,10 +813,28 @@ class ReconcilerTests(StatisticsSyncTestCase):
     def test_midnight_rollover_is_found_without_any_change(self):
         self.full_sync()
         self.assertEqual(statistics_sync.users_needing_sync(), [])
+        generation = self.state().generation
 
         tomorrow = timezone.now() + timedelta(days=1)
         with patch("django.utils.timezone.now", return_value=tomorrow):
             self.assertEqual(statistics_sync.users_needing_sync(), [self.user.id])
+            result = self.full_sync()
+            self.assertEqual(self.state().generation, generation)
+            self.assertEqual(
+                set(result["published"]),
+                set(statistics_sync.HOT_RANGES + statistics_sync.HEAVY_RANGES),
+            )
+            # Even All Time contains today's history card and calendar label.
+            # An unchanged generation alone cannot make yesterday's payload fresh.
+            for payload in result["published"].values():
+                self.assertEqual(
+                    payload["history_highlights"]["today_day"],
+                    timezone.localdate().day,
+                )
+                self.assertEqual(
+                    payload["history_highlights"]["today_month"],
+                    timezone.localdate().month,
+                )
 
     def test_users_without_state_are_bootstrapped_for_warming(self):
         StatisticsSyncState.objects.filter(user_id=self.user.id).delete()

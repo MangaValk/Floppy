@@ -395,6 +395,8 @@ class PrivacyInvariantTests(SimpleTestCase):
         "measurement",
         "fd_count",
         "uptime_seconds",
+        "start_ticks",
+        "cpu_seconds",
         "pss_kib",
         "rss_kib",
         "private_kib",

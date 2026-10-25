@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -295,15 +296,12 @@ def clear_home_row_cache_for_user(user_id: int) -> None:
     if not keys:
         return
 
-    deleted = 0
-    for key in keys:
-        if cache.delete(key):
-            deleted += 1
-    cache.delete(registry_key)
+    keys = list(keys)
+    cache.delete_many([*keys, registry_key])
 
     logger.debug(
         "Cleared %s home_row cache entries for user %s",
-        deleted,
+        len(keys),
         user_id,
     )
 
@@ -322,6 +320,34 @@ def register_media_list_cache_key(user_id: int, cache_key: str) -> None:
         cache.set(registry_key, list(keys), getattr(settings, "CACHE_TIMEOUT", None))
 
 
+MEDIA_LIST_BUILD_LOCK_TTL = 20  # seconds — a crashed builder frees readers fast
+MEDIA_LIST_BUILD_WAIT = 5.0  # seconds a follower waits before building anyway
+_MEDIA_LIST_BUILD_POLL = 0.05
+
+
+def acquire_media_list_build_lock(cache_key: str) -> bool:
+    """Claim the right to rebuild ``cache_key``; False if a builder is running."""
+    return bool(cache.add(f"{cache_key}_building", 1, MEDIA_LIST_BUILD_LOCK_TTL))
+
+
+def release_media_list_build_lock(cache_key: str) -> None:
+    """Drop the build lock once the result is cached."""
+    cache.delete(f"{cache_key}_building")
+
+
+def wait_for_media_list_build(cache_key: str, is_ready) -> bool:
+    """Poll until ``is_ready()`` or the lock clears; False means build it yourself."""
+    deadline = time.monotonic() + MEDIA_LIST_BUILD_WAIT
+    lock_key = f"{cache_key}_building"
+    while time.monotonic() < deadline:
+        if is_ready():
+            return True
+        if cache.get(lock_key) is None:
+            return is_ready()
+        time.sleep(_MEDIA_LIST_BUILD_POLL)
+    return is_ready()
+
+
 def clear_media_list_cache_for_user(user_id: int) -> None:
     """Invalidate all cached media lists for a user (called on media save/delete)."""
     registry_key = _media_list_registry_key(user_id)
@@ -330,14 +356,11 @@ def clear_media_list_cache_for_user(user_id: int) -> None:
     if not keys:
         return
 
-    deleted = 0
-    for key in keys:
-        if cache.delete(key):
-            deleted += 1
-    cache.delete(registry_key)
+    keys = list(keys)
+    cache.delete_many([*keys, registry_key])
 
     logger.debug(
         "Cleared %s media_list cache entries for user %s",
-        deleted,
+        len(keys),
         user_id,
     )

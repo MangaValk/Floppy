@@ -452,6 +452,53 @@ class MediaDetailsViewTests(TestCase):
             status_code=503,
         )
 
+    @patch("app.media_details_views._build_series_graph_data", return_value=None)
+    @patch("app.providers.services.get_media_metadata")
+    def test_secondary_fragment_skips_series_graph_scans(
+        self,
+        mock_get_metadata,
+        mock_graph,
+    ):
+        """Only the shell renders the series graphs, so only it scans episodes."""
+        item = Item.objects.create(
+            media_id="279978",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Graph Show",
+            image="https://example.com/graph-show.jpg",
+        )
+        TV.objects.create(item=item, user=self.user, status=Status.IN_PROGRESS.value)
+        mock_get_metadata.return_value = {
+            "media_id": item.media_id,
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            "title": "Graph Show",
+            "image": item.image,
+            "synopsis": "",
+            "details": {},
+            "related": {},
+            "cast": [],
+            "crew": [],
+            "studios_full": [],
+        }
+        url = reverse(
+            "media_details",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.TV.value,
+                "media_id": item.media_id,
+                "title": "graph-show",
+            },
+        )
+
+        response = self.client.get(url, {"fragment": "secondary"})
+        self.assertEqual(response.status_code, 200)
+        mock_graph.assert_not_called()
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_graph.call_count, 3)
+
     @patch("app.providers.services.get_media_metadata")
     def test_media_details_keeps_tracked_tmdb_show_available_when_provider_returns_404(
         self,
@@ -1371,6 +1418,11 @@ class MediaDetailsViewTests(TestCase):
             detail_response,
             reverse("prefetch_artist_covers", args=[artist.id]),
         )
+        # The page render arms an early poll; the swapped-in fragment must
+        # not, or every swap re-fires `load` and polls once per second.
+        self.assertContains(
+            detail_response, 'hx-trigger="load delay:500ms, every 5s"'
+        )
         self.assertContains(
             detail_response,
             f'id="album-cover-{scored_album.id}"',
@@ -1393,6 +1445,8 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertContains(refresh_response, "hx-preserve", html=False)
         self.assertContains(refresh_response, "Refreshing cover art")
+        self.assertContains(refresh_response, 'hx-trigger="every 5s"')
+        self.assertNotContains(refresh_response, "load delay")
 
     @patch("app.services.music.needs_discography_sync", return_value=False)
     @patch("app.services.music_scrobble.dedupe_artist_albums")
@@ -4379,6 +4433,15 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, 'href="https://trakt.tv/shows/test-tv-show"')
         self.assertContains(response, "Trakt")
 
+        # The poller must only exist while the modal is open: it sits inside an
+        # x-if template (not merely x-show) so a closed modal issues no requests.
+        soup = BeautifulSoup(response.content, "html.parser")
+        poller = soup.find(attrs={"hx-get": fragment_url})
+        self.assertIsNotNone(poller)
+        self.assertIsNotNone(
+            poller.find_parent("template", attrs={"x-if": "graphOpen"}),
+        )
+
         fragment = self.client.get(fragment_url)
         self.assertEqual(fragment.status_code, 200)
         self.assertContains(fragment, "Series Graph")
@@ -5934,6 +5997,12 @@ class MediaDetailsViewTests(TestCase):
             title="Frieren",
             image="https://example.com/frieren.jpg",
         )
+        Anime.objects.create(
+            item=item,
+            user=self.user,
+            status=Status.IN_PROGRESS.value,
+            progress=2,
+        )
         mock_resolve_detail_metadata.side_effect = lambda *_args, **_kwargs: (
             MetadataResolutionResult(
                 display_provider=Sources.MAL.value,
@@ -5974,6 +6043,16 @@ class MediaDetailsViewTests(TestCase):
             response,
             "Episode cards are not available from MyAnimeList metadata.",
         )
+        # The flat entry's progress marks the episodes it covers as watched.
+        self.assertEqual(
+            [
+                episode["watched_by_progress"]
+                for episode in response.context["media"]["episodes"]
+            ],
+            [True, True, False],
+        )
+        self.assertContains(response, "epWatched: true", count=2)
+        self.assertContains(response, "epWatched: false", count=1)
 
     @override_settings(TVDB_API_KEY="test-tvdb-key")
     @patch("app.views.metadata_resolution.anime_mapping.find_entries_for_mal_id")

@@ -293,16 +293,24 @@ def _collection_media_type_rows(
         if key not in _ROW_ONLY_PARAMS
         for value in values
     ]
-    rows = []
-    for row_type in ordered_types:
-        entries = _ordered_collection_slice(
+    entries_by_type = {
+        row_type: _ordered_collection_slice(
             collection.filter(item__media_type=row_type),
             sort_by,
             direction,
             custom_field,
             0,
         )
-        _decorate_collection_entries(request.user, entries)
+        for row_type in ordered_types
+    }
+    # Decorate every row in one pass: copy labels and TV completeness are
+    # per-user, not per-type, so a pass per row repeats the same queries.
+    _decorate_collection_entries(
+        request.user,
+        [entry for entries in entries_by_type.values() for entry in entries],
+    )
+    rows = []
+    for row_type, entries in entries_by_type.items():
         load_more_query = urlencode(
             [*inherited, ("group", "type"), ("row_type", row_type)],
         )

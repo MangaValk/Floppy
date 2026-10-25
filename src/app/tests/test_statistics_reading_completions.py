@@ -1,6 +1,8 @@
 import datetime
 
+from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
@@ -136,3 +138,66 @@ class ReadingRangePrefilterTests(TestCase):
         )
         self.assertNotIn(entries["before"].pk, narrowed)
         self.assertNotIn(entries["after"].pk, narrowed)
+
+
+class ReadingCompletionAggregationTests(TestCase):
+    """Completion scans must retain entry lengths and latest-per-title dates."""
+
+    def test_reading_types_preserve_bounded_and_all_time_completion_semantics(self):
+        user = get_user_model().objects.create_user(username="completion-rollups")
+        other = get_user_model().objects.create_user(username="other-reader")
+        tz = timezone.get_current_timezone()
+
+        def dt(year, month, day):
+            return timezone.make_aware(datetime.datetime(year, month, day, 12), tz)
+
+        for media_type in ("book", "comic", "manga"):
+            with self.subTest(media_type=media_type):
+                cache.clear()
+                model = apps.get_model("app", media_type)
+                items = Item.objects.bulk_create(
+                    [
+                        Item(
+                            media_id=f"{media_type}-{index}",
+                            source=Sources.MANUAL.value,
+                            media_type=media_type,
+                            title=f"Reading fixture {index}",
+                            number_of_pages=300 if index != 2 else 0,
+                        )
+                        for index in range(5)
+                    ]
+                )
+                rows = model.objects.bulk_create(
+                    [
+                        model(user=user, item=items[0], status=Status.COMPLETED.value,
+                              progress=200, start_date=dt(2024, 1, 5), end_date=dt(2024, 1, 6)),
+                        model(user=user, item=items[0], status=Status.COMPLETED.value,
+                              progress=100, start_date=dt(2024, 1, 7), end_date=dt(2024, 1, 8)),
+                        model(user=user, item=items[1], status=Status.COMPLETED.value,
+                              progress=0, start_date=dt(2023, 12, 25), end_date=dt(2024, 1, 10)),
+                        model(user=user, item=items[2], status=Status.COMPLETED.value,
+                              progress=0),
+                        model(user=user, item=items[3], status=Status.COMPLETED.value,
+                              progress=400, end_date=dt(2023, 11, 1)),
+                        model(user=user, item=items[4], status=Status.IN_PROGRESS.value,
+                              progress=500, start_date=dt(2024, 1, 2), end_date=dt(2024, 1, 20)),
+                        model(user=other, item=items[0], status=Status.COMPLETED.value,
+                              progress=999, end_date=dt(2024, 1, 6)),
+                    ]
+                )
+                model.objects.filter(pk=rows[3].pk).update(created_at=dt(2024, 1, 20))
+
+                bounded = get_statistics_data(
+                    user, dt(2024, 1, 1), dt(2024, 1, 31)
+                )[f"{media_type}_consumption"]
+                self.assertEqual(bounded["completions"]["total"], 3)
+                self.assertEqual(sorted(bounded["completed_lengths"]), [100, 200, 300])
+                self.assertEqual(bounded["highlights"]["average_length"], 200)
+                self.assertEqual(
+                    bounded["completion_charts"]["by_month"]["datasets"][0]["data"],
+                    [3] + [0] * 11,
+                )
+
+                all_time = get_statistics_data(user, None, None)[f"{media_type}_consumption"]
+                self.assertEqual(all_time["completions"]["total"], 4)
+                self.assertEqual(sorted(all_time["completed_lengths"]), [100, 200, 300, 400])
