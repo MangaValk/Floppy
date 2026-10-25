@@ -37,8 +37,8 @@
       <script type="module" src="{% static 'debug_toolbar/js/toolbar.js' %}"></script>
     {% endif %}
 
-    <script src="{% javascript_catalog_url %}"></script>
-    <script src="{% static 'js/libraries/htmx-2.0.4.min.js' %}"></script>
+    <script defer src="{% javascript_catalog_url %}"></script>
+    <script defer src="{% static 'js/libraries/htmx-2.0.4.min.js' %}"></script>
     <script src="{% static 'js/artwork-loading.js' %}{% get_static_file_mtime 'js/artwork-loading.js' %}"></script>
     <script>
       (function() {
