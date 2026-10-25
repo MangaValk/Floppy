@@ -1997,6 +1997,11 @@ CELERY_BEAT_SCHEDULE = {
     "reconcile_statistics_sync": {
         "task": "Reconcile statistics sync",
         "schedule": 60,
+        # DatabaseScheduler owns this safety-net lifetime: replace any old
+        # absolute expiry with a rolling lifetime. The next fresh tick rechecks
+        # durable state, so stale ticks need not replay database work.
+        "expires": None,
+        "options": {"expire_seconds": 60},
     },
     # Outbound deliveries (watched state, ratings) retry through their own
     # next_attempt_at and recover from a lost broker message only if something

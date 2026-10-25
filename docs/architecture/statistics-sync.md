@@ -204,8 +204,21 @@ or starved message, a worker restart, a second consumer on the same Redis) and
 also midnight rollover and the first build after an upgrade: users with no
 state row are bootstrapped with a full sweep.
 
-The reconciler does not publish a second message while the last one is still
-waiting. A successful enqueue writes `stats:sync:pending:{uid}`; the task
+Beat gives each new reconciler message a 60-second publication lifetime
+(`options.expire_seconds` for Django's database scheduler). The source-owned
+canonical entry explicitly clears any previous absolute expiry (`expires=None`)
+in favor of that rolling lifetime; its persisted enabled/disabled state is
+preserved. These fields rely on the configured Django DatabaseScheduler, and
+apply only to this canonical entry, leaving differently named legacy rows alone.
+When the interactive
+worker resumes, Celery discards expired ticks before running their database
+queries; the next fresh tick still finds durable unfinished work. Redis may
+retain expired envelopes until a consumer discards them. This applies to new
+publications; older messages without an expiry keep their original lifetime.
+It does not detect duplicate Beat producers or remove legacy periodic schedules.
+
+The reconciler does not publish a second per-user sync message while the last one
+is still waiting. A successful enqueue writes `stats:sync:pending:{uid}`; the task
 deletes it when it starts, and the marker expires after the lease window
 (`STATISTICS_SYNC_LEASE_SECONDS`) if delivery was lost before that. So a busy
 worker sees one queued sync per user instead of one per 60 s tick, while a
