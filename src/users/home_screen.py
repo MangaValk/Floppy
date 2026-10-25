@@ -1678,8 +1678,13 @@ def _music_shell_item(media_id: str, title: str, image: str | None) -> Item:
 
 def _music_shell_items_bulk(
     specs: list[tuple[str, str, str | None]],
+    persist: set[str] | None = None,
 ) -> dict[str, Item]:
-    """Batch version of _music_shell_item — fetches/creates all shell items in 1-3 queries."""
+    """Batch version of _music_shell_item — fetches/creates all shell items in 1-3 queries.
+
+    With ``persist`` only those media ids are created/updated in the database; every
+    other spec gets an equivalent in-memory Item, enough to sort on but never saved.
+    """
     if not specs:
         return {}
     specs_map = {s[0]: s for s in specs}
@@ -1692,8 +1697,10 @@ def _music_shell_items_bulk(
             media_type=MediaTypes.MUSIC.value,
         )
     }
+    write_ids = set(media_ids) if persist is None else persist & set(media_ids)
     missing_ids = [mid for mid in media_ids if mid not in existing]
-    if missing_ids:
+    create_ids = [mid for mid in missing_ids if mid in write_ids]
+    if create_ids:
         Item.objects.bulk_create(
             [
                 Item(
@@ -1703,16 +1710,25 @@ def _music_shell_items_bulk(
                     title=specs_map[mid][1],
                     image=specs_map[mid][2] or settings.IMG_NONE,
                 )
-                for mid in missing_ids
+                for mid in create_ids
             ],
             ignore_conflicts=True,
         )
         for item in Item.objects.filter(
-            media_id__in=missing_ids,
+            media_id__in=create_ids,
             source=Sources.MANUAL.value,
             media_type=MediaTypes.MUSIC.value,
         ):
             existing[item.media_id] = item
+    for mid in missing_ids:
+        if mid not in write_ids:
+            existing[mid] = Item(
+                media_id=mid,
+                source=Sources.MANUAL.value,
+                media_type=MediaTypes.MUSIC.value,
+                title=specs_map[mid][1],
+                image=specs_map[mid][2] or settings.IMG_NONE,
+            )
     to_update = []
     for media_id, item in existing.items():
         _, title, image = specs_map[media_id]
@@ -1720,7 +1736,8 @@ def _music_shell_items_bulk(
         if item.title != title or item.image != desired_image:
             item.title = title
             item.image = desired_image
-            to_update.append(item)
+            if media_id in write_ids:
+                to_update.append(item)
     if to_update:
         Item.objects.bulk_update(to_update, ["title", "image"])
     return existing
@@ -1917,8 +1934,8 @@ def _apply_music_tracker_rating_filter(trackers, rating_filter: str):
 
 
 def _build_album_home_entries(
-    user, filters: dict, sort_by: str, direction: str
-) -> list[HomeRowEntry]:
+    user, filters: dict, sort_by: str, direction: str, offset: int, limit: int
+) -> tuple[list[HomeRowEntry], int]:
     """Build Home entries from the user's tracked albums (AlbumTracker)."""
     from app.models import AlbumTracker
 
@@ -1938,7 +1955,7 @@ def _build_album_home_entries(
         for t in trackers
         if t.album
     ]
-    items = _music_shell_items_bulk(specs)
+    items = _music_shell_items_bulk(specs, persist=set())
 
     entries = []
     for tracker in trackers:
@@ -1955,12 +1972,30 @@ def _build_album_home_entries(
                 show_progress_controls=False,
             ),
         )
-    return sort_home_entries(entries, sort_by, direction)
+    entries = sort_home_entries(entries, sort_by, direction)
+    window = entries[offset : offset + limit]
+    # Only the shelf window needs a saved shell Item; the rest sorted in memory.
+    persisted = _music_shell_items_bulk(
+        [spec for spec in specs if spec[0] in {e.item.media_id for e in window}],
+    )
+    trackers_by_id = {t.id: t for t in trackers}
+    return [
+        HomeRowEntry(
+            item=persisted[e.item.media_id],
+            media=_AlbumHomeAdapter(
+                persisted[e.item.media_id],
+                trackers_by_id[e.media.id],
+                e.media.album,
+            ),
+            show_progress_controls=False,
+        )
+        for e in window
+    ], len(entries)
 
 
 def _build_artist_home_entries(
-    user, filters: dict, sort_by: str, direction: str
-) -> list[HomeRowEntry]:
+    user, filters: dict, sort_by: str, direction: str, offset: int, limit: int
+) -> tuple[list[HomeRowEntry], int]:
     """Build Home entries from the user's tracked artists (ArtistTracker)."""
     from app.models import ArtistTracker
 
@@ -1982,7 +2017,7 @@ def _build_artist_home_entries(
         for t in trackers
         if t.artist
     ]
-    items = _music_shell_items_bulk(specs)
+    items = _music_shell_items_bulk(specs, persist=set())
 
     entries = []
     for tracker in trackers:
@@ -1999,7 +2034,25 @@ def _build_artist_home_entries(
                 show_progress_controls=False,
             ),
         )
-    return sort_home_entries(entries, sort_by, direction)
+    entries = sort_home_entries(entries, sort_by, direction)
+    window = entries[offset : offset + limit]
+    # Only the shelf window needs a saved shell Item; the rest sorted in memory.
+    persisted = _music_shell_items_bulk(
+        [spec for spec in specs if spec[0] in {e.item.media_id for e in window}],
+    )
+    trackers_by_id = {t.id: t for t in trackers}
+    return [
+        HomeRowEntry(
+            item=persisted[e.item.media_id],
+            media=_ArtistHomeAdapter(
+                persisted[e.item.media_id],
+                trackers_by_id[e.media.id],
+                e.media.artist,
+            ),
+            show_progress_controls=False,
+        )
+        for e in window
+    ], len(entries)
 
 
 class _PodcastShowHomeAdapter(_MusicTrackerAdapter):
@@ -2014,8 +2067,13 @@ class _PodcastShowHomeAdapter(_MusicTrackerAdapter):
         self.last_played_at = tracker.updated_at
 
 
-def _podcast_show_shell_items_bulk(shows: list[object]) -> dict[tuple[str, str], Item]:
+def _podcast_show_shell_items_bulk(
+    shows: list[object], persist: set[tuple[str, str]] | None = None
+) -> dict[tuple[str, str], Item]:
     """Return the card Item for each show, keyed by (source, podcast_uuid).
+
+    With ``persist`` only those keys are created/updated in the database; the
+    other shows get an equivalent in-memory Item for sorting.
 
     The same shell Item the Podcasts list page creates, so both pages share it.
     """
@@ -2037,6 +2095,11 @@ def _podcast_show_shell_items_bulk(shows: list[object]) -> dict[tuple[str, str],
         for show in shows
         if (show.source, show.podcast_uuid) not in existing
     ]
+    if persist is not None:
+        for item in missing:
+            if (item.source, item.media_id) not in persist:
+                existing[(item.source, item.media_id)] = item
+        missing = [i for i in missing if (i.source, i.media_id) in persist]
     if missing:
         Item.objects.bulk_create(missing, ignore_conflicts=True)
         for item in Item.objects.filter(
@@ -2053,15 +2116,16 @@ def _podcast_show_shell_items_bulk(shows: list[object]) -> dict[tuple[str, str],
         if item and (item.title != show.title or item.image != image):
             item.title = show.title
             item.image = image
-            stale.append(item)
+            if persist is None or (show.source, show.podcast_uuid) in persist:
+                stale.append(item)
     if stale:
         Item.objects.bulk_update(stale, ["title", "image"])
     return existing
 
 
 def _build_podcast_show_home_entries(
-    user, filters: dict, sort_by: str, direction: str
-) -> list[HomeRowEntry]:
+    user, filters: dict, sort_by: str, direction: str, offset: int, limit: int
+) -> tuple[list[HomeRowEntry], int]:
     """Build Home entries from the user's tracked podcast shows (PodcastShowTracker).
 
     A Home podcast shelf lists shows, like the Podcasts page, not every episode.
@@ -2097,7 +2161,9 @@ def _build_podcast_show_home_entries(
             if (tracker.show.language or "").strip().lower() == language
         ]
 
-    items = _podcast_show_shell_items_bulk([tracker.show for tracker in trackers])
+    items = _podcast_show_shell_items_bulk(
+        [tracker.show for tracker in trackers], persist=set()
+    )
     entries = []
     for tracker in trackers:
         show = tracker.show
@@ -2115,7 +2181,30 @@ def _build_podcast_show_home_entries(
                 show_progress_controls=False,
             ),
         )
-    return sort_home_entries(entries, sort_by, direction)
+    entries = sort_home_entries(entries, sort_by, direction)
+    window = entries[offset : offset + limit]
+    # Only the shelf window needs a saved shell Item; the rest sorted in memory.
+    persisted = _podcast_show_shell_items_bulk(
+        [e.podcast_show for e in window],
+        persist={(e.podcast_show.source, e.podcast_show.podcast_uuid) for e in window},
+    )
+    trackers_by_id = {t.id: t for t in trackers}
+    out = []
+    for e in window:
+        show = e.podcast_show
+        item = persisted[(show.source, show.podcast_uuid)]
+        if sort_by == MediaSortChoices.RELEASE_DATE:
+            item.release_datetime = e.item.release_datetime
+        out.append(
+            HomeRowEntry(
+                item=item,
+                media=_PodcastShowHomeAdapter(item, trackers_by_id[e.media.id], show),
+                use_podcast_show=True,
+                podcast_show=show,
+                show_progress_controls=False,
+            ),
+        )
+    return out, len(entries)
 
 
 def _build_recent_music_album_entries(media_items: list[object]) -> list[HomeRowEntry]:
@@ -3036,24 +3125,21 @@ def _library_row_window(user, row, offset, limit, *, seed):
     if row.media_type == MediaTypes.MUSIC.value:
         subview = _canonical_subview(normalized.get("subview"), row.media_type)
         if subview == MUSIC_SUBVIEW_ALBUMS:
-            entries = _build_album_home_entries(
-                user, normalized, row.sort_by, row.direction,
+            return _build_album_home_entries(
+                user, normalized, row.sort_by, row.direction, offset, limit,
             )
-            return entries[offset : offset + limit], len(entries)
         if subview == MUSIC_SUBVIEW_ARTISTS:
-            entries = _build_artist_home_entries(
-                user, normalized, row.sort_by, row.direction,
+            return _build_artist_home_entries(
+                user, normalized, row.sort_by, row.direction, offset, limit,
             )
-            return entries[offset : offset + limit], len(entries)
     if (
         row.media_type == MediaTypes.PODCAST.value
         and _canonical_subview(normalized.get("subview"), row.media_type)
         == PODCAST_SUBVIEW_SHOWS
     ):
-        entries = _build_podcast_show_home_entries(
-            user, normalized, row.sort_by, row.direction,
+        return _build_podcast_show_home_entries(
+            user, normalized, row.sort_by, row.direction, offset, limit,
         )
-        return entries[offset : offset + limit], len(entries)
     if (
         row.media_type == HOME_ALL_MEDIA_TYPE
         and not _all_media_type_selection(user, row.filters)
