@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, Paginator
 from django.db import connection
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q
 from django.db.models.expressions import RawSQL
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -179,10 +179,10 @@ def _ids_ordered_by_custom_field(collection, field, direction):
     return [entry_id for entry_id, _ in present] + blank
 
 
-def _scored_item_ids(user, item_ids_by_media_type):
-    """Return the ids of items (grouped by media_type) that have a user score."""
-    scored_ids = set()
-    for item_media_type, item_ids in item_ids_by_media_type.items():
+def _scored_item_query(user, item_media_types):
+    """Return a ``Q`` on ``item_id`` matching items that have a user score."""
+    scored = Q(pk__in=[])
+    for item_media_type in item_media_types:
         try:
             model = apps.get_model("app", item_media_type)
         except LookupError:
@@ -191,14 +191,13 @@ def _scored_item_ids(user, item_ids_by_media_type):
             filter_kwargs = {"related_season__user": user}
         else:
             filter_kwargs = {"user": user}
-        scored_ids.update(
-            model.objects.filter(
-                item_id__in=item_ids,
+        scored |= Q(
+            item_id__in=model.objects.filter(
                 score__isnull=False,
                 **filter_kwargs,
-            ).values_list("item_id", flat=True),
+            ).values("item_id"),
         )
-    return scored_ids
+    return scored
 
 
 def _shows_for_keys(show_keys):
@@ -216,6 +215,86 @@ def _shows_for_keys(show_keys):
         )
         if (item.media_id, item.source) in show_keys
     ]
+
+
+def _completeness_matching_keys(user, show_keys, completeness_filter):
+    """Return the show keys whose collection is ``partial`` or ``full``.
+
+    Same rules as ``helpers.get_collection_completeness_map`` (a granular
+    season/episode collection wins over a show-level entry), but reads one row
+    per season instead of one Item per episode.
+    """
+    if not show_keys:
+        return set()
+    media_ids = {media_id for media_id, _source in show_keys}
+    sources = {source for _media_id, source in show_keys}
+    owned = CollectionEntry.objects.filter(user=user, item_id=OuterRef("pk"))
+
+    episodes = defaultdict(list)  # key -> [(season_number, total, collected)]
+    for media_id, source, season_number, total, collected in (
+        Item.objects.filter(
+            media_id__in=media_ids,
+            source__in=sources,
+            media_type=MediaTypes.EPISODE.value,
+        )
+        .exclude(season_number=0)
+        .order_by()
+        .values("media_id", "source", "season_number")
+        .annotate(total=Count("pk"), collected=Count("pk", filter=Exists(owned)))
+        .values_list("media_id", "source", "season_number", "total", "collected")
+    ):
+        if (media_id, source) in show_keys:
+            episodes[(media_id, source)].append((season_number, total, collected))
+
+    collected_seasons = defaultdict(set)
+    for media_id, source, season_number in (
+        Item.objects.filter(
+            media_id__in=media_ids,
+            source__in=sources,
+            media_type=MediaTypes.SEASON.value,
+        )
+        .exclude(season_number=0)
+        .filter(Exists(owned))
+        .values_list("media_id", "source", "season_number")
+    ):
+        if (media_id, source) in show_keys:
+            collected_seasons[(media_id, source)].add(season_number)
+
+    shows = (
+        Item.objects.filter(
+            media_type__in=[MediaTypes.TV.value, MediaTypes.ANIME.value],
+            media_id__in=media_ids,
+            source__in=sources,
+        )
+        .annotate(is_owned=Exists(owned))
+        .values_list("media_id", "source", "is_owned")
+    )
+
+    matching = set()
+    for media_id, source, show_owned in shows:
+        key = (media_id, source)
+        if key not in show_keys:
+            continue
+        groups = episodes.get(key, [])
+        total = sum(group_total for _n, group_total, _c in groups)
+        seasons = collected_seasons.get(key, set())
+        granular = bool(seasons) or any(group[2] for group in groups)
+        if not granular:
+            collected = total if show_owned else 0
+        else:
+            collected = sum(
+                group_total
+                if season_number in seasons and season_number is not None
+                else group_collected
+                for season_number, group_total, group_collected in groups
+            )
+        if not total:
+            continue
+        if (completeness_filter == "partial" and 0 < collected < total) or (
+            completeness_filter == "full" and collected == total
+        ):
+            matching.add(key)
+    return matching
 
 
 # Custom fields that number a copy within its item. A manga series is one item
@@ -433,17 +512,14 @@ def collection_list(request, media_type=None):
         collection = collection.filter(purchase_location=location_filter)
 
     if rating_filter != "all":
-        item_ids_by_media_type = defaultdict(list)
-        for item_id, item_media_type in collection.values_list(
-            "item_id",
-            "item__media_type",
-        ).distinct():
-            item_ids_by_media_type[item_media_type].append(item_id)
-        scored_ids = _scored_item_ids(request.user, item_ids_by_media_type)
+        scored = _scored_item_query(
+            request.user,
+            collection.order_by().values_list("item__media_type", flat=True).distinct(),
+        )
         if rating_filter == "rated":
-            collection = collection.filter(item_id__in=scored_ids)
+            collection = collection.filter(scored)
         else:
-            collection = collection.exclude(item_id__in=scored_ids)
+            collection = collection.exclude(scored)
 
     if completeness_filter != "all":
         show_keys = set(
@@ -451,21 +527,11 @@ def collection_list(request, media_type=None):
             .values_list("item__media_id", "item__source")
             .distinct(),
         )
-        show_items = _shows_for_keys(show_keys)
-        completeness_map = helpers.get_collection_completeness_map(
+        matching_keys = _completeness_matching_keys(
             request.user,
-            show_items,
+            show_keys,
+            completeness_filter,
         )
-        matching_keys = set()
-        for item in show_items:
-            stats = completeness_map.get(item.id)
-            if not stats or not stats["total"]:
-                continue
-            is_match = (completeness_filter == "partial" and stats["is_partial"]) or (
-                completeness_filter == "full" and stats["collected"] == stats["total"]
-            )
-            if is_match:
-                matching_keys.add((item.media_id, item.source))
 
         if matching_keys:
             key_query = Q()
