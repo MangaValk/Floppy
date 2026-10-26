@@ -376,13 +376,10 @@ def populate_runtime_data_batch(batch_size=10, delay_seconds=1.0):
         items_to_update, delay_seconds
     )
 
-    # Check if there are more items to process (exclude previously failed items)
-    remaining_items = _runtime_items_queryset().count()
-
-    if remaining_items > 0:
-        logger.info(
-            "Found %s remaining items. Scheduling next batch...", remaining_items
-        )
+    # Probe for more items (excluding previously failed ones); a bounded EXISTS
+    # instead of counting the whole candidate set on every batch.
+    if _runtime_items_queryset().exists():
+        logger.info("More items need runtime data. Scheduling next batch...")
         # Schedule the next batch with a small delay
         populate_runtime_data_batch.apply_async(
             kwargs={"batch_size": batch_size, "delay_seconds": delay_seconds},
@@ -391,7 +388,6 @@ def populate_runtime_data_batch(batch_size=10, delay_seconds=1.0):
         return {
             "updated": updated_count,
             "errors": error_count,
-            "remaining_items": remaining_items,
             "next_batch_scheduled": True,
         }
     logger.info(
@@ -404,7 +400,6 @@ def populate_runtime_data_batch(batch_size=10, delay_seconds=1.0):
     return {
         "updated": updated_count,
         "errors": error_count,
-        "remaining_items": 0,
         "next_batch_scheduled": False,
         "completion_message": "All runtime data populated successfully!",
     }
