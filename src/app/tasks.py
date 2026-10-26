@@ -370,6 +370,9 @@ DISCOVER_METADATA_REFRESH_DEBOUNCE_SECONDS = 60 * 10
 DISCOVER_METADATA_REFRESH_COUNTDOWN_SECONDS = 60
 BACKGROUND_TASK_PRIORITY = getattr(settings, "CELERY_TASK_PRIORITY_BACKGROUND", 9)
 HISTORY_COVERAGE_REPAIR_REQUEUE_SECONDS = 15
+# A batch that built nothing yielded to an interactive user; retrying in 15 s
+# only repeats the missing-day scan, so wait for them to go idle.
+HISTORY_COVERAGE_REPAIR_STALLED_REQUEUE_SECONDS = 120
 
 
 def _release_items_queryset():
@@ -949,7 +952,11 @@ def repair_history_day_cache_coverage_task(
                 "logging_style": logging_style,
                 "batch_size": batch_size,
             },
-            countdown=HISTORY_COVERAGE_REPAIR_REQUEUE_SECONDS,
+            countdown=(
+                HISTORY_COVERAGE_REPAIR_STALLED_REQUEUE_SECONDS
+                if result.get("rebuilt", 1) == 0
+                else HISTORY_COVERAGE_REPAIR_REQUEUE_SECONDS
+            ),
             priority=BACKGROUND_TASK_PRIORITY,
         )
     else:
