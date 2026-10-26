@@ -166,6 +166,12 @@ class Media(models.Model):
                 ],
                 name="app_%(class)s_usr_scr_idx",
             ),
+            # History day/month queries filter user and (end_date in range, or
+            # end_date NULL and start_date in range) without a status.
+            models.Index(
+                fields=["user", "end_date", "start_date"],
+                name="app_%(class)s_usr_dates_idx",
+            ),
         ]
 
     def __str__(self):
