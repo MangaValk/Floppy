@@ -34,8 +34,8 @@ from lists.views_helpers import (
     _extract_list_search_results,
     _list_item_title_fields_from_metadata,
     _maybe_backfill_episode_title,
-    list_metadata_language,
     list_has_item_identity,
+    list_metadata_language,
 )
 
 logger = logging.getLogger(__name__)
