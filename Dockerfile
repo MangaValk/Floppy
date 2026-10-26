@@ -1,4 +1,4 @@
-ARG PYTHON_IMAGE=python:3.12-alpine3.24@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4
+ARG PYTHON_IMAGE=python:3.12-alpine3.24@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d
 
 FROM ${PYTHON_IMAGE} AS repo_meta
 
@@ -120,7 +120,9 @@ RUN ln -s /opt/venv /floppy/.venv
 
 # Django app
 COPY src ./
-RUN SECRET=build-time-placeholder python manage.py collectstatic --noinput
+RUN SECRET=build-time-placeholder python manage.py collectstatic --noinput \
+    && chown -R 1000:1000 /floppy/staticfiles \
+    && SECRET=build-time-placeholder python config/static_collection.py --record
 
 # MCP server (mcp/floppy_mcp) — bundled so `docker exec` always runs the
 # version shipped with this image, instead of a user's local checkout that

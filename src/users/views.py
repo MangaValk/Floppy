@@ -72,7 +72,7 @@ from integrations.models import (
 )
 from integrations.plex_watchlist import WATCHLIST_TASK_NAME
 from users import appearance as appearance_config
-from users import cache_management, helpers
+from users import cache_management, helpers, release_notes
 from users.forms import (
     AuthenticatorSetupForm,
     NotificationSettingsForm,
@@ -1227,6 +1227,7 @@ def _card_preview_stand_in(media_type):
         "media_id": "card-preview",
         "year": 2024,
         "genres": ["Drama", "Thriller"],
+        "platforms": ["PC"],
         "runtime": "42 min",
         "synopsis": "A short sample line so this field has something to show.",
         "season_number": 1,
@@ -1526,6 +1527,15 @@ def preferences(request):
             request.user.time_format = time_format
             fields_to_update.append("time_format")
 
+        currency = request.POST.get("currency")
+        if (
+            currency
+            and currency in [choice[0] for choice in User._meta.get_field("currency").choices]
+            and request.user.currency != currency
+        ):
+            request.user.currency = currency
+            fields_to_update.append("currency")
+
         week_start_day = request.POST.get("week_start_day")
         if (
             week_start_day and week_start_day in WeekStartDayChoices.values
@@ -1733,6 +1743,7 @@ def preferences(request):
         "ui_language_choices": UiLanguageChoices.choices,
         "session_duration_choices": SessionDurationChoices.choices,
         "week_start_day_choices": WeekStartDayChoices.choices,
+        "currency_choices": User._meta.get_field("currency").choices,
     }
 
     return render(request, "users/preferences.html", context)
@@ -1750,7 +1761,7 @@ def convert_anime_library(request):
         "Converting your existing anime. This runs in the background; titles "
         "that cannot be converted safely are left as they are.",
     )
-    return redirect("preferences")
+    return redirect("metadata_settings")
 
 
 @login_required
@@ -1759,10 +1770,6 @@ def convert_tv_library(request):
     """Move this user's tracked TV shows to their default TV provider."""
     from app.tasks_tv_provider_migration import move_user_tv_library_task
 
-    # Moving is also the user's go-ahead for the nightly job to keep new shows
-    # on their default provider.
-    request.user.tv_auto_move_to_default_provider = True
-    request.user.save(update_fields=["tv_auto_move_to_default_provider"])
     move_user_tv_library_task.delay(request.user.id)
     messages.success(
         request,
@@ -1772,11 +1779,25 @@ def convert_tv_library(request):
     return redirect("metadata_settings")
 
 
+@login_required
+@require_POST
+def repair_duplicate_anime_libraries(request):
+    """Fold this user's duplicate Anime/TV tracking rows back together."""
+    from app.tasks_anime_library_repair import repair_duplicated_anime_libraries_task
+
+    repair_duplicated_anime_libraries_task.delay(user_id=request.user.id)
+    messages.success(
+        request,
+        "Repairing duplicated anime libraries. This runs in the background; "
+        "shows that cannot be merged safely are left untouched.",
+    )
+    return redirect("metadata_settings")
+
+
 @require_GET
 def integrations(request):
     """Render the integrations settings page."""
     from integrations.state import settings_view
-    from integrations.tmdb_views import rating_sync_status
     from integrations.webhooks.jellyfin import jellyfin_template_outdated
 
     user = request.user
@@ -1870,7 +1891,6 @@ def integrations(request):
         {
             "user": user,
             "sync_bindings": settings_view.binding_rows(user),
-            "tmdb_rating_sync": rating_sync_status(user),
             "sync_conflicts": settings_view.open_conflicts(user),
             "plex_webhook_needs_update": plex_webhook_needs_update,
             "jellyfin_template_outdated": jellyfin_template_outdated(user.id),
@@ -2165,13 +2185,23 @@ def save_import_settings(request):
 def import_data_activity(request):
     """Render import schedules and history after the page loads."""
     user = _get_import_data_user(request.user)
+    import_tasks = user.get_import_tasks()
+    import_runs = list(ImportRun.objects.filter(user=user).order_by("-started_at")[:10])
     context = {
         "user": user,
-        "import_tasks": user.get_import_tasks(),
-        "import_runs": ImportRun.objects.filter(user=user).order_by("-started_at")[:10],
+        "import_tasks": import_tasks,
+        "import_runs": import_runs,
         "import_source_media": _import_source_media_summary(user),
     }
-    return render(request, "users/components/import_activity.html", context)
+    response = render(request, "users/components/import_activity.html", context)
+    is_active = any(
+        result["status"] in {states.PENDING, states.STARTED}
+        for result in import_tasks["results"]
+    ) or any(run.status == "running" for run in import_runs)
+    if not is_active:
+        # htmx stops polling on 286 (still swaps); starting an import reloads the page.
+        response.status_code = 286
+    return response
 
 
 @require_GET
@@ -2310,10 +2340,28 @@ def export_data(request):
     return render(request, "users/export_data.html", context)
 
 
+def _outbound_state(account):
+    """Badge state for an outbound service account: off, waiting, attention or connected."""
+    if account is None:
+        return "off"
+    if getattr(account, "is_pending", False):
+        return "waiting"
+    if not getattr(account, "is_connected", True) and not account.connection_broken:
+        return "off"
+    if account.connection_broken or account.last_error_message:
+        return "attention"
+    return "connected"
+
+
 @require_GET
 def mal_export(request):
-    """Render the MyAnimeList export (status sync) settings page."""
+    """Render the Sync to Trackers page: MyAnimeList, TMDb and WeTrakr."""
+    from integrations.tmdb_views import rating_sync_status
+    from integrations.wetrakr_views import wetrakr_status
+
     user = request.user
+    tmdb_sync = rating_sync_status(user)
+    wetrakr_sync = wetrakr_status(user)
     mal_account = getattr(user, "mal_account", None)
     schedule = None
     periodic_task = (
@@ -2343,6 +2391,23 @@ def mal_export(request):
         "mal_sync_initial": mal_sync.full_sync_report(mal_account) if mal_account else None,
         "mal_ignored_mappings": mal_sync.ignored_mappings(user) if mal_account else [],
         "mal_manual_mappings": mal_sync.manual_episode_mappings(user) if mal_account else [],
+        "tmdb_rating_sync": tmdb_sync,
+        "wetrakr_sync": wetrakr_sync,
+        # One row and modal per service; a new destination adds a dict here.
+        "outbound_services": [
+            {
+                "slug": "tmdb",
+                "description": gettext("Ratings"),
+                "state": _outbound_state(tmdb_sync["account"]),
+                "body": "users/components/tmdb_rating_sync.html",
+            },
+            {
+                "slug": "wetrakr",
+                "description": gettext("Plays, statuses and ratings"),
+                "state": _outbound_state(wetrakr_sync["account"]),
+                "body": "users/components/wetrakr_sync.html",
+            },
+        ],
     }
     return render(request, "users/mal_export.html", context)
 
@@ -2439,7 +2504,7 @@ def export_logs(request):
 
     log_name = Path(settings.LOG_FILE).name
     sections = [(log_name, _log_files(log_name))]
-    sections += [(n, _log_files(n)) for n in ("supervisord.log", "faulthandler.log")]
+    sections += [(n, _log_files(n)) for n in ("restart-history.log", "supervisord.log", "faulthandler.log")]
 
     def lines():
         for title, found in sections:
@@ -2457,6 +2522,27 @@ def export_logs(request):
     response = StreamingHttpResponse(lines(), content_type="text/plain")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+@require_GET
+def whats_new(request):
+    """Render the release notes fragment the About page loads in the background."""
+    installed = release_notes.release_tag(settings.VERSION)
+    releases = release_notes.get_releases()
+    for release in releases or []:
+        release["installed"] = release["tag"] == installed
+        release["newer"] = release_notes.tag_sort_key(
+            release["tag"],
+        ) > release_notes.tag_sort_key(installed)
+    return render(
+        request,
+        "users/components/whats_new.html",
+        {
+            "releases": releases,
+            "installed": installed,
+            "releases_url": release_notes.RELEASES_PAGE_URL,
+        },
+    )
 
 
 @require_GET

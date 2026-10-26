@@ -85,6 +85,30 @@ def projection_suspended() -> bool:
     return _SUSPEND_PROJECTION.get()
 
 
+_IMPORTING = ContextVar("watch_state_importing", default=False)
+
+
+@contextmanager
+def importing_watch_state():
+    """Mark changes projected inside the block as coming from an import.
+
+    Importers write through the same projection as the UI, so a changed play
+    looks identical either way. Marking them lets a destination that only wants
+    real-time plays (see ``ACCEPTS_IMPORTED_CHANGES`` on adapters) skip a bulk
+    import instead of mistaking a whole library for something just watched.
+    """
+    token = _IMPORTING.set(True)
+    try:
+        yield
+    finally:
+        _IMPORTING.reset(token)
+
+
+def is_importing_watch_state() -> bool:
+    """Return whether the current block is an import (see importing_watch_state)."""
+    return _IMPORTING.get()
+
+
 def allocate_sequence(user) -> int:
     """Return the next server sequence for this user.
 
@@ -104,10 +128,25 @@ def allocate_sequence(user) -> int:
 class ProjectedState:
     """The state derived from the legacy stores for one (user, item)."""
 
-    __slots__ = ("first_watched_at", "last_watched_at", "play_count", "watched")
+    __slots__ = (
+        "first_watched_at",
+        "last_watched_at",
+        "play_count",
+        "play_dates",
+        "watched",
+    )
 
-    def __init__(self, *, watched, play_count, first_watched_at, last_watched_at):
-        """Store the derived values."""
+    def __init__(
+        self,
+        *,
+        watched,
+        play_count,
+        first_watched_at,
+        last_watched_at,
+        play_dates=(),
+    ):
+        """Store the derived values; ``play_dates`` lists each dated play."""
+        self.play_dates = list(play_dates)
         self.watched = watched
         self.play_count = play_count
         self.first_watched_at = first_watched_at
@@ -144,6 +183,7 @@ def _derive_movie(user, item):
         play_count=play_count,
         first_watched_at=min(dates) if dates else None,
         last_watched_at=max(dates) if dates else None,
+        play_dates=dates,
     )
 
 
@@ -170,6 +210,7 @@ def _derive_episode(user, item):
         play_count=play_count,
         first_watched_at=min(dates) if dates else None,
         last_watched_at=max(dates) if dates else None,
+        play_dates=dates,
     )
 
 
@@ -191,6 +232,7 @@ def _derive_flat(user, item):
         play_count=play_count,
         first_watched_at=min(completed_dates) if completed_dates else None,
         last_watched_at=max(completed_dates) if completed_dates else None,
+        play_dates=completed_dates,
     )
 
 
@@ -223,7 +265,11 @@ def _project_as_change(user, item, derived):
         watched=derived.watched,
         play_count=derived.play_count,
         watched_at=derived.last_watched_at,
-        origin_kind=WatchStateOrigin.LOCAL_UI.value,
+        origin_kind=(
+            WatchStateOrigin.IMPORT.value
+            if is_importing_watch_state()
+            else WatchStateOrigin.LOCAL_UI.value
+        ),
         origin_key="local",
     )
     state = result.state

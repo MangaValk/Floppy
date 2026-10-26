@@ -694,14 +694,15 @@ class CreditsBackfillSignalTests(TestCase):
         )
         mock_enqueue.reset_mock()
 
-        Movie.objects.create(
-            item=item,
-            user=user,
-            status=Status.COMPLETED.value,
-            progress=1,
-            start_date=timezone.now(),
-            end_date=timezone.now(),
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            Movie.objects.create(
+                item=item,
+                user=user,
+                status=Status.COMPLETED.value,
+                progress=1,
+                start_date=timezone.now(),
+                end_date=timezone.now(),
+            )
 
         mock_enqueue.assert_called_once_with([item.id], countdown=3)
 
@@ -760,11 +761,12 @@ class CreditsBackfillSignalTests(TestCase):
         }
         mock_enqueue.reset_mock()
 
-        Episode.objects.create(
-            item=episode_item,
-            related_season=season,
-            end_date=timezone.now(),
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            Episode.objects.create(
+                item=episode_item,
+                related_season=season,
+                end_date=timezone.now(),
+            )
 
         self.assertEqual(mock_enqueue.call_count, 3)
         mock_enqueue.assert_any_call([episode_item.id], countdown=3)

@@ -292,6 +292,7 @@ MEDIA_LIST_FILTER_PARAMS = [
             "date_added",
             "start_date",
             "end_date",
+            "last_watched",
             "next_episode_air_date",
             "time_left",
             "added",

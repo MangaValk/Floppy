@@ -16,7 +16,7 @@ from django.shortcuts import redirect, resolve_url
 from django.urls import reverse
 from django.utils import translation
 
-from app import request_timing
+from app import db_diagnostics, request_timing, stall_watchdog
 from app.db_retry import is_contention_error, is_lock_error, is_retryable_error
 from app.discover import tab_cache as discover_tab_cache
 from app.error_views import format_exception_traceback, render_error_page
@@ -180,7 +180,9 @@ class RequestPerformanceLoggingMiddleware:
             query_started = time.perf_counter()
             try:
                 with request_timing.boundary("db"):
-                    return execute(sql, params, many, context)
+                    return db_diagnostics.track_query(
+                        execute, sql, params, many, context
+                    )
             finally:
                 elapsed = time.perf_counter() - query_started
                 query_count["seconds"] += elapsed
@@ -191,10 +193,18 @@ class RequestPerformanceLoggingMiddleware:
             type(self)._inflight += 1
         start = time.perf_counter()
         cpu_start = time.thread_time()
+        stall_token = (
+            stall_watchdog.enter(request.method, request.path)
+            if settings.PERF_STALL_WARN_MS > 0
+            else None
+        )
+        stalled = False
         try:
             with connection.execute_wrapper(count_query):
                 response = self.get_response(request)
         finally:
+            if stall_token is not None:
+                stalled = stall_watchdog.leave(stall_token)
             request_timing.end(tally_token)
             with self._inflight_lock:
                 inflight = type(self)._inflight
@@ -230,7 +240,8 @@ class RequestPerformanceLoggingMiddleware:
             )
 
         if (
-            duration_ms >= settings.PERF_LOG_SLOW_REQUEST_MS
+            stalled
+            or duration_ms >= settings.PERF_LOG_SLOW_REQUEST_MS
             or query_count["total"] >= settings.PERF_LOG_QUERY_COUNT_THRESHOLD
         ):
             logger.info(
@@ -260,6 +271,10 @@ class DatabaseRetryMiddleware:
 
     def __call__(self, request):
         """Process the request with retry logic for database errors."""
+        with db_diagnostics.bind_request(request):
+            return self._run(request)
+
+    def _run(self, request):
         max_retries = 5
         # A lock error arrives only after SQLite's busy_timeout (30 s by
         # default) ran out, so each retry of the whole view can wait that
@@ -277,6 +292,8 @@ class DatabaseRetryMiddleware:
                 # Only retry retryable errors while under the retry cap.
                 if not (is_contention_error(error) or is_retryable_error(error)):
                     raise
+
+                db_diagnostics.report_database_error(error, operation="request")
 
                 if request.method != "GET":
                     logger.exception(
@@ -610,6 +627,7 @@ class DemoAccountGuardMiddleware:
             "rollback_import_run",
             "convert_anime_library",
             "convert_tv_library",
+            "repair_duplicate_anime_libraries",
         },
     )
 

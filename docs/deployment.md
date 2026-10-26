@@ -19,6 +19,7 @@ services:
     image: ghcr.io/dannyvfilms/floppy:latest
     container_name: floppy
     restart: unless-stopped
+    stop_grace_period: 150s
     depends_on:
       redis:
         condition: service_healthy
@@ -91,12 +92,26 @@ volume as the database and survive the container being recreated.
 
 If the container keeps crashing, that folder holds `floppy.log` (application
 log, with a memory line every 5 minutes and a note on the next start when the
-previous run did not shut down cleanly), `supervisord.log` (which process
-exited and how) and `faulthandler.log` (Python traceback after a segfault). It
-can be read from the host even while the container is down. Settings →
-Advanced → Download Sanitized Logs bundles all three and redacts known credential
+previous run did not shut down cleanly), `restart-history.log` (one line per
+start: whether the last run stopped cleanly, how long it was up and down,
+whether the container or version changed, and how long startup took),
+`supervisord.log` (which process exited and how) and `faulthandler.log`
+(Python traceback after a segfault). A run that "restarts daily" but always
+reads "stopped cleanly" was stopped from outside Floppy (a scheduler, backup
+job or updater), not crashed. It can be read from the host even while the
+container is down. Settings → Advanced → Download Sanitized Logs bundles all
+four and redacts known credential
 patterns. The download can still contain private activity or unrecognized secrets;
 review it before sharing.
+
+If the container is stopped from outside (`docker stop`, a restart, a NAS
+scheduled task), the next start logs `Previous run was stopped by SIGTERM`.
+Docker kills a container that is still shutting down after 10 seconds by
+default, but celery waits up to 60 seconds for a running task, so the compose
+files set `stop_grace_period: 150s` (`--stop-timeout 150` for `docker run`). A
+stop that is cut short is logged as an unclean shutdown that names the stop
+request. If you wrote your own compose file, add the setting to the `floppy`
+service.
 
 `BACKUP_DIR` defaults to `/floppy/backups` inside the container. The
 Settings → Export page shows this path, but it is a container path, not a
@@ -216,6 +231,7 @@ services:
     image: ghcr.io/dannyvfilms/floppy:latest
     container_name: floppy
     restart: unless-stopped
+    stop_grace_period: 150s
     depends_on:
       - db
       - redis
@@ -299,6 +315,7 @@ docker run -d \
   --name floppy \
   --network floppy-net \
   --restart unless-stopped \
+  --stop-timeout 150 \
   -e ALLOWED_HOSTS=floppy.yourdomain.com,your.lan.ip.address \
   -e DEBUG=False \
   -e DEMO_ACCOUNT_ENABLED=False \
@@ -391,6 +408,7 @@ The only universally required variable is `SECRET`. For Docker installs you shou
 - `STEAMGRIDDB_API_KEY` - optional [SteamGridDB](https://www.steamgriddb.com/profile/preferences/api) key. Adds logos and background art for PC, console, retro and non-Steam games on game pages. Supports `STEAMGRIDDB_API_KEY_FILE`; can also be set in Settings > Metadata
 - `THEGAMESDB_API_KEY` - optional [TheGamesDB](https://forums.thegamesdb.net/viewforum.php?f=10) key for clear logos and fanart. Supports `THEGAMESDB_API_KEY_FILE`; can also be set in Settings > Metadata
 - `SCREENSCRAPER_DEV_ID` / `SCREENSCRAPER_DEV_PASSWORD` / `SCREENSCRAPER_SOFTNAME` - [ScreenScraper](https://www.screenscraper.fr/) developer credentials, which ScreenScraper issues to an application rather than a person. With them set, retro games get ScreenScraper logos and fanart without any member account; without them ScreenScraper stays off. Read only from the environment or `_FILE` secrets (`SCREENSCRAPER_DEV_ID_FILE`, `SCREENSCRAPER_DEV_PASSWORD_FILE`), never shipped with Floppy. `SCREENSCRAPER_SSID` / `SCREENSCRAPER_SSPASSWORD` are an optional ScreenScraper login that raises personal limits; they can also be set in Settings > Metadata
+- `WETRAKR_CLIENT_ID` - optional [WeTrakr](https://api.wetrakr.com/) application key, for sending plays, statuses and ratings out to WeTrakr. Floppy ships no shared key: bring your own here, or each member can paste theirs in Settings > Metadata. Supports `WETRAKR_CLIENT_ID_FILE`; see [WeTrakr](integrations/wetrakr.md)
 - `LASTFM_API_KEY` - Last.fm integration and scrobble polling
 - `MUSICBRAINZ_URL` - custom MusicBrainz-compatible API root, including `/ws/2` (defaults to `https://musicbrainz.org/ws/2`)
 - `TRAKT_API` / `TRAKT_API_SECRET` - Trakt private-profile OAuth imports
@@ -604,6 +622,12 @@ See [docs/architecture/log-redaction.md](architecture/log-redaction.md).
 
 ## Upgrading container images
 
+For SQLite upgrades with pending migrations, the container takes a verified
+recovery snapshot [automatically at startup](architecture/sqlite-startup.md#pending-migrations-automatic-snapshot-at-startup)
+before migrating. Set `FLOPPY_SQLITE_AUTO_SNAPSHOT=false` to require
+[offline migration preparation](architecture/sqlite-startup.md#pending-migrations-explicit-offline-preparation)
+instead. Routine restarts with no pending migrations do not require this.
+
 **Before pulling or recreating a pickle-era deployment**, complete the
 [Celery drain procedure](security-hardening.md#celery-json-transition)
 using the old image and configuration. Ordinary pull/recreate commands do not
@@ -642,16 +666,23 @@ lists the upgrade notices to include with the next hardened release.
 
 ## SQLite startup recovery
 
+Normal restarts use a bounded schema/incident check, with no full-database
+warming or integrity scan. Pending migrations require an unchanged recovery
+snapshot verified offline against both structural and relational failures.
+See [SQLite startup and migration preparation](architecture/sqlite-startup.md)
+for the preparation command, background verifier and exact blocking conditions.
+
 This section covers a broken *relationship* between rows, which Floppy can
-often repair automatically. Physical corruption of the file itself is a
+often repair during explicit offline maintenance. Physical corruption of the file itself is a
 different failure: the startup log and recovery page say "Floppy cannot read
 the database file," and the fix is to restore a copy of the file, not repair
 rows. `sqlite-recovery/` below does not help there, because it is only ever
 written while repairing a relationship; use `BACKUP_DIR/database/` instead
 (see the SQLite data paths section above).
 
-Floppy checks SQLite storage and relationships before it runs migrations.
-If the check finds an album artist credit whose album or artist no longer
+Stop all database writers and use `python manage.py sqlite_startup --recover`
+in a one-off container with the same image and mounts. This invokes the
+existing backup-protected recovery policy. If that check finds an album artist credit whose album or artist no longer
 exists, Floppy creates a verified backup, removes only that invalid credit,
 and checks the database again.
 
@@ -671,8 +702,8 @@ choices:
 1. **Restore or repair:** stop Floppy, back up the database with its `-wal` and
    `-shm` files, then restore a known-good copy or repair the named rows.
 2. **Quarantine:** set
-   `FLOPPY_SQLITE_CONFLICT_ACTION=quarantine:<incident-token>` and recreate the
-   container. Floppy first writes and verifies a full backup under
+   `FLOPPY_SQLITE_CONFLICT_ACTION=quarantine:<incident-token>` for the offline
+   `sqlite_startup --recover` command. Floppy first writes and verifies a full backup under
    `sqlite-recovery/`, then removes the orphaned child rows and verifies all
    relationships again. Floppy refuses to quarantine a table that has no usable
    SQLite row ID or that carries any trigger; the log names the reason and those
@@ -791,24 +822,15 @@ directly.
 
 ### If the SQLite startup check times out
 
-The startup SQLite scan writes its progress to `<database>.integrity.status.json`
-beside the database as it runs, and the container log gets one heartbeat line
-roughly every 30 seconds while the scan is in progress. Each heartbeat reports
-the current phase, phase elapsed time, SQLite progress callbacks, callback rate,
-time since the last observed progress, and a state:
-
-- `active` means a progress callback was observed recently.
-- `quiet` means no callback was observed for more than 45 seconds. This can
-  indicate slow storage or a blocked operation; it does not prove corruption.
-- `none_yet` means the phase has not produced its first callback.
-
-A low but nonzero callback rate means the scan is advancing slowly. If the scan
-still exceeds its bound, the entrypoint stops it, records `status: timeout` in
-the sidecar along with this telemetry, and the recovery page (both the live
-page and the offline `floppy-recovery.html` copy) shows the same diagnosis
-instead of the generic "cannot read the report" page. A timeout does not mean
-the database is corrupt; it means the scan did not finish in time. Run
-`floppy_preflight` (above) for a completed answer.
+Admission stops after 30 seconds instead of running a multi-hour scan. Check
+the command's diagnosis and storage/lock state. A timeout alone is not a
+corruption finding and does not force a scan on the next ordinary restart.
+Full verification runs independently after startup or through explicit,
+bounded maintenance. Its phase/results live in `<database>.verification.json`;
+the container logs report deadline failures. The old recovery scanner's
+progress telemetry remains available when explicitly running `--recover`.
+See the [startup workflow](architecture/sqlite-startup.md) before retrying
+pending migrations or recovery.
 
 ### Verifying a published image actually has a fix
 

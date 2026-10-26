@@ -415,7 +415,7 @@ def game(media_id):
             "Non-numeric IDs cannot be looked up directly on IGDB."
         )
         raise ValueError(message)
-    cache_key = f"{Sources.IGDB.value}_{MediaTypes.GAME.value}_v2_{media_id}"
+    cache_key = f"{Sources.IGDB.value}_{MediaTypes.GAME.value}_v3_{media_id}"
     data = cache.get(cache_key)
     if data is None:
         access_token = get_access_token()
@@ -425,6 +425,8 @@ def game(media_id):
             "url,summary,game_type,first_release_date,"
             "rating,rating_count,aggregated_rating,aggregated_rating_count,"
             "genres.name,themes.name,platforms.name,"
+            "franchise.id,franchise.name,franchises.id,franchises.name,"
+            "collections.id,collections.name,"
             "involved_companies.company.id,involved_companies.company.name,"
             "involved_companies.company.logo.image_id,"
             "parent_game.name,parent_game.cover.image_id,"
@@ -488,6 +490,18 @@ def game(media_id):
             "score_count": response.get("aggregated_rating_count"),
             "igdb_user_rating": get_user_rating(response),
             "igdb_user_rating_count": response.get("rating_count"),
+            "provider_franchise_id": get_group_field(
+                response, "franchise", "franchises"
+            )[0],
+            "provider_franchise_name": get_group_field(
+                response, "franchise", "franchises"
+            )[1],
+            "provider_collection_id": get_group_field(
+                response, "collections"
+            )[0],
+            "provider_collection_name": get_group_field(
+                response, "collections"
+            )[1],
             "details": {
                 "format": get_game_type(response["game_type"]),
                 "release_date": get_start_date(response),
@@ -781,6 +795,28 @@ def get_start_date(response):
         ).strftime("%Y-%m-%d")
     except KeyError:
         return None
+
+
+def get_group_field(response, *fields):
+    """Return the first group reference as ``(id, name)``.
+
+    IGDB returns an expanded relation as a dict, but some responses only carry
+    the numeric id. Empty pairs keep the Item columns stable when IGDB has no
+    grouping data.
+    """
+    fallback_id = ""
+    for field in fields:
+        value = response.get(field)
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if isinstance(value, dict):
+            name = str(value.get("name") or "").strip()
+            group_id = str(value.get("id") or "").strip()
+            if name or group_id:
+                return group_id, name
+        elif value not in (None, "") and not fallback_id:
+            fallback_id = str(value).strip()
+    return fallback_id, ""
 
 
 def get_list(response, field):

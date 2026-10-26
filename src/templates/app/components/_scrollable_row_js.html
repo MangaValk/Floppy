@@ -190,6 +190,13 @@
     });
   }
 
+  function syncEmptyHomeGroups() {
+    document.querySelectorAll('[data-home-deferred-group]').forEach(group => {
+      const hasContent = group.querySelector('[data-home-row-slot], [data-home-row-wrapper], [data-home-row-failed]');
+      group.toggleAttribute('hidden', !hasContent);
+    });
+  }
+
   function formatPlaybackClock(totalSeconds) {
     const clamped = Math.max(0, Math.floor(totalSeconds || 0));
     const hours = Math.floor(clamped / 3600);
@@ -280,6 +287,25 @@
   if (!window.__floppyHomeRowEventsBound) {
   window.__floppyHomeRowEventsBound = true;
 
+  function retryDeferredHomeRow(event) {
+    const slot = event.detail.elt;
+    if (!slot || !slot.matches('[data-home-row-slot]')) return;
+    const retries = Number.parseInt(slot.dataset.retries || '0', 10);
+    if (retries >= 2) {
+      slot.classList.remove('animate-pulse');
+      slot.removeAttribute('aria-busy');
+      slot.textContent = slot.dataset.homeRowErrorLabel || 'Unable to load this row.';
+      // Stop counting a failed row as pending so the artwork poller can settle.
+      slot.removeAttribute('data-home-row-slot');
+      slot.setAttribute('data-home-row-failed', '');
+      return;
+    }
+    slot.dataset.retries = String(retries + 1);
+    setTimeout(() => htmx.trigger(slot, 'load'), 2000 * (retries + 1));
+  }
+  document.body.addEventListener('htmx:responseError', retryDeferredHomeRow);
+  document.body.addEventListener('htmx:sendError', retryDeferredHomeRow);
+
   document.body.addEventListener('htmx:beforeRequest', function(event) {
     const row = event.detail.elt;
     if (row && row.id === 'active-playback-container') {
@@ -326,6 +352,7 @@
   });
 
   document.body.addEventListener('htmx:afterSwap', function(event) {
+    syncEmptyHomeGroups();
     const row = event.detail.target;
     if (row && row.matches('[data-home-row="true"]')) {
       const isFullReload = row.dataset.fullReload === 'true';
@@ -362,6 +389,7 @@
       });
     }
     setTimeout(() => {
+      syncEmptyHomeGroups();
       loadVisibleReleaseYears();
       initHomeRowInfiniteScroll();
       initActivePlaybackTicker();

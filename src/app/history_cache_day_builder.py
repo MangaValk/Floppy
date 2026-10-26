@@ -32,12 +32,15 @@ from app.history_entry_builders import (
     _build_episode_entry,
     _build_movie_entry,
     _build_video_play_entry,
+    _entry_dates,
     _format_boardgame_plays,
     _format_game_hours,
     _get_music_runtime_minutes,
     _serialize_album,
     _serialize_item,
     _serialize_show,
+    flat_anime_episode_entries,
+    flat_anime_episode_watches,
 )
 from app.models import (
     Album,
@@ -77,6 +80,111 @@ def _span_may_touch_day(queryset, day_start, day_end):
         .alias(span_lo=Least(first, last), span_hi=Greatest(first, last))
         .filter(span_lo__lt=day_end + margin, span_hi__gte=day_start - margin)
     )
+
+
+def history_media_types_by_day(user, day_keys, logging_style):
+    """Map each day key to the media types whose rows can reach that day.
+
+    One date-only range query per media family replaces probing every family
+    for every missing day. Each family's set is a superset of what
+    ``build_history_day`` would find (the window is widened a day each side and
+    games/boardgames mark their whole span), so passing it as ``media_types``
+    only skips queries that would have returned nothing. Flat anime is always
+    included: its episode dates come from the change log.
+    """
+    days = {}
+    for key in day_keys:
+        day_date = _date_from_day_key(key)
+        if day_date:
+            days[day_date] = key
+    if not days:
+        return {}
+    tz = timezone.get_current_timezone()
+    margin = timedelta(days=1)
+    first, last = min(days), max(days)
+    win_start = (
+        timezone.make_aware(datetime.combine(first, datetime.min.time()), tz) - margin
+    )
+    win_end = (
+        timezone.make_aware(datetime.combine(last, datetime.min.time()), tz)
+        + margin
+        + margin
+    )
+    touched = {key: {MediaTypes.ANIME.value} for key in days.values()}
+
+    def mark(media_type, *values):
+        for value in values:
+            local = _localize_datetime(value)
+            key = local and days.get(local.date())
+            if key:
+                touched[key].add(media_type)
+
+    def mark_span(media_type, start, end):
+        if not start or not end:
+            return
+        lo, hi = sorted((_localize_datetime(start).date(), _localize_datetime(end).date()))
+        for day_date, key in days.items():
+            if lo <= day_date <= hi:
+                touched[key].add(media_type)
+
+    point = (
+        models.Q(end_date__gte=win_start, end_date__lt=win_end)
+        | models.Q(start_date__gte=win_start, start_date__lt=win_end)
+    )
+    for row in Episode.all_objects.filter(related_season__user=user).filter(
+        point
+    ).values_list("end_date", "start_date"):
+        mark(MediaTypes.EPISODE.value, *row)
+    for media_type, model in (
+        (MediaTypes.MOVIE.value, Movie),
+        (MediaTypes.BOOK.value, Book),
+        (MediaTypes.COMIC.value, Comic),
+        (MediaTypes.MANGA.value, Manga),
+    ):
+        for row in model.objects.filter(user=user).filter(point).values_list(
+            "end_date", "start_date"
+        ):
+            mark(media_type, *row)
+    for row in _music_history_dates(user, win_start, win_end):
+        mark(MediaTypes.MUSIC.value, row)
+    HistoricalPodcast = apps.get_model("app", "HistoricalPodcast")
+    for row in HistoricalPodcast.objects.filter(
+        models.Q(history_user=user) | models.Q(history_user__isnull=True),
+        end_date__gte=win_start,
+        end_date__lt=win_end,
+    ).values_list("end_date", flat=True):
+        mark(MediaTypes.PODCAST.value, row)
+    for row in VideoPlay.objects.filter(
+        video__user=user, end_date__gte=win_start, end_date__lt=win_end
+    ).values_list("end_date", flat=True):
+        mark(MediaTypes.VIDEO.value, row)
+    first_dt = Coalesce("start_date", "end_date", "created_at")
+    last_dt = Coalesce("end_date", "start_date", "created_at")
+    for media_type, model in (
+        (MediaTypes.GAME.value, Game),
+        (MediaTypes.BOARDGAME.value, BoardGame),
+    ):
+        rows = (
+            model.objects.filter(user=user)
+            .alias(span_lo=Least(first_dt, last_dt), span_hi=Greatest(first_dt, last_dt))
+            .filter(span_lo__lt=win_end, span_hi__gte=win_start)
+            .values_list("start_date", "end_date", "created_at")
+        )
+        for start, end, created in rows:
+            if logging_style == "sessions":
+                mark(media_type, start, end, created)
+            else:
+                mark_span(media_type, start or end or created, end or start or created)
+    return {key: touched[key] for key in days.values()}
+
+
+def _music_history_dates(user, win_start, win_end):
+    HistoricalMusic = apps.get_model("app", "HistoricalMusic")
+    return HistoricalMusic.objects.filter(
+        _music_history_user_q(user),
+        end_date__gte=win_start,
+        end_date__lt=win_end,
+    ).values_list("end_date", flat=True)
 
 
 def build_history_day(user, day_key, logging_style_override=None, media_types=None):
@@ -263,25 +371,48 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
             and media_type_value not in requested_media_types
         ):
             continue
-        records = (
-            model.objects.filter(user=user)
-            .filter(
-                models.Q(end_date__gte=day_start, end_date__lt=day_end)
-                | (
-                    models.Q(end_date__isnull=True)
-                    & models.Q(start_date__gte=day_start, start_date__lt=day_end)
-                ),
+        record_on_day = models.Q(end_date__gte=day_start, end_date__lt=day_end) | (
+            models.Q(end_date__isnull=True)
+            & models.Q(start_date__gte=day_start, start_date__lt=day_end)
+        )
+        day_filter = record_on_day
+        if model is Anime:
+            # A flat anime's episodes are dated by its change log, so an entry
+            # can have episodes on a day its own dates are not on.
+            day_filter |= models.Q(
+                id__in=apps.get_model("app", "HistoricalAnime")
+                .objects.filter(
+                    models.Q(history_date__gte=day_start, history_date__lt=day_end)
+                    | models.Q(end_date__gte=day_start, end_date__lt=day_end),
+                )
+                .values("id"),
             )
+        records = list(
+            model.objects.filter(user=user)
+            .filter(day_filter)
             .select_related("item")
             .defer(*history_deferred_item_fields("item"))
         )
-        for record in records.iterator(chunk_size=500):
+        episode_watches = (
+            flat_anime_episode_watches(records) if model is Anime else {}
+        )
+        for record in records:
             item = getattr(record, "item", None)
             if not item:
                 continue
-            played_at_local = _localize_datetime(record.end_date or record.start_date)
-            if not played_at_local:
+            watches = [
+                (number, watched_at)
+                for number, watched_at in episode_watches.get(record.id, [])
+                if day_start <= watched_at < day_end
+            ]
+            record_date = record.end_date or record.start_date
+            if not watches and not (
+                record.id not in episode_watches
+                and record_date
+                and day_start <= record_date < day_end
+            ):
                 continue
+            played_at_local = _localize_datetime(record_date)
             entry = {
                 "media_type": media_type_value,
                 "item": _serialize_item(item),
@@ -292,6 +423,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": played_at_local,
+                **_entry_dates(record),
                 "runtime_minutes": 0,
                 "runtime_display": None,
                 "instance_id": record.id,
@@ -301,7 +433,16 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
             genres = _resolve_genres(item)
             if genres:
                 entry["genres"] = genres
-            entries.append(entry)
+            if watches:
+                entries.extend(
+                    flat_anime_episode_entries(
+                        entry,
+                        watches,
+                        episode_watches[record.id][-1][0],
+                    ),
+                )
+            else:
+                entries.append(entry)
 
     # Music (HistoricalMusic for the day)
     music_history = []
@@ -457,6 +598,8 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": latest_time,
+                **_entry_dates(entry_music),
+                "end_date": latest_time,
                 "runtime_minutes": group["total_runtime_minutes"],
                 "runtime_display": helpers.minutes_to_hhmm(
                     group["total_runtime_minutes"]
@@ -481,7 +624,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 end_date__gte=day_start,
                 end_date__lt=day_end,
             )
-            .values_list("id", "end_date", "history_id", named=True)
+            .values_list("id", "start_date", "end_date", "history_id", named=True)
             .iterator(chunk_size=500)
         )
     if podcast_history_records:
@@ -566,6 +709,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                     "episode_label": None,
                     "episode_code": None,
                     "played_at_local": played_at_local,
+                    **_entry_dates(history_record, added_from=podcast),
                     "runtime_minutes": runtime_minutes,
                     "runtime_display": helpers.minutes_to_hhmm(runtime_minutes)
                     if runtime_minutes
@@ -628,6 +772,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": played_at_local,
+                **_entry_dates(game),
                 "runtime_minutes": runtime_minutes,
                 "runtime_display": helpers.minutes_to_hhmm(runtime_minutes)
                 if runtime_minutes
@@ -695,6 +840,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": played_at_local,
+                **_entry_dates(boardgame),
                 "runtime_minutes": 0,
                 "runtime_display": progress_display,
                 "instance_id": boardgame.id,
@@ -753,6 +899,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": day_dt,
+                **_entry_dates(game),
                 "runtime_minutes": minutes_for_day,
                 "runtime_display": helpers.minutes_to_hhmm(minutes_for_day)
                 if minutes_for_day
@@ -817,6 +964,7 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 "episode_label": None,
                 "episode_code": None,
                 "played_at_local": day_dt,
+                **_entry_dates(boardgame),
                 "runtime_minutes": 0,
                 "runtime_display": _format_boardgame_plays(plays_for_day)
                 if plays_for_day

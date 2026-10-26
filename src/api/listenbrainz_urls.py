@@ -16,4 +16,9 @@ urlpatterns = [
         listenbrainz_views.ValidateTokenView.as_view(),
         name="listenbrainz_validate_token",
     ),
+    re_path(
+        r"^user/(?P<username>[^/]+)/listens/?$",
+        listenbrainz_views.UserListensView.as_view(),
+        name="listenbrainz_user_listens",
+    ),
 ]

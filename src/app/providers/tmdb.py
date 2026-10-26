@@ -1008,6 +1008,11 @@ def fetch_and_cache_seasons(media_id, season_numbers, tv_data, language=None, *,
             handle_error(error)
 
         if is_first_batch:
+            # tv() records the backdrop it already fetched; do the same here so
+            # a season/episode page doesn't pay a second /tv request for it.
+            backdrops.remember_tmdb_backdrop(
+                MediaTypes.TV.value, media_id, response.get("backdrop_path")
+            )
             # Always refresh the root TV payload from the same TMDB response
             # so season fetches can pick up updated external_ids (including
             # tvdb_id) even when the show cache already existed before this
@@ -2385,7 +2390,7 @@ def item_watch_provider_names(item, region):
     return sorted({p["provider_name"] for p in providers if p.get("provider_name")})
 
 
-def process_episodes(season_metadata, episodes_in_db, season=None, *, include_artwork=True):
+def process_episodes(season_metadata, episodes_in_db, season=None):
     """Process the episodes for the selected season."""
     episodes_metadata = []
     episode_backdrop = None
@@ -2399,7 +2404,7 @@ def process_episodes(season_metadata, episodes_in_db, season=None, *, include_ar
             tracked_episodes[episode_number] = []
         tracked_episodes[episode_number].append(ep)
 
-    if include_artwork and season_metadata.get("media_id"):
+    if season_metadata.get("media_id"):
         episode_backdrop = helpers.get_tmdb_backdrop_image(
             MediaTypes.TV.value,
             season_metadata["media_id"],
@@ -2409,7 +2414,7 @@ def process_episodes(season_metadata, episodes_in_db, season=None, *, include_ar
             season_metadata.get("season_number"),
             tmdb_media_id=season_metadata.get("media_id"),
         )
-    elif include_artwork and season_metadata.get("tvdb_id"):
+    elif season_metadata.get("tvdb_id"):
         tvdb_episode_images = get_tvdb_episode_image_map(
             season_metadata.get("tvdb_id"),
             season_metadata.get("season_number"),
@@ -2454,14 +2459,12 @@ def process_episodes(season_metadata, episodes_in_db, season=None, *, include_ar
                 # If parsing fails, keep the original value
                 pass
 
-        image, image_source = None, None
-        if include_artwork:
-            image, image_source = helpers.resolve_image_with_fallback(
-                get_image_url(episode["still_path"]) if episode.get("still_path") else None,
-                tvdb_episode_images.get(str(episode_number)),
-                helpers.first_real_image(episode.get("image"), default=None),
-                episode_backdrop,
-            )
+        image, image_source = helpers.resolve_image_with_fallback(
+            get_image_url(episode["still_path"]) if episode.get("still_path") else None,
+            tvdb_episode_images.get(str(episode_number)),
+            helpers.first_real_image(episode.get("image"), default=None),
+            episode_backdrop,
+        )
 
         episodes_metadata.append(
             {
@@ -2600,6 +2603,7 @@ def episode(media_id, season_number, episode_number, language=None):
             "season_title": season_metadata.get("season_title")
             or f"Season {season_number}",
             "episode_title": response.get("name") or f"Episode {episode_number}",
+            "synopsis": get_synopsis(response.get("overview")),
             "score": round(vote_average, 1) if vote_average else None,
             "score_count": vote_count or None,
             "cast": get_cast_credits({"cast": cast_rows}),

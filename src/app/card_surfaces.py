@@ -19,8 +19,10 @@ class CardSurface:
     show_next_event_chip: bool = False
     show_next_event_subtitle: bool = False
     show_episode_identity: bool = False
+    show_episode_queue: bool = False
     hover_action_mode: str = "standard"
     is_recommend_mode: bool = False
+    rating_read_only: bool = False
     secondary_color: bool = False
 
 
@@ -32,6 +34,8 @@ SURFACES = {
     "list_recommendations": CardSurface(),
     # Upcoming shelves lead with the next release instead of the status.
     "home": CardSurface(show_next_event_chip=True, show_next_event_subtitle=True),
+    # Queue identity and backlog/countdown are essential without hover, including touch.
+    "up_next": CardSurface(show_episode_queue=True),
     # A list can hold single episodes; S01E02 says which one.
     "list": CardSurface(show_episode_identity=True),
     # A tile on a tier board: the board owns clicks and drags, so no hover
@@ -44,6 +48,14 @@ SURFACES = {
     # A person's or studio's titles: the shared card plus what that person did
     # on each one (role line, watched runtime).
     "credit": CardSurface(),
+    # A game franchise/series tile: the poster and subtitle come from the group,
+    # not one tracked game, so there is no status chip or hover action.
+    "group": CardSurface(
+        show_status_chip=False,
+        show_release_year_placeholder=False,
+        hover_action_mode="none",
+        rating_read_only=True,
+    ),
     # Provider results are not saved items, so there is no release year to load.
     "search": CardSurface(show_release_year_placeholder=False),
     # Picking an item inside a modal: a click previews it, no hover actions.
@@ -143,6 +155,7 @@ def card_context(page_context, surface, values):
 def _card_render_context(rendered_context):
     """Attach the subtitle profile for this card."""
     from users.card_metadata import (
+        DISPLAY_ALWAYS,
         DISPLAY_HOVER,
         card_lines,
         progress_bar_display,
@@ -165,6 +178,8 @@ def _card_render_context(rendered_context):
     # Per-line dormant classes own visibility once the line renderer is on.
     # A card-level always class would reveal the hover lines too.
     display = DISPLAY_HOVER if use_lines else subtitle_display(user, media_type)
+    if rendered_context.get("show_episode_queue"):
+        display = DISPLAY_ALWAYS
     profile = resolve_profile(user, media_type)
     return {
         "card_display": display,

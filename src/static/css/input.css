@@ -76,6 +76,65 @@
   }
 }
 
+/* Only Safari's measured side rail gets document overflow. The app shell keeps
+   its viewport width; this column has no content or touch targets. */
+html[data-safari-rail] {
+  overflow-x: hidden;
+}
+
+html[data-safari-rail]:not([data-safari-rail-zoomed]),
+html[data-safari-rail]:not([data-safari-rail-zoomed]) body {
+  touch-action: pan-y pinch-zoom;
+}
+
+#safari-rail {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  overflow: clip;
+  pointer-events: none;
+}
+
+#safari-rail > .safari-rail__header {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  z-index: 50;
+  /* A sticky/fixed copy is excluded from Safari's rail paint. Move ordinary
+     document paint with the root scroll timeline to follow the real header. */
+  animation: safari-rail-header linear both;
+  animation-timeline: scroll(root block);
+}
+
+/* Safari samples a fixed black scrim as an opaque rail tint. Paint the same
+   clickable scrim in document space instead, spanning both page and rail. */
+html[data-safari-rail] .app-menu-overlay {
+  position: absolute;
+  right: calc(-1 * var(--safari-rail-width));
+  bottom: auto;
+  height: var(--safari-rail-height);
+}
+
+html[data-safari-rail] .detail-mobile-hero {
+  overflow: visible;
+}
+
+html[data-safari-rail] .detail-mobile-hero__backdrop {
+  /* Grow symmetrically so artwork stays centred on the original safe area.
+     The left excess is off-screen; only the right side fills the rail. */
+  left: calc(-1 * var(--safari-rail-width));
+  right: calc(-1 * var(--safari-rail-width));
+  /* The blur's scale also scales its mask past the clipping edge. Fade the
+     unscaled wrapper to zero there so no horizontal seam remains. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 4rem), transparent);
+}
+
+@keyframes safari-rail-header {
+  to {
+    transform: translateY(var(--rail-scroll));
+  }
+}
+
 :root {
   /* Screen edges the camera or system UI covers; 0 on screens without them. */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -1669,6 +1728,10 @@ html.light .theme-toggle-icon-moon {
     padding-top: 3.25rem;
   }
 
+  .detail-carousel-grid.detail-hero-pending .detail-carousel-grid__title {
+    padding-top: 3.25rem;
+  }
+
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title h1 {
     position: absolute;
     width: 1px;
@@ -1744,6 +1807,12 @@ html.light .theme-toggle-icon-moon {
     position: absolute;
   }
 
+  .detail-mobile-hero__backdrop {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
   .detail-mobile-hero__blur {
     top: 0;
     left: 0;
@@ -1810,6 +1879,10 @@ html.light .theme-toggle-icon-moon {
   }
 
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title {
+    padding-top: 6.75rem;
+  }
+
+  .detail-carousel-grid.detail-hero-pending .detail-carousel-grid__title {
     padding-top: 6.75rem;
   }
 
@@ -2323,6 +2396,25 @@ html.light .theme-toggle-icon-moon {
 
   .detail-carousel-grid__header {
     margin-top: 0;
+  }
+
+  /* Deferred galleries reserve their final rows before HTMX responds. The
+     hidden preview and strip keep the initial grid from switching after the
+     poster and metadata have already painted. */
+  .detail-carousel-pending {
+    visibility: hidden;
+  }
+
+  .detail-carousel-grid.detail-hero-pending #detail-carousel-logo-slot {
+    display: flex;
+    align-items: flex-end;
+    min-height: 7rem;
+  }
+
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) #detail-carousel-logo-slot:has(.detail-carousel-overview-logo) {
+    display: flex;
+    align-items: flex-end;
+    min-height: 7rem;
   }
 
   /* Carousel confirmed non-empty: expand to the carousel's own two-row
@@ -2972,18 +3064,52 @@ html.light .theme-toggle-icon-moon {
   color: var(--color-text);
 }
 
+.detail-progress-card__sub {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
 .detail-progress-card__bar {
+  position: relative;
   height: 0.5rem;
-  overflow: hidden;
   border-radius: 9999px;
   background: var(--color-surface-muted);
 }
 
-.detail-progress-card__bar > span {
+.detail-progress-card__bar > span:not(.progress-glow) {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: #10b981;
+}
+
+/* An open rewatch pass: a bright glowing line drawn over the watched-once bar. */
+.progress-glow {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 9999px;
+  background: #a7f3d0;
+  box-shadow: 0 0 6px 1px rgb(110 231 183 / 85%), 0 0 14px 3px rgb(16 185 129 / 55%);
+  animation: progress-glow 2.4s ease-in-out infinite;
+}
+
+/* The same glow on an episode already watched again in the open pass. */
+.progress-glow-chip {
+  box-shadow: 0 0 6px 1px rgb(110 231 183 / 70%);
+}
+
+@keyframes progress-glow {
+  50% {
+    box-shadow: 0 0 9px 2px rgb(110 231 183 / 100%), 0 0 20px 5px rgb(16 185 129 / 70%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-glow {
+    animation: none;
+  }
 }
 
 .detail-progress-card__value {
@@ -4123,8 +4249,10 @@ html.light .theme-toggle-icon-moon {
 
 /* Keep phone cards the same size when rotating or unfolding: extra width
    reveals more cards. Only screens too narrow for the preferred column count
-   reduce the size. Touch tablets share these widths in either orientation. */
-@media (max-width: 768px), (pointer: coarse) and (max-width: 1600px) and (max-height: 1100px), (hover: none) and (max-width: 1600px) and (max-height: 1100px) {
+   reduce the size. Tablets keep the desktop card size: their extra room goes
+   to more cards, not smaller ones, and phone-sized cards leave the progress
+   controls wider than the card. */
+@media (max-width: 600px), (orientation: landscape) and (pointer: coarse) and (max-width: 1000px) and (max-height: 720px), (orientation: landscape) and (hover: none) and (max-width: 1000px) and (max-height: 720px) {
   body {
     --card-cols: 3;
     --card-cap: 6.75rem;

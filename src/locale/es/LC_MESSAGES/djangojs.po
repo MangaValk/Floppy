@@ -1371,6 +1371,18 @@ msgstr "Estrenado"
 msgid "Not Released"
 msgstr "No estrenado"
 
+#: static/js/libraryFilterState.js
+msgid "Item"
+msgstr "Elemento"
+
+#: static/js/libraryFilterState.js
+msgid "Collection/Series"
+msgstr "Colección/Serie"
+
+#: static/js/libraryFilterState.js
+msgid "Franchise"
+msgstr "Franquicia"
+
 #: static/js/libraryFilterState.js:150
 msgid "All Types"
 msgstr "Todos los tipos"
@@ -1736,6 +1748,7 @@ msgstr "de títulos"
 
 #~ msgid "On hover"
 #~ msgstr "Al pasar el cursor"
+
 
 #: templates/users/home_screen.html
 msgid "Up Next"

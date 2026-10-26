@@ -309,6 +309,7 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
 - `docs/architecture/log-redaction.md`: the log boundary contract — where credentials are removed, what the rules match, and what they do not cover.
 - `docs/architecture/theming.md`: the theme resolution contract and the six theme states any colour change must hold.
 - `docs/architecture/webhook-write-rules.md`: when a media-server webhook may write tracking rows — the shared policy table every integration is listed in, its exceptions, and the test that catches a missing row.
+- `docs/architecture/webhook-delivery.md`: the sync/async boundary, expected webhook queue latency, the structured `event_id`/`queue_delay_ms`/`outcome` log contract, time limits, and the ordering guard that stops a late play erasing a scrobble (#1708).
 - `docs/architecture/connection-health.md`: when an integration account may be marked `connection_broken` (rejected credentials only), how scheduled work re-probes it, and the test that catches a direct write.
 - `docs/architecture/api-scopes.md`: the integration-token scope contract — the vocabulary, the enforced view map, and what adding an endpoint requires.
 - `docs/architecture/outbound-fetch.md`: the outbound boundary for user-configured URLs — the SSRF controls, the residual DNS-rebinding gap, and why artwork uses a different path.
@@ -319,6 +320,7 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
 - `docs/architecture/history-memory.md`: what a History request costs a web worker — the item columns history must not load, which paths are bounded by the response and which are still bounded by the history.
 - `docs/integrations/nuvio-client-guide.md`: what a third-party tracking client implements, with `api.tests.test_nuvio_conformance` as its runnable half.
 - `docs/integrations/flexget.md`: how a download tool (FlexGet's `floppy_list`, or `curl`) reads lists and reports owned media by provider id, with `api.tests.test_fork_media_collection` as its runnable half.
+- `docs/integrations/wetrakr.md`: sending plays, statuses and ratings out to WeTrakr — what is verified, what is only transcribed from its docs, and how to check it against a real account.
 - `docs/integrations/recommendations-api.md`: the recommendations endpoint for media-server plugins, with `api.tests.test_fork_discover.RecommendationsTests` as its runnable half.
 
 
@@ -337,6 +339,7 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
   PYTHONPATH=src uv run --no-sync celery -A config worker --queues celery --beat --scheduler django --hostname celery@%h --loglevel DEBUG
   ```
   The interactive worker must be dedicated — **never add `celery` to its `--queues`** or long-running background tasks (Reload calendar, imports) will block user-triggered refreshes.
+  **Queue rule:** `interactive` is only for work a page needs *before it can load* (webhook handling, live playback artwork, Statistics sync the viewer is waiting on). Anything the page does not wait on — feed/RSS refreshes, backfills, follow-ups after a render — goes on the default `celery` queue, with no `queue` route in `CELERY_TASK_ROUTES`.
 - Run Tailwind: `cd src && tailwindcss -i ./static/css/input.css -o ./static/css/main.css --watch`
 - For local setup, see `README.md` for the required `.env` values and Redis startup details.
 

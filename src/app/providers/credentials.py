@@ -340,6 +340,15 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
             ),
         ),
         ProviderCredentialSpec(
+            slug="wetrakr",
+            group=GROUP_ACCOUNTS,
+            user_scope=True,
+            label="WeTrakr",
+            description="Sending your plays, statuses and ratings to WeTrakr.",
+            docs_url="https://api.wetrakr.com/",
+            fields=(CredentialField("client_id", "App key", "WETRAKR_CLIENT_ID"),),
+        ),
+        ProviderCredentialSpec(
             slug="igdb",
             user_scope=True,
             label="IGDB",
@@ -455,7 +464,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
             group=GROUP_ACCOUNTS,
             user_scope=True,
             label="SIMKL",
-            description="SIMKL account import.",
+            description="SIMKL account import. Needs a “Server apps & services” app's Client ID and secret.",
             docs_url="https://simkl.com/settings/developer/",
             fields=(
                 CredentialField("client_id", "Client ID", "SIMKL_ID"),

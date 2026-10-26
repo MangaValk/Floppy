@@ -10,7 +10,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core.cache import cache
-from django.test import TestCase, override_settings, tag
+from django.db import connection
+from django.test import TestCase, TransactionTestCase, override_settings, tag
 from django.urls import reverse
 from django.utils import timezone
 from django_celery_beat.models import PeriodicTask
@@ -4410,3 +4411,30 @@ class PlexImportMALPush(TestCase):
             {"media_type": "tv", "media_id": self.show.pk},
         )
         delay.assert_called_once_with(media_type="anime", media_id=7)
+
+
+class MALTokenRefreshTransactionScope(TransactionTestCase):
+    """A slow token POST must not hold SQLite's single write lock."""
+
+    def test_refresh_request_runs_outside_the_write_transaction(self):
+        cache.clear()
+        user = _make_user("mal_refresh_scope")
+        account = make_mal_account(user, expired=True)
+        observed = {}
+
+        def fake_refresh(current):
+            observed["in_atomic"] = connection.in_atomic_block
+            return {
+                "access_token": "refreshed-access",
+                "refresh_token": "refreshed-refresh",
+                "expires_in": 3600,
+            }
+
+        with patch.object(mal_sync, "_refresh_tokens", side_effect=fake_refresh):
+            token = mal_sync.get_valid_access_token(account)
+
+        self.assertFalse(
+            observed["in_atomic"],
+            "the MAL token request ran inside the database write transaction",
+        )
+        self.assertEqual(token, "refreshed-access")

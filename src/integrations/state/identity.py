@@ -152,6 +152,9 @@ def deactivate_binding(binding):
 def _sync_emit_changes_flag(user):
     """Turn the user's local change log on while any binding is operational.
 
+    A binding needs it when it sends watched flags or plays; ratings and
+    statuses are queued from their own save signals.
+
     The log exists to be delivered somewhere. A user with nothing connected
     should not accumulate one, and turning it off again when the last binding
     goes means an abandoned connection stops costing a write per save.
@@ -159,7 +162,7 @@ def _sync_emit_changes_flag(user):
     should_emit = any(
         binding.is_operational()
         and any(
-            capability.startswith("watched.")
+            capability.startswith(("watched.", "play."))
             for capability in binding.approved_capabilities
         )
         for binding in SyncBinding.objects.filter(user=user)

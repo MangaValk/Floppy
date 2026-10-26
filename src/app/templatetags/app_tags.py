@@ -13,6 +13,7 @@ from django.utils.html import format_html
 from django.utils.translation import (
     get_language,
     get_language_info,
+    ngettext,
     npgettext,
     pgettext,
 )
@@ -349,6 +350,30 @@ def image_url(value):
 
 
 @register.filter
+def home_row_subtitle(entry):
+    """Localize the episode queue when rendering, after the Home row cache."""
+    target = getattr(entry, "next_episode", None)
+    if not target:
+        return entry.get("subtitle_override") if isinstance(entry, dict) else entry.subtitle_override
+    if target["released"]:
+        state = f"{entry.media.episodes_left} {_('Behind')}"
+    elif target.get("days_until") == 0:
+        state = _("Today")
+    elif target.get("days_until") is not None:
+        days = target["days_until"]
+        state = f"{days} {ngettext('day', 'days', days)}"
+    else:
+        state = _("Upcoming")
+    episode = ""
+    if target.get("season_number") is not None:
+        episode = f"S{target['season_number']:02d}E{target['episode_number']:02d}"
+        title = target.get("title")
+        if title and title != entry.item.title:
+            episode = f"{episode} {title}"
+    return f"{episode} · {state}" if episode else state
+
+
+@register.filter
 def user_tag_names(item_tags, user):
     """Return tag names from a prefetched ItemTag queryset, scoped to one user."""
     if not item_tags or user is None:
@@ -453,6 +478,12 @@ def slug(arg1):
         cleaned = cleaned.replace(".", "2e")
 
     return cleaned
+
+
+@register.filter
+def minutes_hhmm(total_minutes):
+    """Format minutes as "1h 05min", or "45min" under an hour."""
+    return helpers.minutes_to_hhmm(total_minutes or 0)
 
 
 @register.filter
@@ -1367,7 +1398,7 @@ def _untracked_season_next_episode_url(item, seasons, actual_media_type):
     season without a Season row. Untracked seasons are only visible through
     their calendar events (same source as _next_episode_air_date_value).
     """
-    from events.models import Event
+    from events.models import Event, released_q
 
     is_dict = isinstance(item, dict)
     media_id = item["media_id"] if is_dict else getattr(item, "media_id", None)
@@ -1390,7 +1421,7 @@ def _untracked_season_next_episode_url(item, seasons, actual_media_type):
         )
         .exclude(item__season_number__in=tracked_season_numbers)
         .exclude(datetime__year__lt=1900)
-        .filter(datetime__lte=timezone.now())
+        .filter(released_q("datetime", timezone.now()))
         .order_by("item__season_number", "content_number")
         .select_related("item")
         .first()
@@ -1428,7 +1459,7 @@ def _next_episode_number_for_season_item(item, media):
     if not media_id or not source or season_number is None:
         return None
 
-    from events.models import Event
+    from events.models import Event, released_q
 
     event_numbers = (
         Event.objects.filter(
@@ -1437,9 +1468,9 @@ def _next_episode_number_for_season_item(item, media):
             item__media_type=MediaTypes.SEASON.value,
             item__season_number=season_number,
             content_number__isnull=False,
-            datetime__lte=timezone.now(),
         )
         .exclude(datetime__year__lt=1900)
+        .filter(released_q("datetime", timezone.now()))
         .values_list("content_number", flat=True)
     )
     episode_numbers = sorted({int(number) for number in event_numbers})

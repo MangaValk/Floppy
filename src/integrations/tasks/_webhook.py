@@ -1,10 +1,13 @@
 import logging
+import time
 from contextlib import contextmanager, suppress
 from types import SimpleNamespace
 
 import requests
 from celery import shared_task
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.utils.module_loading import import_string
 from simple_history.models import HistoricalRecords
 
@@ -25,6 +28,81 @@ WEBHOOK_PROCESSORS = {
     "stremio": "integrations.webhooks.stremio.StremioWebhookProcessor",
 }
 
+# Queue wait is logged as a millisecond value plus one fixed bucket label, so
+# the distribution is visible without a metrics backend. Anything past the
+# warning threshold deserves an incident note (see
+# docs/architecture/webhook-delivery.md).
+QUEUE_DELAY_BUCKETS_MS = (100, 500, 1_000, 5_000, 10_000, 30_000)
+QUEUE_DELAY_WARNING_MS = 10_000
+
+
+def _queue_delay_bucket(delay_ms):
+    """Return the histogram bucket label for a queue delay."""
+    if delay_ms is None:
+        return "unknown"
+    for upper in QUEUE_DELAY_BUCKETS_MS:
+        if delay_ms <= upper:
+            return f"le_{upper}ms"
+    return f"gt_{QUEUE_DELAY_BUCKETS_MS[-1]}ms"
+
+
+def _event_identity(payload):
+    """Return the provider event and item key for correlation, never values."""
+    event = metadata = None
+    if isinstance(payload, dict):
+        event = payload.get("event") or payload.get("Event")
+        metadata = payload.get("Metadata") or payload.get("Item") or {}
+    rating_key = None
+    if isinstance(metadata, dict):
+        rating_key = (
+            metadata.get("ratingKey")
+            or metadata.get("ratingkey")
+            or metadata.get("Id")
+            or metadata.get("id")
+        )
+    rating_key = str(rating_key).strip() if rating_key is not None else None
+    return event, rating_key or None
+
+
+def _log_webhook_finished(
+    *,
+    event_id,
+    provider,
+    user_id,
+    event,
+    rating_key,
+    outcome,
+    started,
+):
+    """Log the terminal state of one webhook task attempt."""
+    logger.info(
+        "webhook_finished event_id=%s provider=%s user_id=%s event=%s "
+        "rating_key=%s outcome=%s elapsed_ms=%s",
+        event_id,
+        provider,
+        user_id,
+        event,
+        rating_key,
+        outcome,
+        int((time.monotonic() - started) * 1000),
+    )
+
+
+def _received_at_details(received_at):
+    """Return (queue delay in ms, event epoch seconds) for a receipt timestamp."""
+    if not received_at:
+        return None, None
+    try:
+        received = parse_datetime(received_at)
+    except (TypeError, ValueError):
+        return None, None
+    if received is None:
+        return None, None
+    if timezone.is_naive(received):
+        received = timezone.make_aware(received)
+    delay_ms = max(0, int((timezone.now() - received).total_seconds() * 1000))
+    return delay_ms, int(received.timestamp())
+
 
 @contextmanager
 def _webhook_history_user(user):
@@ -41,13 +119,58 @@ def _webhook_history_user(user):
             del HistoricalRecords.context.request
 
 
-def _process_webhook(provider, payload, user_id, share_id=None):
+def _process_webhook(
+    provider,
+    payload,
+    user_id,
+    share_id=None,
+    received_at=None,
+    event_id=None,
+):
     """Process a validated media server webhook payload in the worker."""
+    started = time.monotonic()
+    event, rating_key = _event_identity(payload)
+    queue_delay_ms, event_ts = _received_at_details(received_at)
+    logger.info(
+        "webhook_started event_id=%s provider=%s user_id=%s event=%s "
+        "rating_key=%s queue_delay_ms=%s queue_delay_bucket=%s",
+        event_id,
+        provider,
+        user_id,
+        event,
+        rating_key,
+        queue_delay_ms,
+        _queue_delay_bucket(queue_delay_ms),
+    )
+    if queue_delay_ms is not None and queue_delay_ms > QUEUE_DELAY_WARNING_MS:
+        logger.warning(
+            "webhook_slow_queue event_id=%s provider=%s user_id=%s event=%s "
+            "rating_key=%s queue_delay_ms=%s",
+            event_id,
+            provider,
+            user_id,
+            event,
+            rating_key,
+            queue_delay_ms,
+        )
+
+    def finish(outcome):
+        _log_webhook_finished(
+            event_id=event_id,
+            provider=provider,
+            user_id=user_id,
+            event=event,
+            rating_key=rating_key,
+            outcome=outcome,
+            started=started,
+        )
+
     user_model = get_user_model()
     share = None
     source_account = None
     source_username = None
     source_libraries = None
+    result = None
 
     if share_id is not None:
         try:
@@ -63,12 +186,14 @@ def _process_webhook(provider, payload, user_id, share_id=None):
             logger.info(
                 "Skipping disabled or missing Plex webhook share id %s", share_id
             )
+            finish("ignored")
             return
 
         if not share.owner.is_active:
             logger.info(
                 "Skipping Plex webhook share from inactive owner id %s", share.owner_id
             )
+            finish("ignored")
             return
 
         user = share.recipient
@@ -77,6 +202,7 @@ def _process_webhook(provider, payload, user_id, share_id=None):
             logger.info(
                 "Skipping Plex webhook share %s without an owner Plex account", share.id
             )
+            finish("ignored")
             return
         source_username = share.plex_username
         source_libraries = share.allowed_libraries
@@ -87,13 +213,17 @@ def _process_webhook(provider, payload, user_id, share_id=None):
             logger.warning(
                 "Skipping %s webhook for missing user id %s", provider, user_id
             )
+            finish("ignored")
             return
 
     if not user.is_active:
         logger.info("Skipping %s webhook for inactive user id %s", provider, user.id)
+        finish("ignored")
         return
 
     processor = import_string(WEBHOOK_PROCESSORS[provider])()
+    processor._event_ts = event_ts
+    processor._event_id = event_id
     if user.anime_enabled:
         try:
             processor._grouped_anime_snapshot = anime_mapping.load_mapping_snapshot()
@@ -115,9 +245,9 @@ def _process_webhook(provider, payload, user_id, share_id=None):
     try:
         with _webhook_history_user(user):
             if share is None:
-                processor.process_payload(payload, user)
+                result = processor.process_payload(payload, user)
             else:
-                processor.process_payload(
+                result = processor.process_payload(
                     payload,
                     user,
                     source_account=source_account,
@@ -126,9 +256,14 @@ def _process_webhook(provider, payload, user_id, share_id=None):
                 )
     except Exception:
         logger.exception(
-            "Error processing %s webhook payload%s",
+            "Error processing %s webhook payload%s event_id=%s event=%s "
+            "rating_key=%s outcome=error elapsed_ms=%s",
             provider,
             f" for Plex webhook share {share.id}" if share else "",
+            event_id,
+            event,
+            rating_key,
+            int((time.monotonic() - started) * 1000),
         )
         if provider == "plex" and share is None:
             user.mark_plex_webhook_error(
@@ -137,6 +272,11 @@ def _process_webhook(provider, payload, user_id, share_id=None):
         raise
     if provider == "plex" and share is None:
         user.mark_plex_webhook_received()
+
+    outcome = getattr(processor, "outcome", None) or "skipped"
+    if outcome == "skipped" and result is not None:
+        outcome = "persisted"
+    finish(outcome)
 
     if provider == "jellyfin":
         _queue_jellyfin_instant_push(user, payload)
@@ -186,14 +326,36 @@ def _queue_jellyfin_instant_push(user, payload):
     max_retries=3,
     retry_backoff=True,
     retry_jitter=True,
+    # A wedged metadata lookup used to hold this interactive worker slot
+    # indefinitely; the delay surfaced as minutes of webhook lag (#1708).
+    soft_time_limit=120,
+    time_limit=150,
 )
-def process_webhook(provider, payload, user_id, share_id=None):
+def process_webhook(
+    provider,
+    payload,
+    user_id,
+    share_id=None,
+    received_at=None,
+    event_id=None,
+):
     """Process a media-server webhook using its provider-specific processor.
 
     Keeps webhook HTTP handlers fast: external metadata lookups and DB writes
     run on the worker instead of blocking a web worker.
+
+    ``received_at`` is the request arrival time, used for queue-delay
+    telemetry and to keep a late event from overwriting newer state.
+    ``event_id`` ties receipt, worker start and the saved result together.
     """
-    return _process_webhook(provider, payload, user_id, share_id=share_id)
+    return _process_webhook(
+        provider,
+        payload,
+        user_id,
+        share_id=share_id,
+        received_at=received_at,
+        event_id=event_id,
+    )
 
 
 @shared_task(

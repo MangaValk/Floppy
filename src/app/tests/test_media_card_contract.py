@@ -72,6 +72,21 @@ class MediaCardSurfaceContractTest(TestCase):
             **context,
         )
 
+    def test_home_grid_preserves_mapping_entry_subtitles(self):
+        """Detail carousels reuse Home cards with mapping-shaped entries."""
+        content = self.render(
+            '{% include "app/components/home_grid.html" %}',
+            media_list={
+                "items": [{
+                    "item": self.item,
+                    "media": self.movie,
+                    "subtitle_override": "Existing Home subtitle",
+                }],
+            },
+        )
+        self.assertIn("Existing Home subtitle", content)
+        self.assertIn("Contract Movie", content)
+
     def test_rating_shows_on_every_surface(self):
         """A rating is never a per-surface choice: a tracked card always shows it."""
         for surface in SURFACES:
@@ -108,13 +123,9 @@ class MediaCardSurfaceContractTest(TestCase):
         for surface, flags in SURFACES.items():
             with self.subTest(surface=surface):
                 content = self.render_card(surface)
-                self.assertEqual(
-                    "media-card-rate-button" in content,
-                    not flags.is_recommend_mode,
-                )
-                self.assertEqual(
-                    f'hx-post="{rate_url}"' in content, not flags.is_recommend_mode
-                )
+                rate_button = not flags.is_recommend_mode and not flags.rating_read_only
+                self.assertEqual("media-card-rate-button" in content, rate_button)
+                self.assertEqual(f'hx-post="{rate_url}"' in content, rate_button)
 
     def test_rating_is_read_only_where_the_viewer_cannot_rate(self):
         """Public pages and untracked items keep the plain rating, with no button."""

@@ -151,6 +151,7 @@ SpecialModels = [
     "StatisticsSnapshot",
     "StatisticsSyncState",
     "GameArtwork",
+    "RewatchCancellation",
 ]
 for model in app_models:
     if (
@@ -219,11 +220,12 @@ class MetadataBackfillStateAdmin(admin.ModelAdmin):
         "field",
         "fail_count",
         "give_up",
+        "terminal",
         "next_retry_at",
         "last_attempt_at",
         "last_success_at",
     ]
-    list_filter = ["field", "give_up"]
+    list_filter = ["field", "give_up", "terminal"]
     search_fields = ["item__title", "item__media_id", "last_error"]
     raw_id_fields = ["item"]
 

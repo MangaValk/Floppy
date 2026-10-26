@@ -345,7 +345,21 @@ if ENABLE_DEBUG_TOOLBAR:
 # Performance instrumentation: thresholded request and task summaries.
 PERF_LOG_ENABLED = config("PERF_LOG_ENABLED", default=True, cast=bool)
 PERF_LOG_SLOW_REQUEST_MS = config("PERF_LOG_SLOW_REQUEST_MS", default=500, cast=int)
+# A request still running after this long is logged once as stalled_request
+# with its stack, before it finishes. 0 disables the watchdog.
+PERF_STALL_WARN_MS = config("PERF_STALL_WARN_MS", default=10000, cast=int)
+PERF_STALL_MAX_REPORTS_PER_MINUTE = config(
+    "PERF_STALL_MAX_REPORTS_PER_MINUTE", default=10, cast=int
+)
 PERF_LOG_SLOW_TASK_MS = config("PERF_LOG_SLOW_TASK_MS", default=5000, cast=int)
+# A transaction open longer than this is logged with its request/task and
+# duration. SQLite has one writer, so a long transaction is the usual reason
+# every other writer waits out busy_timeout (#1609).
+PERF_LOG_SLOW_TRANSACTION_MS = config(
+    "PERF_LOG_SLOW_TRANSACTION_MS",
+    default=1000,
+    cast=int,
+)
 PERF_LOG_QUERY_COUNT_THRESHOLD = config(
     "PERF_LOG_QUERY_COUNT_THRESHOLD",
     default=75,
@@ -551,10 +565,16 @@ else:
 
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.sqlite3",
+            "ENGINE": "config.sqlite_backend",
             "NAME": FLOPPY_DB_PATH,
             "OPTIONS": {
                 "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
+                # Take the write lock when a transaction starts. A plain BEGIN
+                # defers it to the first write, and a transaction that read
+                # first and then writes after another process committed fails
+                # at once with "database is locked", ignoring the timeout
+                # above. IMMEDIATE queues behind the other writer instead.
+                "transaction_mode": "IMMEDIATE",
             },
             # Reuse a thread's connection across requests instead of opening
             # one (plus the PRAGMAs below) for every request. Idle autocommit
@@ -638,6 +658,7 @@ CACHES = {
         "KEY_PREFIX": KEY_PREFIX,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "COMPRESSOR": "app.cache_safety.SizedZlibCompressor",
             "REDIS_CLIENT_CLASS": "app.cache_safety.CacheRedis",
             "CONNECTION_POOL_CLASS": "app.cache_safety.CacheConnectionPool",
             # A cache is allowed to be unavailable. Without this, a slow or full
@@ -783,6 +804,8 @@ LANGUAGES = [
     ("de", "Deutsch"),
     ("es", "Español"),
     ("fr", "Français"),
+    ("ru", "Русский"),
+    ("it", "Italiano"),
 ]
 
 LOCALE_PATHS = [BASE_DIR / "locale"]
@@ -1129,6 +1152,15 @@ BACKUP_DIR = config("BACKUP_DIR", default=str(BASE_DIR / "backups"))
 # exports above, which cannot replace a physically damaged db.sqlite3. Rides
 # the same BACKUP_DIR volume mount installs already have.
 DB_SNAPSHOT_ENABLED = config("DB_SNAPSHOT_ENABLED", default=True, cast=bool)
+# Daily PRAGMA optimize so SQLite always has planner statistics (SQLite only).
+# analysis_limit bounds each ANALYZE to a row sample, keeping the first run on a
+# multi-GB database short.
+DB_OPTIMIZE_ENABLED = config("DB_OPTIMIZE_ENABLED", default=True, cast=bool)
+DB_OPTIMIZE_ANALYSIS_LIMIT = config(
+    "DB_OPTIMIZE_ANALYSIS_LIMIT",
+    default=1000,
+    cast=int,
+)
 # How long an idempotency receipt stays replayable. A client that retries after
 # this window gets a fresh operation, not the prior result, so keep it longer
 # than the longest client backoff. Measure real retry intervals before lowering.
@@ -1267,6 +1299,17 @@ MAL_API_SECRET = config(
     "MAL_API_SECRET",
     default=secret(
         "MAL_API_SECRET_FILE",
+        "",
+    ),
+)
+
+# The application key a WeTrakr account is connected with. WeTrakr issues these
+# on request, so each user or instance brings their own (Settings > Metadata);
+# nothing ships with the image.
+WETRAKR_CLIENT_ID = config(
+    "WETRAKR_CLIENT_ID",
+    default=secret(
+        "WETRAKR_CLIENT_ID_FILE",
         "",
     ),
 )
@@ -1575,6 +1618,7 @@ if os.environ.get("FLOPPY_PROCESS_ROLE") == "interactive":
     )
 else:
     CELERY_IMPORTS = (
+        "app.tasks_game_groups",
         "integrations.tasks._change_log",
         "integrations.tasks._jellyfin_pull",
         "integrations.tasks._koito",
@@ -1694,6 +1738,16 @@ STATISTICS_SYNC_HEAVY_SETTLE_SECONDS = config(
 STATISTICS_SYNC_HEAVY_MAX_DELAY_SECONDS = config(
     "STATISTICS_SYNC_HEAVY_MAX_DELAY_SECONDS", default=600, cast=int
 )
+# A credits backfill finishes a batch roughly every minute, and marking every
+# batch made the Statistics sync run back to back for the whole backfill -
+# competing with the credits writes for SQLite's single writer and the CPU
+# (#1706). Credits changes are coalesced to this interval, with one trailing
+# mark so the last credits written are still published. Kept at the heavy-range
+# max delay: a shorter interval would make every mark settle the heavy ranges
+# sooner and rebuild them more often than today.
+STATISTICS_CREDITS_MARK_SECONDS = config(
+    "STATISTICS_CREDITS_MARK_SECONDS", default=600, cast=int
+)
 
 CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default=None) or REDIS_URL
@@ -1713,7 +1767,11 @@ CELERY_TASK_ROUTES = {
     "Cleanup task results": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Repair Celery broker bindings": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Cleanup image cache": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
+    "Purge expired Discover caches": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Write database snapshot": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
+    "Optimize database planner statistics": {
+        "priority": CELERY_TASK_PRIORITY_BACKGROUND,
+    },
     "Backfill item metadata": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure genre backfill reconcile": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure watch provider backfill reconcile": {
@@ -1725,6 +1783,7 @@ CELERY_TASK_ROUTES = {
     "Ensure podcast website backfill reconcile": {
         "priority": CELERY_TASK_PRIORITY_BACKGROUND,
     },
+    "Ensure watch state repair": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Nightly metadata quality backfill": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Refresh IMDB game credits from datasets": {
         "priority": CELERY_TASK_PRIORITY_BACKGROUND
@@ -1764,22 +1823,29 @@ CELERY_TASK_ROUTES = {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Budget-bounded, and yields to webhooks. See
-    # docs/architecture/statistics-sync.md.
+    # Budget-bounded bulk derived work: ordinary syncs stay off the interactive
+    # lane so webhooks and manual refreshes never wait behind a range aggregate.
+    # The task itself overrides the queue to interactive for urgent requests.
+    # See docs/architecture/statistics-sync.md.
     "app.tasks.statistics_sync_task": {
+        "queue": "celery",
+        "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
+    },
+    # The trailing half of the credits Statistics debounce: one state update
+    # and a sync enqueue, so a delayed mark never waits behind background work.
+    "app.tasks.mark_credits_statistics_refresh": {
         "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Rebuilds a talent section the viewer already sees a stale copy of; same
-    # priority as the sync so webhook scrobbles still run first.
+    # Rebuilds a talent section the viewer already sees a stale copy of. It is a
+    # full talent scan, so it belongs with the other bulk derived work.
     "Refresh statistics talent fragment": {
-        "queue": "interactive",
+        "queue": "celery",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Cheap (one query, then enqueues). On the interactive worker so a long
-    # import on the background worker cannot delay recovery of lost syncs.
+    # Periodic recovery is not awaited by a page. Keep its sweeps off the
+    # interactive worker; viewer-requested syncs select that lane separately.
     "Reconcile statistics sync": {
-        "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
     # History cache rebuilds now bound their inline work (see
@@ -1948,6 +2014,18 @@ CELERY_BEAT_SCHEDULE = {
     "reconcile_statistics_sync": {
         "task": "Reconcile statistics sync",
         "schedule": 60,
+        # DatabaseScheduler owns this safety-net lifetime: replace any old
+        # absolute expiry with a rolling lifetime. The next fresh tick rechecks
+        # durable state, so stale ticks need not replay database work.
+        "expires": None,
+        "options": {"expire_seconds": 60},
+    },
+    # Outbound deliveries (watched state, ratings) retry through their own
+    # next_attempt_at and recover from a lost broker message only if something
+    # sweeps them. Without this entry a transient failure was never retried.
+    "sweep_watched_state_deliveries": {
+        "task": "Sweep pending watched state deliveries",
+        "schedule": 60,
     },
     "repair_celery_broker_bindings": {
         "task": "Repair Celery broker bindings",
@@ -1967,6 +2045,16 @@ CELERY_BEAT_SCHEDULE = {
     "cleanup_image_cache": {
         "task": "Cleanup image cache",
         "schedule": crontab(hour=4, minute=0),
+    },
+    "purge_expired_discover_caches": {
+        "task": "Purge expired Discover caches",
+        "schedule": crontab(hour=4, minute=15),
+    },
+    # Interval, not crontab: a never-run interval entry is due as soon as beat
+    # starts, so a database with no statistics is fixed on the first boot.
+    "optimize_database_statistics": {
+        "task": "Optimize database planner statistics",
+        "schedule": 60 * 60 * 24,
     },
     "write_database_snapshot": {
         "task": "Write database snapshot",
@@ -2049,6 +2137,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "Ensure podcast website backfill reconcile",
         "schedule": RECONCILE_INTERVAL_SECONDS,
     },
+    # One-shot like the podcast sweep: the startup hook starts it, and this
+    # resumes a library too large to finish in one run (app/tasks_watch_state.py).
+    "ensure_watch_state_repair": {
+        "task": "Ensure watch state repair",
+        "schedule": RECONCILE_INTERVAL_SECONDS,
+    },
     "warm_discover_api_cache": {
         "task": "Warm Discover API Cache",
         "schedule": by_tier(60 * 60 * 6, 60 * 60 * 3, 60 * 60),
@@ -2060,11 +2154,6 @@ CELERY_BEAT_SCHEDULE = {
     "refresh_discover_profiles": {
         "task": "Refresh Discover Profiles",
         "schedule": crontab(hour=4, minute=0),  # every day at 4 AM
-    },
-    "migrate_tv_shows_to_preferred_provider": {
-        "task": "Migrate TV shows to preferred metadata provider",
-        "schedule": crontab(hour=3, minute=45),  # every day at 3:45 AM
-        "kwargs": {"batch_size": _scaled(200)},
     },
     "sync_imdb_ratings": {
         "task": "Sync IMDB ratings from datasets",

@@ -1,11 +1,13 @@
 """Celery tasks for shared outbound delivery and watched-state reconciliation.
 
-All three run on the default queue. The interactive queue stays dedicated to
+All of them run on the default queue. The interactive queue stays dedicated to
 user-triggered refreshes, and a library sweep is exactly the kind of
 long-running work that must never sit in front of one.
 """
 
 import logging
+import os
+import time
 from contextlib import suppress
 
 from celery import shared_task
@@ -36,17 +38,29 @@ def deliver_watched_state(delivery_id):
     return outbound.run_delivery(delivery_id)
 
 
-@shared_task(name="Sweep pending watched state deliveries")
+@shared_task(name="Send queued deliveries to a batching provider", max_retries=0)
+def flush_outbound_batch(binding_id):
+    """Send everything due for one binding that takes its writes in batches."""
+    return outbound.flush_binding(binding_id)
+
+
+# The sweep makes provider HTTP calls inline, so it can run long; it is bounded
+# so a wedged one frees the single background child instead of pinning it for
+# the global limit. Whatever it abandoned stays due and is picked up next tick.
+@shared_task(
+    name="Sweep pending watched state deliveries",
+    soft_time_limit=240,
+    time_limit=300,
+)
 def sweep_watched_state_deliveries(limit=100):
     """Pick up deliveries whose enqueue kick was lost, and due retries.
 
     The outbox is the source of truth for what still needs sending, so a
     dropped broker message costs latency rather than correctness.
     """
-    swept = 0
-    for delivery in outbound.due_deliveries(limit=limit):
-        outbound.run_delivery(delivery.pk)
-        swept += 1
+    started = time.monotonic()
+    logger.info("sweep_watched_state start pid=%s limit=%s", os.getpid(), limit)
+    swept = outbound.sweep_due_deliveries(limit=limit)
 
     from integrations import connection_health
     from integrations.models import TMDbAccount
@@ -63,8 +77,11 @@ def sweep_watched_state_deliveries(limit=100):
             with suppress(AdapterError):
                 adapter._request("GET", "account")
 
-    if swept:
-        logger.info("Swept %s pending watched-state deliveries", swept)
+    logger.info(
+        "sweep_watched_state finish swept=%s duration_ms=%.0f",
+        swept,
+        (time.monotonic() - started) * 1000,
+    )
     return swept
 
 
@@ -92,9 +109,9 @@ def reconcile_watched_state(binding_id=None):
         # once against one provider wastes its rate limit for no benefit.
         if not acquire_lock(
             lock_key,
-            str(binding.pk),
-            RECONCILE_LOCK_TIMEOUT,
+            timeout=RECONCILE_LOCK_TIMEOUT,
             on_error=ON_ERROR_SKIP,
+            value=str(binding.pk),
         ):
             continue
 

@@ -24,6 +24,7 @@ from app.models import (
     Sources,
     Status,
 )
+from users import home_screen
 from users.models import (
     DateFormatChoices,
     DirectionChoices,
@@ -35,28 +36,46 @@ from users.models import (
 class HomeViewTests(TestCase):
     """Test the home view."""
 
-    def _get_all_groups(self, response):
-        """Merge shell groups with the deferred home_rest_fragment groups.
-
-        The home shell renders only the first group; the rest hydrates via
-        HTMX. Tests asserting on full-page content combine both responses.
-        """
-        groups = list(response.context["home_groups"])
-        if response.context.get("defer_remaining_groups"):
-            rest = self.client.get(reverse("home_rest_fragment"))
-            groups.extend(rest.context["home_groups"])
+    def _get_deferred_groups(self, response):
+        """Fetch each deferred row fragment the shell would load via HTMX."""
+        groups = []
+        for group in response.context.get("deferred_groups", []):
+            rows = []
+            for row_id in group["row_ids"]:
+                row_response = self.client.get(
+                    reverse("home_row_fragment", args=[row_id]),
+                )
+                row = (row_response.context or {}).get("row")
+                if row is not None:
+                    rows.append(row)
+            if rows:
+                groups.append(
+                    {
+                        "media_type": group["media_type"],
+                        "label": group["label"],
+                        "icon_svg": group["icon_svg"],
+                        "rows": rows,
+                    },
+                )
         return groups
 
+    def _get_all_groups(self, response):
+        """Merge shell groups with the rows deferred to row fragments."""
+        return list(response.context["home_groups"]) + self._get_deferred_groups(
+            response,
+        )
+
     def _get_hydrated_home(self):
-        """Fetch home and append the deferred fragment's HTML.
+        """Fetch home and append the deferred row fragments' HTML.
 
         Mirrors what the browser shows once HTMX hydrates the remaining
-        groups, so content assertions can target the full page.
+        rows, so content assertions can target the full page.
         """
         response = self.client.get(reverse("home"))
-        if response.context.get("defer_remaining_groups"):
-            rest = self.client.get(reverse("home_rest_fragment"))
-            response.content = response.content + rest.content
+        for group in response.context.get("deferred_groups", []):
+            for row_id in group["row_ids"]:
+                rest = self.client.get(reverse("home_row_fragment", args=[row_id]))
+                response.content = response.content + rest.content
         return response
 
     def _get_group(self, response, media_type):
@@ -174,13 +193,53 @@ class HomeViewTests(TestCase):
         )
         self.assertNotContains(response, "Load All")
 
-    def test_home_rest_cards_return_to_home(self):
-        """Cards in the deferred fragment must not redirect to that fragment."""
-        response = self.client.get(reverse("home_rest_fragment"))
+    def test_home_row_fragment_cards_return_to_home(self):
+        """Cards in a deferred row must not redirect to the fragment URL."""
+        self.client.get(reverse("home"))  # seed the default row configuration
+        row = HomeScreenRow.objects.filter(
+            user=self.user,
+            media_type=MediaTypes.ANIME.value,
+            enabled=True,
+        ).first()
+        response = self.client.get(reverse("home_row_fragment", args=[row.id]))
 
         self.assertEqual(response.context["return_url"], reverse("home"))
         self.assertContains(response, '"return_url": "/"', html=False)
-        self.assertNotContains(response, '"return_url": "/home/rest/"', html=False)
+        self.assertNotContains(response, '"return_url": "/home/row/', html=False)
+
+    def test_home_first_paint_does_not_build_deferred_rows(self):
+        """The shell must leave the remaining rows for their own requests."""
+        with patch(
+            "users.home_screen._cached_row_section",
+            wraps=home_screen._cached_row_section,
+        ) as cached:
+            response = self.client.get(reverse("home"))
+
+        built_row_ids = {call.args[1].id for call in cached.call_args_list}
+        deferred_row_ids = {
+            row_id
+            for group in response.context["deferred_groups"]
+            for row_id in group["row_ids"]
+        }
+        self.assertTrue(deferred_row_ids)
+        self.assertFalse(built_row_ids & deferred_row_ids)
+
+    def test_home_row_fragment_builds_only_its_own_row(self):
+        """A deferred row request must not rebuild unrelated shelves."""
+        response = self.client.get(reverse("home"))
+        row_id = response.context["deferred_groups"][0]["row_ids"][0]
+
+        with patch(
+            "users.home_screen._cached_row_section",
+            wraps=home_screen._cached_row_section,
+        ) as cached:
+            fragment = self.client.get(reverse("home_row_fragment", args=[row_id]))
+
+        self.assertEqual(fragment.status_code, 200)
+        self.assertEqual(
+            [call.args[1].id for call in cached.call_args_list],
+            [row_id],
+        )
 
     def test_home_row_direction_matches_persisted_row(self):
         """Each row dict must carry its own direction for the header arrow icon.
@@ -1041,6 +1100,16 @@ class HomeArtworkPollTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'id="home-artwork-poller"', response.content)
         self.assertNotIn(b"every 30s", response.content)
+
+    def test_pending_deferred_rows_keep_poller_armed(self):
+        """Rows still loading must not stop the poller before they finish."""
+        response = self.client.get(
+            reverse("home_rows_artwork_refresh") + "?ids=&pending=3",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"every 30s", response.content)
+        self.assertIn(b"load delay:1s", response.content)
 
     def test_rows_return_as_oob_swaps_and_poller_stops_when_covered(self):
         # A music-family row with artwork present should not keep polling.

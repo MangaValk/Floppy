@@ -24,6 +24,7 @@ from django_celery_results.models import TaskResult
 from app import credits as credit_helpers
 from app import history_cache, statistics_cache
 from app.discover import tab_cache as discover_tab_cache
+from app.history_entry_builders import flat_anime_episode_watches
 from app.models import (
     TV,
     AlbumTracker,
@@ -1012,7 +1013,11 @@ def capture_statistics_previous_dates(sender, instance, **kwargs):
         sender.objects.filter(pk=instance.pk).values_list("start_date", "end_date").first()
     )
     instance._statistics_previous_dates = previous
-    instance._history_had_dates = previous is None or any(previous)
+    # History places podcasts and music by end date alone, so a start date
+    # does not make a row "dated": a progress save on an unfinished podcast
+    # left no day behind, yet dropped every cached day.
+    placed_by = previous[1:] if previous and sender in (Podcast, Music) else previous
+    instance._history_had_dates = previous is None or any(placed_by)
 
 
 @receiver(post_save, sender=Movie)
@@ -1035,6 +1040,14 @@ def mark_statistics_previous_dates(sender, instance, **kwargs):
         instance.start_date, instance.end_date
     )
     if old_days:
+        # History day keys are the same days, and the receivers that follow
+        # only see the new dates: the day a row moved away from kept showing it.
+        history_cache.invalidate_history_days(
+            instance.user_id,
+            day_keys=sorted(old_days),
+            reason="media_date_moved",
+            force=True,
+        )
         statistics_cache.invalidate_statistics_days(
             instance.user_id, old_days, reason="media_date_moved"
         )
@@ -1105,6 +1118,18 @@ def _schedule_credits_backfill_if_needed(item_id):
     enqueue_credits_backfill_items([item_id], countdown=3)
 
 
+def _defer_credits_backfill_check(item_id):
+    """Run the credits check after the save's response, not inside it."""
+    if not item_id:
+        return
+    from app.tasks import enqueue_item_backfills
+
+    transaction.on_commit(
+        lambda: enqueue_item_backfills.delay(item_id, ["credits_if_needed"]),
+        robust=True,
+    )
+
+
 @receiver(post_save, sender=Episode)
 def schedule_credits_backfill_on_episode_play(sender, instance, **kwargs):
     """Queue credits backfill for episode and related show when an episode play is saved."""
@@ -1115,13 +1140,13 @@ def schedule_credits_backfill_on_episode_play(sender, instance, **kwargs):
     if not getattr(instance, "end_date", None):
         return
     episode_item_id = getattr(instance, "item_id", None)
-    _schedule_credits_backfill_if_needed(episode_item_id)
+    _defer_credits_backfill_check(episode_item_id)
     related_season = getattr(instance, "related_season", None)
     season_item_id = getattr(getattr(related_season, "item", None), "id", None)
-    _schedule_credits_backfill_if_needed(season_item_id)
+    _defer_credits_backfill_check(season_item_id)
     related_tv = getattr(related_season, "related_tv", None)
     tv_item_id = getattr(related_tv, "item_id", None)
-    _schedule_credits_backfill_if_needed(tv_item_id)
+    _defer_credits_backfill_check(tv_item_id)
 
 
 @receiver(post_save, sender=Movie)
@@ -1135,7 +1160,7 @@ def schedule_credits_backfill_on_movie_play(sender, instance, **kwargs):
         getattr(instance, "end_date", None) or getattr(instance, "start_date", None)
     ):
         return
-    _schedule_credits_backfill_if_needed(getattr(instance, "item_id", None))
+    _defer_credits_backfill_check(getattr(instance, "item_id", None))
 
 
 @receiver([post_save, post_delete], sender=Music)
@@ -1291,14 +1316,28 @@ def refresh_statistics_cache_on_anime_change(sender, instance, **kwargs):
         return
     user_id = getattr(instance, "user_id", None)
     day_keys = _collect_reading_statistics_day_keys(instance)
-    history_day_keys = _collect_reading_history_day_keys(instance)
+    history_dates_may_have_moved = _history_dates_may_have_moved(instance, kwargs)
+    if kwargs.get("signal") is post_delete:
+        # History splits the entry into episodes dated by its change log, which
+        # the delete removes, so the days they were on are no longer known.
+        history_day_keys = []
+        history_dates_may_have_moved = True
+    else:
+        history_day_keys = set(_collect_reading_history_day_keys(instance))
+        # The change log row for this save is the newest episode date.
+        history_day_keys.add(history_cache.history_day_key(timezone.now()))
+        for _number, watched_at in flat_anime_episode_watches([instance]).get(
+            instance.id,
+            [],
+        ):
+            history_day_keys.add(history_cache.history_day_key(watched_at))
     _handle_media_cache_change(
         user_id,
         MediaTypes.ANIME.value,
         reason="anime_change",
         history_specs=[(history_day_keys, ("sessions", "repeats"))],
         statistics_day_values=day_keys,
-        history_dates_may_have_moved=_history_dates_may_have_moved(instance, kwargs),
+        history_dates_may_have_moved=history_dates_may_have_moved,
     )
 
 
@@ -1588,10 +1627,12 @@ def schedule_runtime_backfill_on_item_save(
             MediaTypes.TV.value,
             MediaTypes.ANIME.value,
         ):
-            from app.tasks import enqueue_runtime_backfill_items
+            from app.tasks import enqueue_item_backfills
 
             transaction.on_commit(
-                lambda item_id=instance.id: enqueue_runtime_backfill_items([item_id]),
+                lambda item_id=instance.id: enqueue_item_backfills.delay(
+                    item_id, ["runtime"]
+                ),
                 robust=True,
             )
         elif (
@@ -1628,10 +1669,12 @@ def schedule_runtime_backfill_on_item_save(
     if genre_backfill_applicable and (
         genres_missing or genre_identity_changed or tmdb_tv_genre_verification_triggered
     ):
-        from app.tasks import enqueue_genre_backfill_items
+        from app.tasks import enqueue_item_backfills
 
         transaction.on_commit(
-            lambda item_id=instance.id: enqueue_genre_backfill_items([item_id]),
+            lambda item_id=instance.id: enqueue_item_backfills.delay(
+                item_id, ["genres"]
+            ),
             robust=True,
         )
 
@@ -1647,9 +1690,11 @@ def schedule_runtime_backfill_on_item_save(
             )
         )
     ):
-        from app.tasks import enqueue_credits_backfill_items
+        from app.tasks import enqueue_item_backfills
 
         transaction.on_commit(
-            lambda item_id=instance.id: enqueue_credits_backfill_items([item_id]),
+            lambda item_id=instance.id: enqueue_item_backfills.delay(
+                item_id, ["credits"]
+            ),
             robust=True,
         )

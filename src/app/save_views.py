@@ -774,6 +774,14 @@ def media_rewatch(request):
     media = get_object_or_404(model, pk=instance_id, user=request.user)
 
     if action == "stop":
+        from app.services.progress_breakdown import build_progress_breakdown
+        from app.services.rewatch_progress import cancel_run, resolve_rewatch
+
+        tv = media if media_type == MediaTypes.TV.value else media.related_tv
+        breakdown = build_progress_breakdown(tv=tv)
+        inferred = resolve_rewatch(tv, breakdown.seasons, include_explicit=False, include_candidates=True)
+        if inferred is not None:
+            cancel_run(tv, inferred)
         # Each model resolves its own season(s) against their own episode
         # counts — a show's seasons can have different lengths.
         media.stop_rewatch()
@@ -1069,7 +1077,10 @@ def _write_episode_save_oob(
         {
             "detail-progress-updated": {
                 "id": related_season.id,
+                "tv_id": related_season.related_tv_id,
                 "completed": related_season.completed_episode_count,
+                "watched_once": len(related_season.watched_once_numbers),
+                "rewatching": related_season.is_rewatching,
             },
         },
     )
@@ -1082,18 +1093,6 @@ def _write_episode_save_oob(
 @rating_edit
 def episode_save(request):
     """Handle the creation, deletion, and updating of episodes for a season."""
-    up_next_row = None
-    home_row_id = request.POST.get("up_next_row_id")
-    if home_row_id:
-        from users.models import HomeScreenRow, HomeScreenRowTypeChoices
-
-        try:
-            up_next_row = HomeScreenRow.objects.get(
-                pk=int(home_row_id), user=request.user, enabled=True,
-                row_type=HomeScreenRowTypeChoices.UP_NEXT,
-            )
-        except (ValueError, HomeScreenRow.DoesNotExist):
-            return HttpResponseBadRequest(gettext("Invalid Up Next row"))
     media_id = request.POST["media_id"]
     season_number = int(request.POST["season_number"])
     episode_number = int(request.POST["episode_number"])
@@ -1101,7 +1100,7 @@ def episode_save(request):
     library_media_type = (request.POST.get("library_media_type") or "").strip()
 
     next_path = request.GET.get("next") or ""
-    if source == Sources.TMDB.value and next_path and not media_id.startswith("order_"):
+    if source == Sources.TMDB.value and next_path:
         parsed_next_path = urlparse(next_path).path
         path_parts = [segment for segment in parsed_next_path.split("/") if segment]
         if len(path_parts) >= DETAILS_ROUTE_MIN_SEGMENTS and path_parts[0] == "details":
@@ -1188,14 +1187,6 @@ def episode_save(request):
         cache_utils.clear_media_list_cache_for_user(related_season.user_id)
 
     if request.headers.get("HX-Request"):
-        if up_next_row:
-            from users.home_screen import _build_row_section
-
-            cache_utils.clear_home_row_cache_for_user(request.user.pk)
-            section = _build_row_section(request.user, up_next_row, up_next_row.media_type, 14)
-            return render(request, "app/components/episode_feed_items.html", {
-                "row": section or {"row_id": up_next_row.pk, "items": [], "total": 0, "columns": up_next_row.columns},
-            })
         episode_history = list(
             Episode.objects.filter(
                 related_season=related_season,
@@ -1362,6 +1353,7 @@ def episode_drop(request):
 
 
 POLL_LOOKBACK_SECONDS = 45  # > poll interval, tolerates jitter/delay
+POLL_MAX_GAP_SECONDS = 24 * 60 * 60  # hidden-tab catch-up cap
 
 
 @require_GET
@@ -1373,7 +1365,12 @@ def episode_history_poll(request, season_id):
     so the season page polls this endpoint to catch up.
     """
     related_season = get_object_or_404(Season, pk=season_id, user=request.user)
-    since = timezone.now() - timedelta(seconds=POLL_LOOKBACK_SECONDS)
+    try:
+        gap = min(max(int(request.GET.get("gap", 0)), 0), POLL_MAX_GAP_SECONDS)
+    except ValueError:
+        gap = 0
+    lookback = gap + POLL_LOOKBACK_SECONDS
+    since = timezone.now() - timedelta(seconds=lookback)
 
     recent_item_ids = (
         Episode.objects.filter(related_season=related_season, created_at__gte=since)
@@ -1427,7 +1424,10 @@ def episode_history_poll(request, season_id):
         {
             "detail-progress-updated": {
                 "id": related_season.id,
+                "tv_id": related_season.related_tv_id,
                 "completed": related_season.completed_episode_count,
+                "watched_once": len(related_season.watched_once_numbers),
+                "rewatching": related_season.is_rewatching,
             },
         },
     )

@@ -204,6 +204,13 @@ def _store_tokens(mal_account, token_response):
     )
 
 
+def _adopt_stored_tokens(target, source):
+    """Copy the durable token pair onto the caller's possibly-stale instance."""
+    target.access_token = source.access_token
+    target.refresh_token = source.refresh_token
+    target.token_expires_at = source.token_expires_at
+
+
 # How long a refresh may hold the lock, and how long another worker waits
 # for it. A refresh can sit through api_request's rate-limit and transient
 # retries, so this is generous.
@@ -217,6 +224,8 @@ def get_valid_access_token(mal_account):
     leave the second with a rejected token and a broken connection. The
     cache lock serialises them (select_for_update alone is a no-op on
     SQLite); the waiter then rereads the account and uses the new token.
+    The token request itself runs outside the database transaction so a slow
+    provider response cannot hold SQLite's write lock.
     """
     if timezone.now() >= mal_account.token_expires_at - EXPIRY_LEEWAY:
         lock_key = f"mal_token_refresh:{mal_account.pk}"
@@ -239,12 +248,27 @@ def get_valid_access_token(mal_account):
                 current = MALAccount.objects.select_for_update().select_related(
                     "user",
                 ).get(pk=mal_account.pk)
-                if timezone.now() >= current.token_expires_at - EXPIRY_LEEWAY:
-                    token_response = _refresh_tokens(current)
-                    _store_tokens(current, token_response)
-                mal_account.access_token = current.access_token
-                mal_account.refresh_token = current.refresh_token
-                mal_account.token_expires_at = current.token_expires_at
+                needs_refresh = (
+                    timezone.now() >= current.token_expires_at - EXPIRY_LEEWAY
+                )
+                spent_refresh_token = current.refresh_token if needs_refresh else None
+                if not needs_refresh:
+                    _adopt_stored_tokens(mal_account, current)
+
+            if spent_refresh_token is not None:
+                # The token POST can spend the full provider retry budget. Run
+                # it outside the transaction: SQLite has one writer, and
+                # holding it here starves every other write until the network
+                # answers. The cache lock still serialises refreshes; the
+                # compare below covers a refresh that slipped past it.
+                token_response = _refresh_tokens(current)
+                with transaction.atomic():
+                    current = MALAccount.objects.select_for_update().select_related(
+                        "user",
+                    ).get(pk=mal_account.pk)
+                    if current.refresh_token == spent_refresh_token:
+                        _store_tokens(current, token_response)
+                    _adopt_stored_tokens(mal_account, current)
         finally:
             cache_safety.release_lock(lock_key)
 

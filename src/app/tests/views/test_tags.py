@@ -209,6 +209,24 @@ class TagCreateViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Tag.objects.filter(user=self.user, name="New Tag").exists())
 
+    def test_create_from_track_tab_returns_the_tab_editor(self):
+        """A create made inside the edit modal keeps the tab shell, not the popup one."""
+        url = reverse("tag_create")
+        response = self.client.post(
+            url,
+            {
+                "name": "New Tag",
+                "item_id": self.item.id,
+                "tag_surface": "track",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="tag_surface"')
+        self.assertContains(response, 'value="track"')
+        self.assertNotContains(response, "tagsOpen = false")
+        self.assertContains(response, "New Tag")
+
     def test_create_returns_oob_preview_refresh(self):
         """Create response refreshes the detail-tag preview via OOB swap."""
         url = reverse("tag_create")

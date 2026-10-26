@@ -131,6 +131,84 @@ class SqlAndScanAgreeTests(LibraryQueryTestCase):
         self.assertNotEqual(first, other)
 
 
+class LastWatchedSortTests(LibraryQueryTestCase):
+    """Last watched means recent activity, not only a completion date."""
+
+    def setUp(self):
+        """Create one old completion and one recently played entry."""
+        super().setUp()
+        completed_item = Item.objects.create(
+            media_id="last-watched-completed",
+            source=Sources.TMDB.value,
+            media_type=MOVIE,
+            title="Finished Long Ago",
+            image="https://example.com/i.jpg",
+        )
+        self.completed = self.track(
+            completed_item,
+            status=Status.COMPLETED.value,
+            end_date=self.now - timedelta(days=10),
+            progressed_at=self.now - timedelta(days=10),
+        )
+        active_item = Item.objects.create(
+            media_id="last-watched-active",
+            source=Sources.TMDB.value,
+            media_type=MOVIE,
+            title="Playing Now",
+            image="https://example.com/i.jpg",
+        )
+        self.active = self.track(
+            active_item,
+            status=Status.IN_PROGRESS.value,
+            end_date=None,
+            progressed_at=self.now,
+        )
+
+    def test_last_watched_orders_in_progress_by_progressed_at(self):
+        """A recently played in-progress item sorts above an older completion."""
+        items = self.run_query(
+            _query(sort=SortSpec("last_watched", "desc")),
+        ).items
+        self.assertEqual(
+            [item.pk for item in items],
+            [self.active.item_id, self.completed.item_id],
+        )
+
+    def test_duplicate_rows_use_the_latest_activity(self):
+        """An in-progress row wins over an older completed row for one item."""
+        item = Item.objects.create(
+            media_id="last-watched-repeated",
+            source=Sources.TMDB.value,
+            media_type=MOVIE,
+            title="Watched Again",
+            image="https://example.com/i.jpg",
+        )
+        self.track(
+            item,
+            status=Status.COMPLETED.value,
+            end_date=self.now - timedelta(days=20),
+            progressed_at=self.now - timedelta(days=20),
+        )
+        self.track(
+            item,
+            status=Status.IN_PROGRESS.value,
+            end_date=None,
+            progressed_at=self.now + timedelta(days=1),
+        )
+
+        items = self.run_query(
+            _query(sort=SortSpec("last_watched", "desc")),
+        ).items
+        self.assertEqual(items[0].pk, item.pk)
+
+    def test_end_date_stays_a_completion_sort(self):
+        """Custom lists keep the literal end date ordering."""
+        items = self.run_query(
+            _query(sort=SortSpec("end_date", "desc")),
+        ).items
+        self.assertEqual(items[0].pk, self.completed.item_id)
+
+
 class StatusSemanticsTests(LibraryQueryTestCase):
     """``latest`` follows the newest row; ``any`` accepts any row."""
 

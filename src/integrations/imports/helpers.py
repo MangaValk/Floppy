@@ -5,6 +5,8 @@ import json
 import logging
 import time
 from collections import defaultdict
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import copy
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -29,6 +31,92 @@ from integrations import import_progress
 from integrations.models import ImportRun
 
 logger = logging.getLogger(__name__)
+
+
+# Rows an import wrote with bulk_create, which sends no post_save signal. Set by
+# record_bulk_rows() for importers whose catch-up is scoped to what they wrote.
+_bulk_rows: ContextVar[list | None] = ContextVar("import_bulk_rows", default=None)
+
+
+@contextmanager
+def record_bulk_rows():
+    """Collect the rows ``bulk_create_media`` writes inside the block."""
+    rows = []
+    token = _bulk_rows.set(rows)
+    try:
+        yield rows
+    finally:
+        _bulk_rows.reset(token)
+
+
+def note_bulk_rows(rows):
+    """Record rows written without a save signal, so the import publishes their days."""
+    sink = _bulk_rows.get()
+    if sink is not None:
+        sink.extend(rows)
+
+
+# Noted by an importer whose write moved rows between libraries, which no day
+# list describes; publishing then falls back to dropping every cached day.
+FULL_REFRESH = object()
+
+
+def note_full_refresh():
+    """Ask the import to drop every cached day when it publishes."""
+    note_bulk_rows([FULL_REFRESH])
+
+
+def publish_everything(user_id):
+    """Drop every cached History and Statistics day for one user."""
+    from app import history_cache, statistics_cache
+
+    # Importers rely on bulk_create_with_history, which bypasses model signals.
+    # Force-clear history cache so month view index pages don't keep stale
+    # "empty month" payloads after imports.
+    history_cache.invalidate_history_cache(user_id, force=True)
+    # The same bypass leaves statistics days unmarked: drop every day payload;
+    # the background sync rebuilds them in budgeted slices while the last
+    # published numbers keep being served.
+    statistics_cache.invalidate_all_statistics_days(user_id, reason="media_import")
+
+
+def publish_bulk_rows(user_id, rows):
+    """Refresh History and Statistics for just the days bulk-written rows sit on.
+
+    The blanket alternative drops every cached day, and a library of thousands
+    of days then takes hours to rebuild, so a recurring poll that adds one row
+    kept the worker busy until the next poll. Every day a row's dates
+    touch is a superset of the days any History or Statistics placement uses.
+    Undated rows have no day to refresh, but their status and score still feed
+    the range totals, so they re-aggregate those.
+
+    Returns whether the refresh stayed scoped; False means it dropped every day
+    (see ``note_full_refresh``), so the sweep the import requested must stand.
+    """
+    from app import history_cache, statistics_sync
+
+    if FULL_REFRESH in rows:
+        publish_everything(user_id)
+        return False
+
+    day_keys = set()
+    has_undated = False
+    for row in rows:
+        start, end = getattr(row, "start_date", None), getattr(row, "end_date", None)
+        row_keys = set(history_cache.history_day_keys_for_range(start, end))
+        row_keys.update(
+            key for key in map(history_cache.history_day_key, (start, end)) if key
+        )
+        has_undated = has_undated or not row_keys
+        day_keys.update(row_keys)
+    if day_keys:
+        history_cache.invalidate_history_days(
+            user_id, day_keys=sorted(day_keys), force=True, reason="import_rows"
+        )
+        statistics_sync.mark_days(user_id, day_keys, reason="import_rows")
+    if has_undated:
+        statistics_sync.mark_aggregate(user_id, reason="import_rows")
+    return True
 
 
 class MediaImportError(Exception):
@@ -513,6 +601,7 @@ def _backfill_completed_season_episodes(seasons, *, prepare_only=False):
             Episode,
             batch_size=500,
         )
+        note_bulk_rows(created_episodes)
         normalize_completed_entries(created_episodes)
 
     return warnings
@@ -557,6 +646,82 @@ def _deduplicate_unique_user_item_rows(model, bulk_media):
         _merge_duplicate_media_row(existing, media_obj)
 
     return deduplicated
+
+
+def _unique_identity_fields(model):
+    """Return the DB columns that identify one of ``model``'s unique rows.
+
+    Only the tracking models imports bulk-create have a uniqueness contract:
+    a TV show is one row per user/item, and a season is one row per
+    user/related TV/item. Everything else (movies, episodes, plays) may
+    legitimately have several rows for the same item.
+    """
+    constraints = {
+        tuple(getattr(constraint, "fields", ()))
+        for constraint in model._meta.constraints
+    }
+    if ("user", "item") in constraints:
+        return ("user_id", "item_id")
+    if ("related_tv", "item") in constraints:
+        return ("user_id", "related_tv_id", "item_id")
+    return None
+
+
+def _reuse_persisted_unique_rows(model, bulk_media):
+    """Drop queued rows that another writer already stored during the import.
+
+    Importers decide what is new against a snapshot taken at the start of the
+    run. A tracking row written in the meantime - by a webhook, a sync, or a
+    second import - is missing from that snapshot, so the queued duplicate
+    hits the unique constraint at save time and aborts the import (#1518).
+    The database is authoritative: reuse the stored row, keeping its values,
+    and skip the queued insert.
+    """
+    identity_fields = _unique_identity_fields(model)
+    if identity_fields is None or not bulk_media:
+        return bulk_media
+
+    manager = getattr(model, "all_objects", model._default_manager)
+    stored = {}
+    for start in range(0, len(bulk_media), PROJECTION_BATCH_SIZE):
+        filters = defaultdict(set)
+        for row in bulk_media[start : start + PROJECTION_BATCH_SIZE]:
+            for field in identity_fields:
+                value = getattr(row, field)
+                if value is not None:
+                    filters[field].add(value)
+        if len(filters) != len(identity_fields):
+            continue
+        for row in manager.filter(
+            **{f"{field}__in": values for field, values in filters.items()},
+        ):
+            stored[tuple(getattr(row, field) for field in identity_fields)] = row
+    if not stored:
+        return bulk_media
+
+    retained = []
+    reused = 0
+    for row in bulk_media:
+        key = tuple(getattr(row, field) for field in identity_fields)
+        existing = stored.get(key)
+        if existing is None:
+            retained.append(row)
+            continue
+
+        # Mirror the stored row so callers (chunk receipts, parent hydration)
+        # see an already-persisted instance instead of an unsaved duplicate.
+        for field in model._meta.concrete_fields:
+            setattr(row, field.attname, getattr(existing, field.attname))
+        row._state.adding = False
+        reused += 1
+
+    if reused:
+        logger.info(
+            "Reused %s existing %s rows written during the import",
+            reused,
+            model._meta.model_name,
+        )
+    return retained
 
 
 def _deduplicate_season_related_tv_item_rows(seasons):
@@ -786,6 +951,11 @@ def bulk_create_media(bulk_media_list, user, *, backfill_completed=True, prepare
             logger.info("Updating references for podcasts to existing episodes")
             update_podcast_references(bulk_media)
 
+        bulk_media = _reuse_persisted_unique_rows(model, bulk_media)
+        bulk_media_list[media_type] = bulk_media
+        if not bulk_media:
+            continue
+
         # Imports are written as the user, so the reason is what tells an
         # imported status apart from one the user set (#1133).
         change_reason = (
@@ -809,6 +979,7 @@ def bulk_create_media(bulk_media_list, user, *, backfill_completed=True, prepare
             )
 
         created_media = retry_on_lock(create_media)
+        note_bulk_rows(created_media)
         if normalize:
             normalize_completed_entries(created_media)
         if media_type in PROJECTED_MEDIA_TYPES:

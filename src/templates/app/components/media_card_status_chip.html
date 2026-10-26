@@ -8,7 +8,24 @@
 {# empty before a save but should show one now, or vice versa. #}
 <div id="media-status-chip-{{ media.id }}"
      {% if status_chip_oob %}hx-swap-oob="outerHTML"{% endif %}>
-  {% if media|safe_attr:"is_statusless" %}
+  {% if show_episode_queue and media.next_episode_queue %}
+    {% with queue=media.next_episode_queue %}
+      <div class="media-status-chip absolute top-2 left-2 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md flex items-center gap-1.5 shadow-md max-w-[calc(100%-1rem)] overflow-hidden"
+           data-episode-queue="true">
+        <span class="font-medium truncate">
+          {% if queue.released %}
+            {{ media.episodes_left }} {% translate "Behind" %}
+          {% elif queue.days_until == 0 %}
+            {% translate "Today" %}
+          {% elif queue.days_until != None %}
+            {{ queue.days_until }} {% blocktranslate count count=queue.days_until %}day{% plural %}days{% endblocktranslate %}
+          {% else %}
+            {% translate "Upcoming" %}
+          {% endif %}
+        </span>
+      </div>
+    {% endwith %}
+  {% elif media|safe_attr:"is_statusless" %}
     <div class="media-status-chip absolute top-2 left-2 bg-gray-900/90 text-white text-xs px-2 py-1 rounded-md flex items-center gap-1.5 shadow-md max-w-[calc(100%-1rem)] overflow-hidden"
          data-mobile-hide-on-mobile="{% if current_sort_value == 'score' or current_sort_value == 'time_left' or current_sort_value == 'progress' %}true{% else %}false{% endif %}"
          data-status-label="no-status">

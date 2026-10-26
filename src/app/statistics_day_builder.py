@@ -622,18 +622,26 @@ def build_stats_for_day(
     missing_credit_candidate_item_ids = set()
 
     def _update_item_meta(
-        media_type: str, item_id: int, media_id: int | None, status, score, activity_dt
+        media_type: str,
+        item_id: int,
+        media_id: int | None,
+        status,
+        score,
+        activity_dt,
+        stats_media_type: str | None = None,
     ):
         if not item_id:
             return
         activity_dt = _localize_datetime(activity_dt) if activity_dt else None
         score_dt = activity_dt if score is not None else None
+        stats_media_type = stats_media_type or media_type
         existing = items_by_type[media_type].get(item_id)
         if not existing:
             items_by_type[media_type][item_id] = {
                 "item_id": item_id,
                 "media_id": media_id,
                 "media_type": media_type,
+                "stats_media_type": stats_media_type,
                 "status": status,
                 "score": float(score) if score is not None else None,
                 "score_dt": score_dt,
@@ -641,6 +649,7 @@ def build_stats_for_day(
             }
             return
 
+        existing["stats_media_type"] = stats_media_type
         existing_activity = existing.get("activity_dt")
         if activity_dt and (not existing_activity or activity_dt > existing_activity):
             existing["media_id"] = media_id or existing.get("media_id")
@@ -857,6 +866,7 @@ def build_stats_for_day(
                     row.get("related_season__status"),
                     row.get("related_season__score"),
                     season_activity,
+                    stats_media_type=ep_type,
                 )
 
     if MediaTypes.MOVIE.value in active_media_types:

@@ -33,6 +33,7 @@ REPAIR_BATCH_DELAY_SECONDS = 60
 
 def _schedule_repair(state_id, *, countdown):
     """Publish one continuation for the state that won the reconcile lock."""
+
     def schedule_repair():
         from app.tasks import backfill_item_metadata_task
 
@@ -152,6 +153,7 @@ def repair_metadata_language_batch(batch_size=10):
         return result
 
     cursor = state.last_cursor_item_id
+    changed_history_owner_ids = set()
     try:
         if interactive_request_active():
             BackfillReconcileState.objects.filter(pk=state.pk).update(
@@ -230,6 +232,20 @@ def repair_metadata_language_batch(batch_size=10):
                         setattr(item, name, value)
                         changed.append(name)
                 if changed:
+                    if {"title", "original_title", "localized_title"}.intersection(
+                        changed
+                    ):
+                        model = apps.get_model("app", item.media_type)
+                        user_field = (
+                            "related_season__user_id"
+                            if item.media_type == MediaTypes.EPISODE.value
+                            else "user_id"
+                        )
+                        changed_history_owner_ids.update(
+                            model.objects.filter(item=item).values_list(
+                                user_field, flat=True
+                            ),
+                        )
                     item.save(update_fields=changed)
                 result["success"] += 1
                 cursor = item.pk
@@ -263,8 +279,28 @@ def repair_metadata_language_batch(batch_size=10):
         if next_run:
             _schedule_repair(
                 state.pk,
-                countdown=max(1, math.ceil((next_run - timezone.now()).total_seconds())),
+                countdown=max(
+                    1, math.ceil((next_run - timezone.now()).total_seconds())
+                ),
             )
         return result
     finally:
-        reconcile_state.release(key)
+        try:
+            # Only stored title fields appear in History. Flush earlier writes
+            # even if a later fetch fails or a preference reset ends this page.
+            from app import history_cache
+
+            for owner_id in sorted(changed_history_owner_ids):
+                try:
+                    history_cache.invalidate_history_cache(
+                        owner_id,
+                        reason="metadata_language_repair",
+                    )
+                    history_cache.schedule_history_refresh(owner_id)
+                except Exception as error:
+                    logger.warning(
+                        "Could not refresh history after language repair: %s",
+                        exception_summary(error),
+                    )
+        finally:
+            reconcile_state.release(key)

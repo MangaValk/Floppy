@@ -102,6 +102,11 @@ urlpatterns = [
         views.convert_tv_library,
         name="convert_tv_library",
     ),
+    path(
+        "settings/metadata/repair-duplicate-anime",
+        views.repair_duplicate_anime_libraries,
+        name="repair_duplicate_anime_libraries",
+    ),
     path("settings/integrations", views.integrations, name="integrations"),
     path(
         "settings/integrations/stremio-catalog-status",
@@ -175,6 +180,7 @@ urlpatterns = [
         name="update_server_port",
     ),
     path("settings/about", views.about, name="about"),
+    path("settings/about/whats-new", views.whats_new, name="whats_new"),
     path(
         "delete_import_schedule",
         views.delete_import_schedule,
