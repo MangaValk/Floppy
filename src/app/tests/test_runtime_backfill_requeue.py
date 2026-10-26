@@ -26,6 +26,11 @@ class RuntimeBatchRequeueTests(TestCase):
 
     def _run(self, **kwargs):
         with (
+            # An interactive-request marker leaked by an earlier test would make
+            # the cooperative run defer after one item.
+            patch(
+                "app.task_cooperation.interactive_request_active", return_value=False
+            ),
             patch.object(tasks_runtime.services, "get_media_metadata", _metadata),
             patch.object(
                 tasks_runtime.populate_runtime_data_batch, "apply_async"
@@ -44,9 +49,9 @@ class RuntimeBatchRequeueTests(TestCase):
         self.assertEqual(result["updated"], 2)
         self.assertTrue(result["next_batch_scheduled"])
         requeue.assert_called_once()
-        counts = [q["sql"] for q in queries if q["sql"].lstrip().startswith(
-            "SELECT COUNT"
-        )]
+        counts = [
+            q["sql"] for q in queries if q["sql"].lstrip().startswith("SELECT COUNT")
+        ]
         self.assertEqual(counts, [])
 
     def test_stops_when_drained(self):
