@@ -637,7 +637,7 @@ class RecoveryPageTests(SimpleTestCase):
             "can_quarantine": False,
         }
         page = recovery.render_page(report, interactive=True)
-        self.assertIn("Floppy cannot read the database file.", page)
+        self.assertIn("Floppy's database file is damaged.", page)
         self.assertIn("Physical corruption detected", page)
         self.assertIn("sqlite-recovery", page)
         # #1053: a CSV export cannot replace this file, and sqlite-recovery/
@@ -745,7 +745,9 @@ class RestoreSnapshotTests(SimpleTestCase):
         page = recovery.render_page(report, interactive=True)
         self.assertIn("action='/restore'", page)
         self.assertIn("db-new.sqlite3", page)
-        self.assertIn("(newest)", page)
+        self.assertIn("Repair it now", page)
+        self.assertNotIn("&mdash;", page)
+        self.assertNotIn("\u2014", page)
 
     def test_restore_replaces_database_and_moves_damaged_files_aside(self):
         self.make_snapshot("db-new.sqlite3", "restored", 2_000)
@@ -844,5 +846,38 @@ class RestoreSnapshotTests(SimpleTestCase):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.post(base, {"snapshot": "db-bad.sqlite3"})
         self.assertEqual(ctx.exception.code, 409)
-        self.assertIn("did not restore", ctx.exception.read().decode())
+        body = ctx.exception.read().decode()
+        self.assertIn("The repair did not work.", body)
+        # The page carries a report that names the step, error and files.
+        self.assertIn("Floppy restore failure report", body)
+        self.assertIn("failed step: check the saved copy", body)
+        self.assertIn("db-bad.sqlite3", body)
+        self.assertIn("free space beside database", body)
+        self.assertNotIn("\u2014", body)
         self.assertFalse(Path(f"{self.db_path}.integrity.decision").exists())
+
+    def test_failed_restore_report_names_the_step_and_errno(self):
+        self.make_snapshot("db-new.sqlite3", "new", 2_000)
+        self.damage_live_database()
+        real_replace = Path.replace
+
+        def fail_on_install(path, target):
+            if path.name.startswith(".db.sqlite3.restore-"):
+                raise OSError(28, "No space left on device")
+            return real_replace(path, target)
+
+        with mock.patch.object(Path, "replace", fail_on_install), \
+                self.assertRaises(recovery.RestoreError) as ctx:
+            recovery.restore_snapshot(self.db_path, "db-new.sqlite3")
+        report = ctx.exception.report
+        self.assertIn("failed step: swap in the saved copy", report)
+        self.assertIn("errno: 28", report)
+        self.assertIn("snapshot: db-new.sqlite3", report)
+        self.assertIn("db.sqlite3  ", report)
+
+    def test_page_without_snapshots_explains_and_has_no_button(self):
+        page = recovery.render_page(
+            {"status": "corrupt", "unsafe_reasons": ["x"]}, interactive=True
+        )
+        self.assertIn("No saved copies were found", page)
+        self.assertNotIn("<form", page)

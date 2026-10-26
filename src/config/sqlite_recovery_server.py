@@ -64,7 +64,7 @@ _SECRET_REPORT_KEYS = frozenset({"actions", "incident_token"})
 # files (LOG_DIR), and users have reported checking those instead (#960). Name
 # the actual command and disclaim the app logs explicitly wherever this comes up.
 _CONTAINER_LOG_HINT = (
-    "the container's own log output, not Floppy's log files &mdash; run "
+    "the container's own log output, not Floppy's log files. Run "
     "<code>docker compose logs floppy</code> (or <code>docker logs "
     "&lt;container&gt;</code>) and search for &quot;approval code&quot;"
 )
@@ -184,7 +184,18 @@ def _download_enabled() -> bool:
 
 
 class RestoreError(Exception):
-    """A snapshot could not be restored; the damaged database was left in place."""
+    """A snapshot could not be restored; the damaged database was left in place.
+
+    ``report`` is the technical text shown to the person if the restore fails,
+    so a bug report can name the step, the error and the state of the files.
+    """
+
+    report = ""
+
+    def __init__(self, message: str, step: str = "restore") -> None:
+        """Keep the plain message and the name of the step that failed."""
+        super().__init__(message)
+        self.step = step
 
 
 def _snapshot_dir() -> Path:
@@ -211,7 +222,9 @@ def list_snapshots(snapshot_dir: Path | None = None) -> list[dict]:
             info = path.stat()
         except OSError:
             continue
-        found.append({"name": path.name, "size": info.st_size, "mtime": info.st_mtime})
+        found.append(
+            {"name": path.name, "size": info.st_size, "mtime": info.st_mtime, "path": path}
+        )
     return sorted(found, key=lambda item: (item["mtime"], item["name"]), reverse=True)
 
 
@@ -225,29 +238,42 @@ def _format_size(size: int) -> str:
 
 
 def _restore_card(snapshots: list[dict]) -> str:
-    """Offer a one-click restore from the snapshots Floppy already wrote."""
+    """Offer a one-click repair from the copies Floppy already saved."""
     if not snapshots:
         return ""
+
+    def when(item: dict) -> str:
+        return f"{datetime.fromtimestamp(item['mtime'], UTC):%B %d, %Y at %H:%M} UTC"
+
     options = "".join(
         "<li><label><input type='radio' name='snapshot' "
         f"value='{html.escape(item['name'], quote=True)}'"
         f"{' checked' if index == 0 else ''}> "
-        f"{html.escape(item['name'])} &mdash; "
-        f"{datetime.fromtimestamp(item['mtime'], UTC):%Y-%m-%d %H:%M} UTC, "
-        f"{_format_size(item['size'])}"
+        f"{when(item)}, {_format_size(item['size'])}"
         f"{' (newest)' if index == 0 else ''}</label></li>"
         for index, item in enumerate(snapshots)
     )
+    newest = snapshots[0]
+    others = (
+        "<details><summary>Use an older copy instead</summary>"
+        f"<ul>{options}</ul></details>"
+        if len(snapshots) > 1
+        else (
+            f"<input type='radio' name='snapshot' checked hidden "
+            f"value='{html.escape(newest['name'], quote=True)}'>"
+        )
+    )
     return (
-        "<div class='card'><h2>Restore the latest snapshot</h2>"
-        "<p>Floppy found verified copies of your database. Restoring one loses "
-        "anything saved after that copy was taken. The damaged file and its "
-        f"companion files are moved to the <code>{_DAMAGED_FOLDER}</code> folder "
-        "beside <code>db.sqlite3</code>, not deleted.</p>"
+        "<div class='card'><h2>Repair it now</h2>"
+        f"<p>The newest saved copy is from <strong>{when(newest)}</strong>. "
+        "Anything you added after that is not in it.</p>"
+        "<p>The damaged file is kept in the "
+        f"<code>{_DAMAGED_FOLDER}</code> folder next to your database, "
+        "so nothing is deleted.</p>"
         "<form method='POST' action='/restore'>"
-        f"<ul class='plain'>{options}</ul>"
-        "<button>Restore this snapshot and start Floppy</button>"
-        "<p class='note'>Checking a large snapshot can take a few minutes. "
+        f"{others}"
+        "<button>Restore the newest copy and start Floppy</button>"
+        "<p class='note'>This can take a few minutes for a large library. "
         "Leave this page open.</p></form></div>"
     )
 
@@ -257,18 +283,18 @@ def _verify_snapshot_file(path: Path) -> None:
     try:
         connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
     except sqlite3.Error as error:
-        msg = f"Could not open the snapshot: {error}"
-        raise RestoreError(msg) from error
+        msg = "Floppy could not open the saved copy."
+        raise RestoreError(msg, "open the saved copy") from error
     try:
         result = connection.execute("PRAGMA quick_check").fetchall()
     except sqlite3.Error as error:
-        msg = f"The snapshot failed its check: {error}"
-        raise RestoreError(msg) from error
+        msg = "The saved copy failed its own check, so it was not used."
+        raise RestoreError(msg, "check the saved copy") from error
     finally:
         connection.close()
     if result != [("ok",)]:
-        msg = "The snapshot failed its check, so it was not used."
-        raise RestoreError(msg)
+        msg = "The saved copy failed its own check, so it was not used."
+        raise RestoreError(msg, "check the saved copy")
 
 
 def _copy_durably(source: Path, destination: Path) -> None:
@@ -278,6 +304,59 @@ def _copy_durably(source: Path, destination: Path) -> None:
         os.fsync(writer.fileno())
 
 
+def _describe_files(folder: Path, *, limit: int = 40) -> list[str]:
+    lines = []
+    try:
+        for entry in sorted(folder.iterdir())[:limit]:
+            try:
+                info = entry.lstat()
+                lines.append(f"  {entry.name}  {info.st_size} bytes")
+            except OSError as error:
+                lines.append(f"  {entry.name}  (cannot stat: {error})")
+    except OSError as error:
+        lines.append(f"  (cannot list: {error})")
+    return lines
+
+
+def _failure_report(
+    step: str, error: BaseException, db_path: str, snapshot: Path | None, folder: Path
+) -> str:
+    """Collect what is needed to trace a failed restore from one pasted block."""
+    database = Path(db_path).resolve()
+    try:
+        free = shutil.disk_usage(database.parent).free
+    except OSError:
+        free = "unknown"
+    lines = [
+        "Floppy restore failure report",
+        f"time: {datetime.now(UTC).isoformat()}",
+        f"failed step: {step}",
+        f"error: {type(error).__name__}: {error}",
+    ]
+    if getattr(error, "errno", None) is not None:
+        lines.append(f"errno: {error.errno} ({os.strerror(error.errno)})")
+    lines += [
+        f"snapshot: {snapshot.name if snapshot else 'none chosen'}",
+        f"database: {database}",
+        f"free space beside database: {free} bytes",
+        f"sqlite: {sqlite3.sqlite_version}  python: {sys.version.split()[0]}  "
+        f"platform: {sys.platform}",
+        "database folder:",
+        *_describe_files(database.parent),
+        f"snapshot folder ({folder}):",
+        *_describe_files(folder),
+    ]
+    return "\n".join(lines)
+
+
+def _find_snapshot(directory: Path, name: str) -> Path:
+    chosen = next((i for i in list_snapshots(directory) if i["name"] == name), None)
+    if chosen is None:
+        msg = "That saved copy is not available."
+        raise RestoreError(msg, "choose saved copy")
+    return chosen["path"]
+
+
 def restore_snapshot(db_path: str, name: str, snapshot_dir: Path | None = None) -> Path:
     """Replace the damaged database with a verified snapshot.
 
@@ -285,13 +364,31 @@ def restore_snapshot(db_path: str, name: str, snapshot_dir: Path | None = None) 
     at any step leaves the damaged file exactly where it was. Only then is the
     damaged file moved aside together with its -wal/-shm/-journal companions: a
     stale WAL left next to a restored file would be replayed into it and damage
-    it again. Returns the folder the damaged files were moved to.
+    it again. Returns the folder the damaged files were moved to. Any failure
+    raises RestoreError carrying a technical report.
     """
     directory = snapshot_dir or _snapshot_dir()
-    if name not in {item["name"] for item in list_snapshots(directory)}:
-        msg = "That snapshot is not available."
-        raise RestoreError(msg)
-    source = directory / name
+    step = "choose snapshot"
+    source: Path | None = None
+    try:
+        # The path comes from the folder listing, never from the submitted
+        # name, so a name that is not in the listing cannot reach the filesystem.
+        source = _find_snapshot(directory, name)
+        step = "check the saved copy"
+        return _restore_verified(db_path, source)
+    except RestoreError as error:
+        error.report = error.report or _failure_report(
+            error.step, error.__cause__ or error, db_path, source, directory
+        )
+        raise
+    except (OSError, sqlite3.Error) as error:
+        msg = "Floppy could not restore the saved copy."
+        failure = RestoreError(msg)
+        failure.report = _failure_report(step, error, db_path, source, directory)
+        raise failure from error
+
+
+def _restore_verified(db_path: str, source: Path) -> Path:
     database = Path(db_path).resolve()
     _verify_snapshot_file(source)
     try:
@@ -300,7 +397,7 @@ def restore_snapshot(db_path: str, name: str, snapshot_dir: Path | None = None) 
         free = None
     if free is not None and free < source.stat().st_size:
         msg = "There is not enough free disk space beside the database."
-        raise RestoreError(msg)
+        raise RestoreError(msg, "check disk space")
 
     staged = database.with_name(f".{database.name}.restore-{secrets.token_hex(4)}")
     aside = (
@@ -324,8 +421,8 @@ def restore_snapshot(db_path: str, name: str, snapshot_dir: Path | None = None) 
                 target.replace(original)
         with suppress(OSError):
             staged.unlink()
-        msg = f"Could not restore the snapshot: {error}"
-        raise RestoreError(msg) from error
+        msg = "Floppy could not swap in the saved copy. Nothing was changed."
+        raise RestoreError(msg, "swap in the saved copy") from error
     # The incident belongs to the file that was moved. Clearing it lets the
     # normal startup check judge the restored file from scratch.
     with suppress(OSError):
@@ -349,21 +446,16 @@ def _backup_card(*, for_corruption: bool = False) -> str:
         )
     elif for_corruption:
         action = (
-            "<p class='note'>If scheduled database snapshots are enabled (the "
-            "default), Floppy has been writing verified copies to the "
-            "<code>database</code> folder under <code>BACKUP_DIR</code> on its "
-            "own schedule &mdash; check there first. A CSV export from "
-            "Settings &rarr; Export cannot replace this file; it only "
-            "recreates media, ratings, and lists, not accounts or integration "
-            "credentials.</p>"
-            "<p class='note'>Floppy also writes a verified copy to the "
-            "<code>sqlite-recovery</code> folder beside <code>db.sqlite3</code>, "
-            "but only while repairing broken relationships, not physical "
-            "corruption like this &mdash; that folder is unlikely to hold "
-            "anything useful for this incident.</p>"
-            f"<p class='note'>To download the file from this page instead, set "
+            "<div class='card'><h2>Keep the damaged file</h2>"
+            "<p class='note'>Repairing moves the damaged file to the "
+            "<code>sqlite-recovery</code> folder beside <code>db.sqlite3</code>. "
+            "A repair tool can still read data from it. Floppy keeps nightly "
+            "database snapshots in the <code>database</code> folder of "
+            "<code>BACKUP_DIR</code>; a CSV export is not a database snapshot "
+            "and cannot replace this file.</p>"
+            f"<p class='note'>To download the damaged file from this page, set "
             f"<code>{_DOWNLOAD_ENV}=true</code> and start Floppy again. Keep it "
-            "off at other times, because this page has no sign-in.</p>"
+            "off at other times, because this page has no sign-in.</p></div>"
         )
     else:
         action = (
@@ -593,26 +685,34 @@ def render_page(
             f"<li><span>{html.escape(r)}</span></li>"
             for r in report.get("unsafe_reasons", [])
         )
+        snapshots = list_snapshots()
         parts = [
-            "<h1>Floppy cannot read the database file.</h1>",
-            "<p>The file is damaged. Floppy changed nothing, because a write "
-            "can damage it more. Replace the file with a database snapshot or "
-            "your own copy of <code>db.sqlite3</code> &mdash; not a CSV "
-            "export.</p>",
-            "<div class='card'><h2>What Floppy found</h2>"
-            f"<ul>{corruption_reasons}</ul></div>",
-            "<div class='card'><h2>Keep a copy of the damaged file</h2>"
-            "<p>Keep the damaged file before you replace it. A repair tool can "
-            "still read data from it.</p>"
-            + _backup_card(for_corruption=True)
-            + "</div>",
-            _restore_card(list_snapshots()),
-            "<div class='card'><h2>How to restore by hand</h2><ol>"
-            "<li>Stop Floppy.</li>"
-            "<li>Replace <code>db.sqlite3</code> with your known-good backup.</li>"
-            "<li>Start Floppy.</li></ol></div>",
-            _help_card(),
+            "<h1>Floppy's database file is damaged.</h1>",
+            "<p>Your data is probably fine. Floppy stopped on purpose, because "
+            "writing to a damaged file can make it worse. Nothing was changed.</p>",
+            "<p>Floppy saves a checked copy of your database every night, so "
+            "it can usually put things back.</p>",
         ]
+        if snapshots:
+            parts.append(_restore_card(snapshots))
+        else:
+            parts.append(
+                "<div class='card'><h2>No saved copies were found</h2>"
+                "<p>Floppy looks for nightly copies in the <code>database</code> "
+                "folder inside your backups folder (<code>BACKUP_DIR</code>) and "
+                "found none. If you have your own copy of <code>db.sqlite3</code>, "
+                "stop Floppy, replace the file with it, and start Floppy again.</p>"
+                "<p class='note'>A CSV export cannot replace this file. It only "
+                "recreates media, ratings and lists, not accounts or "
+                "integration settings.</p></div>"
+            )
+        parts.append(
+            "<details><summary>Technical details and more options</summary>"
+            "<div class='card'><h2>What Floppy found</h2>"
+            f"<ul>{corruption_reasons}</ul></div>"
+            + _backup_card(for_corruption=True)
+            + "</details>"
+        )
         return _document("".join(parts))
 
     total = _count(report.get("total_conflicts"))
@@ -704,6 +804,21 @@ def render_page(
     return _document("".join(parts))
 
 
+def _restore_failure_page(error: RestoreError) -> str:
+    """Say what failed in plain words, then give a report that can be traced."""
+    return _document(
+        "<h1>The repair did not work.</h1>"
+        f"<p>{html.escape(str(error))} Your damaged database is exactly where it "
+        "was, so nothing is lost.</p>"
+        "<p><a href='/'>Go back</a> and try an older saved copy. If it keeps "
+        "failing, copy the report below into a new issue so it can be traced.</p>"
+        "<div class='card'><h2>Report</h2>"
+        "<p><button data-copy='details'>Copy details</button></p>"
+        f"<pre id='details'>{html.escape(error.report)}</pre></div>"
+        + _help_card()
+    )
+
+
 def _waiting_page() -> str:
     """Confirm the choice and wait for Floppy, without promising a time.
 
@@ -747,7 +862,7 @@ def _help_card() -> str:
     )
     return (
         "<div class='card'><h2>Get help</h2>"
-        "<p>Copy the details below and send them with your question.</p>"
+        "<p>Include the technical details or report with your question.</p>"
         f"<p>{links}</p></div>"
     )
 
@@ -928,17 +1043,8 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             aside = restore_snapshot(self.db_path, name)
         except RestoreError as error:
-            self._send(
-                409,
-                _document(
-                    "<h1>Floppy did not restore a snapshot.</h1>"
-                    f"<p>{html.escape(str(error))}</p>"
-                    "<p>The damaged database was not changed. Go back and choose "
-                    "another snapshot, or restore a copy by hand.</p>"
-                    + _help_card()
-                ),
-                "text/html; charset=utf-8",
-            )
+            _log(f"[entrypoint] Restore failed:\n{error.report}")
+            self._send(409, _restore_failure_page(error), "text/html; charset=utf-8")
             return
         _log(
             f"[entrypoint] Restored snapshot {name}; the damaged files were moved to {aside}"
