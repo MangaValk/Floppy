@@ -3,7 +3,7 @@
 {# Tiles for image_picker.html. Each one reports its link to the picker's pick(). #}
 {% for candidate in candidates %}
   <button type="button"
-          class="relative {% if variant == 'strip' %}w-24 shrink-0{% endif %} text-left cursor-pointer"
+          class="relative w-32 sm:w-36 shrink-0 text-left cursor-pointer"
           data-url="{{ candidate.image }}"
           title="{{ candidate.title }}"
           @click="pick($el.dataset.url)">
@@ -18,5 +18,5 @@
     <span class="mt-1 block text-xs text-[var(--color-text-muted)] line-clamp-2">{{ candidate.title }}</span>
   </button>
 {% empty %}
-  <p class="col-span-full text-sm text-[var(--color-text-muted)]">{% translate "No other covers found." %}</p>
+  <p class="self-center text-sm text-[var(--color-text-muted)]">{% translate "No other covers found." %}</p>
 {% endfor %}

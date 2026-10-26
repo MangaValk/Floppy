@@ -174,8 +174,5 @@ def item_cover_candidates(request, item_id):
     return render(
         request,
         "app/components/image_picker_tiles.html",
-        {
-            "candidates": _candidates(request.user, item),
-            "variant": "strip" if request.GET.get("variant") == "strip" else "grid",
-        },
+        {"candidates": _candidates(request.user, item)},
     )

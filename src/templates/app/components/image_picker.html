@@ -8,8 +8,7 @@
   Needs: uid (unique on the page), title, current (the image now in use),
   save_url (POST: cover_file or cover_url), candidates_url (GET: tiles from
   image_picker_tiles.html), next_url.
-  Optional: variant="strip" for a single scrolling row where there is no room
-  for a grid.
+  The pictures sit in one horizontally scrolling row, like the Home rows.
 {% endcomment %}
 <section class="space-y-3"
          x-data="{
@@ -53,8 +52,7 @@
   <form method="post"
         action="{{ save_url }}"
         enctype="multipart/form-data"
-        class="rounded-lg border border-[var(--color-border)] overflow-hidden"
-        :class="dragging ? 'border-[var(--color-accent)]' : ''">
+        class="space-y-3">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ next_url }}">
     <input type="hidden" name="cover_url" :value="choice.file ? '' : choice.value">
@@ -65,8 +63,8 @@
            x-ref="file"
            @change="onFile()">
 
-    <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-3 bg-[var(--color-surface-dim)] text-sm sm:text-base"
-         :class="dragging ? 'bg-[var(--color-surface-strong)]' : ''">
+    <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border border-dashed px-4 py-3 text-sm transition-colors"
+         :class="dragging ? 'border-[var(--color-accent)] bg-[var(--color-surface-strong)]' : 'border-[var(--color-border)] bg-[var(--color-surface-dim)]'">
       <button type="button"
               class="text-[var(--color-accent)] hover:underline cursor-pointer"
               @click="$refs.file.click()">{% translate "choose an image" %}</button>
@@ -78,7 +76,7 @@
               @click="showUrl = !showUrl; $nextTick(() => showUrl && $refs.url.focus())">{% translate "enter a URL" %}</button>
     </div>
 
-    <div class="px-4 pt-3" x-show="showUrl" x-cloak>
+    <div x-show="showUrl" x-cloak>
       <input type="url"
              x-ref="url"
              x-model="url"
@@ -88,15 +86,15 @@
              class="w-full h-10 px-3 bg-[var(--color-surface-strong)] rounded-md text-[var(--color-text)] text-sm border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]">
     </div>
 
-    <div class="p-4 {% if variant == 'strip' %}flex gap-3 overflow-x-auto{% else %}grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3{% endif %}"
+    <div class="flex flex-nowrap gap-4 overflow-x-auto p-1 pb-3 scrollbar-hidden"
          id="{{ uid }}-tiles"
-         hx-get="{{ candidates_url }}{% if variant == 'strip' %}?variant=strip{% endif %}"
+         hx-get="{{ candidates_url }}"
          hx-trigger="intersect once"
          hx-target="this"
          hx-swap="beforeend">
       {# The picture in use now #}
       <button type="button"
-              class="relative group {% if variant == 'strip' %}w-24 shrink-0{% endif %} text-left cursor-pointer"
+              class="relative group w-32 sm:w-36 shrink-0 text-left cursor-pointer"
               @click="reset()">
         <img src="{{ current|image_url }}"
              alt=""
@@ -109,7 +107,7 @@
 
       {# A file or link the person has just supplied #}
       <template x-if="choice.custom">
-        <div class="relative {% if variant == 'strip' %}w-24 shrink-0{% endif %}">
+        <div class="relative w-32 sm:w-36 shrink-0">
           <img :src="choice.value"
                alt=""
                class="w-full aspect-[2/3] rounded-md object-cover bg-[var(--color-surface-alt)] ring-2 ring-[var(--color-accent)]">
@@ -119,7 +117,7 @@
       </template>
     </div>
 
-    <div class="flex justify-end gap-2 px-4 pb-4" x-show="choice.value" x-cloak>
+    <div class="flex justify-end gap-2" x-show="choice.value" x-cloak>
       <button type="button"
               class="inline-flex h-10 items-center justify-center px-4 rounded-md bg-gray-600 text-white hover:bg-gray-500 transition-colors text-sm cursor-pointer"
               @click="reset()">{% translate "Cancel" %}</button>

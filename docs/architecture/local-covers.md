@@ -29,9 +29,9 @@ Code: `src/app/local_covers.py` (storage), `src/app/cover_views.py` (views).
 ## The picker
 
 The UI is the reusable `components/image_picker.html` (Plex-style): a bar with
-**choose an image**, **drag and drop** and **enter a URL**, over a grid (or, with
-`variant="strip"`, one scrolling row) holding the current picture and the pictures on
-offer. Another place needs only a `save_url` that accepts `cover_file` or `cover_url`, and a
+**choose an image**, **drag and drop** and **enter a URL** in a dashed container, over one
+horizontally scrolling row (the Home rows' compact card width) holding the current picture
+and the pictures on offer. Another place needs only a `save_url` that accepts `cover_file` or `cover_url`, and a
 `candidates_url` that returns `components/image_picker_tiles.html`. `cover_change_section.html`
 is the cover's use of it.
 

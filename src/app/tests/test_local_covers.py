@@ -381,16 +381,6 @@ class CandidatesTests(CoverTestCase):
         self.assertContains(response, "Moonlight Courier, Vol. 1")
         self.assertNotContains(response, "No art")
         self.assertContains(response, 'data-url="https://covers.openlibrary.org/a.jpg"')
-        self.assertNotContains(response, "w-24 shrink-0")
-
-    def test_the_strip_variant_makes_narrow_tiles(self):
-        results = {"results": [{"title": "A", "image": "https://covers.openlibrary.org/a.jpg"}]}
-        with patch.object(cover_views.services, "search", return_value=results):
-            response = self.client.get(
-                reverse("item_cover_candidates", args=[self.item.id]) + "?variant=strip"
-            )
-
-        self.assertContains(response, "w-24 shrink-0")
 
     def test_the_users_barcode_is_offered_first(self):
         group = CollectionFieldGroup.objects.create(user=self.user, name="Details")
