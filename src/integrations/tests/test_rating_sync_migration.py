@@ -8,35 +8,6 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 
-def _state_targets(graph, anchor):
-    """Pick migration nodes whose model state does not outrun ``anchor``.
-
-    The test needs the other apps' models (User, Item, Movie), but a newer
-    migration in those apps can depend on a later ``integrations`` migration
-    and would drag its columns into the state while the database is still at
-    ``anchor``. For each other app, take the newest node whose ancestors stay
-    within the ``integrations`` migrations that ``anchor`` already includes.
-    """
-    allowed = set(graph.forwards_plan(anchor))
-    targets = [anchor]
-    for leaf in graph.leaf_nodes():
-        if leaf[0] == "integrations":
-            continue
-        node = leaf
-        while any(
-            ancestor[0] == "integrations" and ancestor not in allowed
-            for ancestor in graph.forwards_plan(node)
-        ):
-            parents = [
-                parent
-                for parent in graph.node_map[node].parents
-                if parent.key[0] == node[0]
-            ]
-            node = parents[0].key
-        targets.append(node)
-    return targets
-
-
 @skipIf(os.environ.get("FLOPPY_TEST_FAST_DB") == "1", "Requires the migration graph")
 class RatingSyncMigrationTests(TransactionTestCase):
     """Exercise real schema operations on the configured database backend."""
@@ -47,10 +18,9 @@ class RatingSyncMigrationTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         latest = executor.loader.graph.leaf_nodes()
         try:
-            executor.migrate([before])
-            executor = MigrationExecutor(connection)
-            targets = _state_targets(executor.loader.graph, before)
-            apps = executor.loader.project_state(targets).apps
+            # Use the state of the migrations actually left applied. Other
+            # apps' latest leaves can depend on later integration migrations.
+            apps = executor.migrate([before]).apps
             user = apps.get_model("users", "User").objects.create(
                 username="migration-rating"
             )
@@ -78,13 +48,7 @@ class RatingSyncMigrationTests(TransactionTestCase):
                 status="pending",
                 intent=False,
             )
-            MigrationExecutor(connection).migrate([after])
-            executor = MigrationExecutor(connection)
-            # The database is at ``after``, so read it with models of that
-            # schema; a later migration may add columns it does not have yet.
-            apps = executor.loader.project_state(
-                _state_targets(executor.loader.graph, after)
-            ).apps
+            apps = MigrationExecutor(connection).migrate([after]).apps
             deliveries = apps.get_model("integrations", "OutboundStateDelivery").objects
             self.assertEqual(deliveries.get(pk=watched.pk).operation, "watched")
             self.assertFalse(deliveries.get(pk=watched.pk).intent)
@@ -96,9 +60,7 @@ class RatingSyncMigrationTests(TransactionTestCase):
                 operation="rating",
                 rating=7,
             )
-            executor.migrate([before])
-            executor = MigrationExecutor(connection)
-            apps = executor.loader.project_state(targets).apps
+            apps = MigrationExecutor(connection).migrate([before]).apps
             surviving = apps.get_model(
                 "integrations", "OutboundStateDelivery"
             ).objects.get()

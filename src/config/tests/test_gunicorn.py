@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from unittest import mock, skipIf
 
 from django.test import SimpleTestCase
@@ -44,6 +45,16 @@ class GunicornConfigTests(SimpleTestCase):
         gunicorn_config.pre_fork(None, None)
 
         redis_cache.client.do_close_clients.assert_called_once_with()
+
+    def test_accepted_connections_are_capped_at_the_thread_count(self):
+        """A worker must not hoard connections it has no free thread for."""
+        self.assertEqual(gunicorn_config.worker_connections, gunicorn_config.threads)
+
+    def test_nginx_serves_the_service_worker_without_gunicorn(self):
+        """/serviceworker.js must not depend on a free Gunicorn thread."""
+        nginx_conf = (Path(__file__).resolve().parents[3] / "nginx.conf").read_text()
+        self.assertIn("location = /serviceworker.js {", nginx_conf)
+        self.assertIn("alias /floppy/staticfiles/js/serviceworker.js;", nginx_conf)
 
     def test_when_ready_preloads_url_conf_before_freezing(self):
         """Workers must inherit the imported URLconf, not each import it."""

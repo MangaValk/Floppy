@@ -27,6 +27,18 @@ worker_class = "gthread"
 workers = web_concurrency()
 threads = gunicorn_threads()
 
+# gthread accepts up to worker_connections sockets whatever the thread count,
+# and hands each to a private queue in front of that worker's pool (gunicorn
+# gthread.accept/enqueue_req). At the default of 1000 a connection accepted by
+# a worker whose threads are all busy waits there, invisible and unreachable,
+# even while the other worker idles -- so a trivial request such as
+# /serviceworker.js stalls behind slow ones until nginx gives up on it. Capping
+# accepted connections at the thread count leaves the surplus in the kernel
+# backlog, where whichever worker frees a thread first takes it. nginx speaks
+# HTTP/1.0 to this upstream, so no keepalive slots are lost; gunicorn's
+# "No keepalived connections can be handled" boot warning is expected.
+worker_connections = threads
+
 # Recycle workers more aggressively on small hosts: RSS only creeps upward
 # within a worker's life, so a lower ceiling caps the steady-state footprint.
 max_requests = by_tier(200, 300, 500)

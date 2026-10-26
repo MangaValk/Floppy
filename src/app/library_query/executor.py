@@ -544,11 +544,12 @@ def _attach_media(user, batch: list[Candidate], needs: set[str]) -> None:
             rows = rows.defer("item__watch_providers")
         # Progress and derived status read episodes and seasons; fetch them
         # once for the batch instead of once per row. Ranking only reads the
-        # compact episode fields unless runtime is part of the sort/filter.
+        # compact episode fields: runtime comes from the bulk runtime index
+        # below, not from the prefetched episode items.
         rows = BasicMedia.objects._apply_prefetch_related(
             rows,
             media_type,
-            list_mode=filter_registry.NEEDS_RUNTIME not in needs,
+            list_mode=True,
             compact_episodes=True,
         )
         aggregated = BasicMedia.objects._aggregate_duplicate_data(rows, user, media_type)
