@@ -149,6 +149,23 @@ class Media(models.Model):
         indexes = [
             models.Index(fields=["user", "status"]),
             models.Index(fields=["user", "created_at"]),
+            # Discover's candidate queries filter user+status(+score) and order
+            # by recency (end_date, progressed_at, created_at) with a LIMIT.
+            models.Index(
+                fields=["user", "status", "-end_date", "-progressed_at", "-created_at"],
+                name="app_%(class)s_usr_act_idx",
+            ),
+            models.Index(
+                fields=[
+                    "user",
+                    "status",
+                    "-score",
+                    "-end_date",
+                    "-progressed_at",
+                    "-created_at",
+                ],
+                name="app_%(class)s_usr_scr_idx",
+            ),
         ]
 
     def __str__(self):
