@@ -744,8 +744,9 @@ class RestoreSnapshotTests(SimpleTestCase):
         self.make_snapshot("db-new.sqlite3", "new", 2_000)
         page = recovery.render_page(report, interactive=True)
         self.assertIn("action='/restore'", page)
-        self.assertIn("db-new.sqlite3", page)
-        self.assertIn("Repair it now", page)
+        self.assertIn("Saved copies", page)
+        self.assertIn("newest", page)
+        self.assertIn("Repair it", page)
         self.assertNotIn("&mdash;", page)
         self.assertNotIn("\u2014", page)
 
@@ -848,6 +849,7 @@ class RestoreSnapshotTests(SimpleTestCase):
         self.assertEqual(ctx.exception.code, 409)
         body = ctx.exception.read().decode()
         self.assertIn("The repair did not work.", body)
+        self.assertIn("None of the 1 saved copies", body)
         # The page carries a report that names the step, error and files.
         self.assertIn("Floppy restore failure report", body)
         self.assertIn("failed step: check the saved copy", body)
@@ -872,7 +874,7 @@ class RestoreSnapshotTests(SimpleTestCase):
         report = ctx.exception.report
         self.assertIn("failed step: swap in the saved copy", report)
         self.assertIn("errno: 28", report)
-        self.assertIn("snapshot: db-new.sqlite3", report)
+        self.assertIn("1. db-new.sqlite3", report)
         self.assertIn("db.sqlite3  ", report)
 
     def test_page_without_snapshots_explains_and_has_no_button(self):
@@ -881,3 +883,120 @@ class RestoreSnapshotTests(SimpleTestCase):
         )
         self.assertIn("No saved copies were found", page)
         self.assertNotIn("<form", page)
+
+    def test_checking_copies_never_creates_files_beside_them(self):
+        """A WAL-mode snapshot must verify without a -shm in a read-only folder."""
+        path = self.snapshots / "db-wal.sqlite3"
+        conn = sqlite3.connect(path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("CREATE TABLE t (v TEXT)")
+        conn.execute("INSERT INTO t VALUES ('wal')")
+        conn.commit()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.close()
+        for extra in ("-wal", "-shm"):
+            Path(f"{path}{extra}").unlink(missing_ok=True)
+        self.damage_live_database()
+        Path(f"{self.db_path}-shm").unlink()
+        before = sorted(p.name for p in self.snapshots.iterdir())
+        recovery.restore_latest(self.db_path)
+        self.assertEqual(sorted(p.name for p in self.snapshots.iterdir()), before)
+
+    def test_restore_tries_older_copies_when_the_newest_is_bad(self):
+        (self.snapshots / "db-newest-bad.sqlite3").write_bytes(b"garbage" * 1000)
+        os.utime(self.snapshots / "db-newest-bad.sqlite3", (3_000, 3_000))
+        self.make_snapshot("db-older.sqlite3", "older", 2_000)
+        self.make_snapshot("db-oldest.sqlite3", "oldest", 1_000)
+        self.damage_live_database()
+        name, _aside = recovery.restore_latest(self.db_path)
+        self.assertEqual(name, "db-older.sqlite3")
+        self.assertEqual(self.marker(self.db_path), "older")
+
+    def test_post_falls_back_to_an_older_copy(self):
+        (self.snapshots / "db-newest-bad.sqlite3").write_bytes(b"garbage" * 1000)
+        os.utime(self.snapshots / "db-newest-bad.sqlite3", (3_000, 3_000))
+        self.make_snapshot("db-older.sqlite3", "older", 2_000)
+        self.damage_live_database()
+        base = self.serve()
+        with self.post(base, {}) as response:
+            self.assertEqual(response.status, 200)
+        self.assertEqual(self.marker(self.db_path), "older")
+
+    def test_when_every_copy_fails_the_report_lists_each_attempt_and_the_context(self):
+        for index, name in enumerate(("db-a.sqlite3", "db-b.sqlite3")):
+            path = self.snapshots / name
+            path.write_bytes(b"garbage" * 1000)
+            os.utime(path, (2_000 - index, 2_000 - index))
+        self.damage_live_database()
+        before = Path(self.db_path).read_bytes()
+        with mock.patch.dict(
+            os.environ, {"VERSION": "26.10.1", "DB_SNAPSHOT_ENABLED": "true"}
+        ), self.assertRaises(recovery.RestoreError) as ctx:
+            recovery.restore_latest(self.db_path)
+        report = ctx.exception.report
+        self.assertEqual(Path(self.db_path).read_bytes(), before)
+        for needle in (
+            "restore attempts (2)",
+            "1. db-a.sqlite3",
+            "2. db-b.sqlite3",
+            "failed step: check the saved copy",
+            "incident reasons:",
+            "startup status:",
+            "database filesystem:",
+            "backup filesystem:",
+            "free space beside database:",
+            "damaged file header (first 16 bytes):",
+            "damaged file quick_check",
+            "floppy: 26.10.1",
+            "DB_SNAPSHOT_ENABLED=true",
+            "sqlite:",
+            "mode=",
+            "db.sqlite3-wal",
+            "snapshot folder",
+            "container log",
+        ):
+            self.assertIn(needle, report)
+
+    def test_no_copies_gives_a_report_instead_of_a_button(self):
+        self.damage_live_database()
+        with self.assertRaises(recovery.RestoreError) as ctx:
+            recovery.restore_latest(self.db_path)
+        self.assertIn("no saved copies", str(ctx.exception))
+        self.assertIn("restore attempts (0)", ctx.exception.report)
+
+    def test_secrets_are_not_put_in_the_report(self):
+        self.damage_live_database()
+        with mock.patch.dict(
+            os.environ, {"FLOPPY_SQLITE_BACKUP_TOKEN": "s3cret-token-value", "SECRET": "k"}
+        ), self.assertRaises(recovery.RestoreError) as ctx:
+            recovery.restore_latest(self.db_path)
+        self.assertNotIn("s3cret-token-value", ctx.exception.report)
+
+
+class SnapshotDefaultsTests(SimpleTestCase):
+    """Issue #1053: the nightly snapshots the repair depends on must be on."""
+
+    def test_snapshots_are_enabled_by_default_with_retention(self):
+        from django.conf import settings
+
+        env_off = os.environ.get("DB_SNAPSHOT_ENABLED", "").lower() in {"0", "false"}
+        if not env_off:
+            self.assertTrue(settings.DB_SNAPSHOT_ENABLED)
+        self.assertGreaterEqual(settings.DB_SNAPSHOT_RETENTION_COUNT, 3)
+
+    def test_the_snapshot_task_is_always_scheduled(self):
+        from django.conf import settings
+
+        entry = settings.CELERY_BEAT_SCHEDULE["write_database_snapshot"]
+        self.assertEqual(entry["task"], "Write database snapshot")
+
+    def test_the_default_install_files_do_not_turn_snapshots_off(self):
+        root = Path(__file__).resolve().parents[3]
+        for name in ("docker-compose.yml", "docker-compose.postgres.yml", ".env.example"):
+            path = root / name
+            if path.exists():
+                self.assertNotRegex(
+                    path.read_text(), r"DB_SNAPSHOT_ENABLED\s*[=:]\s*['\"]?(false|0)", name
+                )
+        compose = (root / "docker-compose.yml").read_text()
+        self.assertIn("/floppy/backups", compose)

@@ -191,6 +191,7 @@ class RestoreError(Exception):
     """
 
     report = ""
+    attempt: dict | None = None
 
     def __init__(self, message: str, step: str = "restore") -> None:
         """Keep the plain message and the name of the step that failed."""
@@ -238,50 +239,40 @@ def _format_size(size: int) -> str:
 
 
 def _restore_card(snapshots: list[dict]) -> str:
-    """Offer a one-click repair from the copies Floppy already saved."""
+    """Offer a one-click repair, and list the copies it will try."""
     if not snapshots:
         return ""
 
     def when(item: dict) -> str:
         return f"{datetime.fromtimestamp(item['mtime'], UTC):%B %d, %Y at %H:%M} UTC"
 
-    options = "".join(
-        "<li><label><input type='radio' name='snapshot' "
-        f"value='{html.escape(item['name'], quote=True)}'"
-        f"{' checked' if index == 0 else ''}> "
-        f"{when(item)}, {_format_size(item['size'])}"
-        f"{' (newest)' if index == 0 else ''}</label></li>"
+    rows = "".join(
+        f"<li><span>{when(item)}</span>"
+        f"<span>{_format_size(item['size'])}"
+        f"{' &middot; newest' if index == 0 else ''}</span></li>"
         for index, item in enumerate(snapshots)
     )
-    newest = snapshots[0]
-    others = (
-        "<details><summary>Use an older copy instead</summary>"
-        f"<ul>{options}</ul></details>"
-        if len(snapshots) > 1
-        else (
-            f"<input type='radio' name='snapshot' checked hidden "
-            f"value='{html.escape(newest['name'], quote=True)}'>"
-        )
-    )
     return (
-        "<div class='card'><h2>Repair it now</h2>"
-        f"<p>The newest saved copy is from <strong>{when(newest)}</strong>. "
-        "Anything you added after that is not in it.</p>"
-        "<p>The damaged file is kept in the "
+        "<div class='card'><h2>Saved copies</h2>"
+        "<p>Floppy keeps these checked copies of your database. Anything you "
+        "added after the newest one is not in it.</p>"
+        f"<ul>{rows}</ul></div>"
+        "<div class='card'><h2>Repair it</h2>"
+        "<p>Floppy starts with the newest copy. If a copy fails its check, it "
+        "tries the next one. Your damaged file is moved to the "
         f"<code>{_DAMAGED_FOLDER}</code> folder next to your database, "
-        "so nothing is deleted.</p>"
+        "not deleted.</p>"
         "<form method='POST' action='/restore'>"
-        f"{others}"
-        "<button>Restore the newest copy and start Floppy</button>"
+        "<button>Restore and start Floppy</button></form>"
         "<p class='note'>This can take a few minutes for a large library. "
-        "Leave this page open.</p></form></div>"
+        "Leave this page open.</p></div>"
     )
 
 
 def _verify_snapshot_file(path: Path) -> None:
     """Refuse a snapshot that is not itself a healthy database."""
     try:
-        connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro&immutable=1", uri=True)
     except sqlite3.Error as error:
         msg = "Floppy could not open the saved copy."
         raise RestoreError(msg, "open the saved copy") from error
@@ -304,49 +295,132 @@ def _copy_durably(source: Path, destination: Path) -> None:
         os.fsync(writer.fileno())
 
 
-def _describe_files(folder: Path, *, limit: int = 40) -> list[str]:
+def _describe_files(folder: Path, *, limit: int = 60) -> list[str]:
     lines = []
     try:
-        for entry in sorted(folder.iterdir())[:limit]:
-            try:
-                info = entry.lstat()
-                lines.append(f"  {entry.name}  {info.st_size} bytes")
-            except OSError as error:
-                lines.append(f"  {entry.name}  (cannot stat: {error})")
+        entries = sorted(folder.iterdir())
     except OSError as error:
-        lines.append(f"  (cannot list: {error})")
+        return [f"  (cannot list: {error})"]
+    for entry in entries[:limit]:
+        try:
+            info = entry.lstat()
+            modified = datetime.fromtimestamp(info.st_mtime, UTC).strftime("%Y-%m-%d %H:%M")
+            lines.append(
+                f"  {entry.name}  {info.st_size} bytes  {modified} UTC  "
+                f"mode={info.st_mode & 0o7777:o} uid={info.st_uid} gid={info.st_gid}"
+            )
+        except OSError as error:
+            lines.append(f"  {entry.name}  (cannot stat: {error})")
+    if len(entries) > limit:
+        lines.append(f"  ... {len(entries) - limit} more")
     return lines
 
 
-def _failure_report(
-    step: str, error: BaseException, db_path: str, snapshot: Path | None, folder: Path
-) -> str:
-    """Collect what is needed to trace a failed restore from one pasted block."""
+def _filesystem_of(path: Path) -> str:
+    """Name the filesystem under a path. Network shares are a prime suspect."""
+    try:
+        target = str(path.resolve())
+        best = ("", "unknown")
+        for line in Path("/proc/mounts").read_text().splitlines():
+            fields = line.split()
+            mount, kind = fields[1].replace("\\040", " "), fields[2]
+            if (target == mount or target.startswith(mount.rstrip("/") + "/")) and len(
+                mount
+            ) >= len(best[0]):
+                best = (mount, f"{kind} mounted at {mount} ({fields[3].split(',')[0]})")
+        return best[1]
+    except (OSError, IndexError):
+        return "unknown (no /proc/mounts)"
+
+
+def _damaged_file_lines(database: Path) -> list[str]:
+    """Describe the damaged file itself, without ever writing to it."""
+    lines = []
+    try:
+        with database.open("rb") as handle:
+            header = handle.read(100)
+        lines.append(f"damaged file header (first 16 bytes): {header[:16]!r}")
+        if len(header) >= 100:  # noqa: PLR2004
+            page_size = int.from_bytes(header[16:18], "big")
+            lines.append(
+                f"damaged file page_size={page_size} "
+                f"journal_version(w/r)={header[18]}/{header[19]} "
+                f"file_change_counter={int.from_bytes(header[24:28], 'big')}"
+            )
+    except OSError as error:
+        lines.append(f"damaged file cannot be read: {error}")
+    try:
+        connection = sqlite3.connect(f"{database.as_uri()}?mode=ro&immutable=1", uri=True, timeout=1)
+        try:
+            lines.append(
+                f"damaged file quick_check(10): "
+                f"{connection.execute('PRAGMA quick_check(10)').fetchall()}"
+            )
+        finally:
+            connection.close()
+    except sqlite3.Error as error:
+        lines.append(f"damaged file quick_check failed: {error}")
+    return lines
+
+
+_REPORT_ENV = (
+    "VERSION", "COMMIT_SHA", "TZ", "BACKUP_DIR", "FLOPPY_DB_PATH", "DB_SNAPSHOT_ENABLED",
+    "DB_SNAPSHOT_HOUR", "DB_SNAPSHOT_MINUTE", "DB_SNAPSHOT_RETENTION_COUNT",
+    "SQLITE_JOURNAL_MODE", "SQLITE_SYNCHRONOUS", "FLOPPY_SQLITE_AUTO_SNAPSHOT",
+    "FLOPPY_SQLITE_AUTO_REPAIR", "LOG_DIR",
+)  # fmt: skip
+
+
+def _failure_report(attempts: list[dict], db_path: str, folder: Path) -> str:
+    """Collect everything needed to trace a failed restore from one pasted block."""
     database = Path(db_path).resolve()
     try:
         free = shutil.disk_usage(database.parent).free
     except OSError:
         free = "unknown"
+    incident = _read_incident_report(db_path) or {}
     lines = [
         "Floppy restore failure report",
         f"time: {datetime.now(UTC).isoformat()}",
-        f"failed step: {step}",
-        f"error: {type(error).__name__}: {error}",
-    ]
-    if getattr(error, "errno", None) is not None:
-        lines.append(f"errno: {error.errno} ({os.strerror(error.errno)})")
-    lines += [
-        f"snapshot: {snapshot.name if snapshot else 'none chosen'}",
-        f"database: {database}",
-        f"free space beside database: {free} bytes",
+        f"floppy: {os.environ.get('VERSION', 'unknown')} "
+        f"({os.environ.get('COMMIT_SHA', 'unknown')})",
         f"sqlite: {sqlite3.sqlite_version}  python: {sys.version.split()[0]}  "
         f"platform: {sys.platform}",
-        "database folder:",
+        f"process: uid={os.getuid()} gid={os.getgid()}" if hasattr(os, "getuid") else "",
+        "",
+        f"restore attempts ({len(attempts)}), newest first:",
+    ]
+    for number, attempt in enumerate(attempts, start=1):
+        lines.append(f"  {number}. {attempt['snapshot']}")
+        lines.append(f"     failed step: {attempt['step']}")
+        lines.append(f"     error: {attempt['error']}")
+        if attempt.get("errno") is not None:
+            lines.append(f"     errno: {attempt['errno']} ({os.strerror(attempt['errno'])})")
+        lines.append(f"     message shown: {attempt['message']}")
+    lines += [
+        "",
+        f"incident reasons: {incident.get('unsafe_reasons', 'none recorded')}",
+        f"startup status: {read_startup_status(db_path)}",
+        "",
+        f"database: {database}",
+        f"database filesystem: {_filesystem_of(database.parent)}",
+        f"backup filesystem: {_filesystem_of(folder)}",
+        f"free space beside database: {free} bytes",
+        *_damaged_file_lines(database),
+        "",
+        "settings:",
+        *(f"  {key}={os.environ[key]}" for key in _REPORT_ENV if key in os.environ),
+        "",
+        f"database folder ({database.parent}):",
         *_describe_files(database.parent),
+        f"{_DAMAGED_FOLDER} folder:",
+        *_describe_files(database.parent / _DAMAGED_FOLDER),
         f"snapshot folder ({folder}):",
         *_describe_files(folder),
+        "",
+        "Also attach the container log (docker logs) and <data>/logs/floppy.log.",
     ]
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if line is not None)
 
 
 def _find_snapshot(directory: Path, name: str) -> Path:
@@ -358,18 +432,17 @@ def _find_snapshot(directory: Path, name: str) -> Path:
 
 
 def restore_snapshot(db_path: str, name: str, snapshot_dir: Path | None = None) -> Path:
-    """Replace the damaged database with a verified snapshot.
+    """Replace the damaged database with one verified snapshot.
 
     The snapshot is verified and copied beside the database first, so a failure
     at any step leaves the damaged file exactly where it was. Only then is the
     damaged file moved aside together with its -wal/-shm/-journal companions: a
     stale WAL left next to a restored file would be replayed into it and damage
     it again. Returns the folder the damaged files were moved to. Any failure
-    raises RestoreError carrying a technical report.
+    raises RestoreError carrying an ``attempt`` record and a technical report.
     """
     directory = snapshot_dir or _snapshot_dir()
     step = "choose snapshot"
-    source: Path | None = None
     try:
         # The path comes from the folder listing, never from the submitted
         # name, so a name that is not in the listing cannot reach the filesystem.
@@ -377,15 +450,58 @@ def restore_snapshot(db_path: str, name: str, snapshot_dir: Path | None = None) 
         step = "check the saved copy"
         return _restore_verified(db_path, source)
     except RestoreError as error:
-        error.report = error.report or _failure_report(
-            error.step, error.__cause__ or error, db_path, source, directory
-        )
+        cause = error.__cause__ or error
+        error.attempt = {
+            "snapshot": name,
+            "step": error.step,
+            "error": f"{type(cause).__name__}: {cause}",
+            "errno": getattr(cause, "errno", None),
+            "message": str(error),
+        }
+        error.report = _failure_report([error.attempt], db_path, directory)
         raise
     except (OSError, sqlite3.Error) as error:
         msg = "Floppy could not restore the saved copy."
-        failure = RestoreError(msg)
-        failure.report = _failure_report(step, error, db_path, source, directory)
+        failure = RestoreError(msg, step)
+        failure.attempt = {
+            "snapshot": name,
+            "step": step,
+            "error": f"{type(error).__name__}: {error}",
+            "errno": getattr(error, "errno", None),
+            "message": msg,
+        }
+        failure.report = _failure_report([failure.attempt], db_path, directory)
         raise failure from error
+
+
+def restore_latest(db_path: str, snapshot_dir: Path | None = None) -> tuple[str, Path]:
+    """Restore the newest saved copy that works, trying each one in turn.
+
+    Returns the name of the copy that was restored and the folder the damaged
+    files were moved to. If every copy fails, raises RestoreError whose report
+    lists every attempt.
+    """
+    directory = snapshot_dir or _snapshot_dir()
+    attempts: list[dict] = []
+    for item in list_snapshots(directory):
+        try:
+            return item["name"], restore_snapshot(db_path, item["name"], directory)
+        except RestoreError as error:
+            attempts.append(error.attempt)
+            _log(
+                f"[entrypoint] Saved copy {item['name']} could not be restored "
+                f"({error.step}): {error.attempt['error']}"
+            )
+    if attempts:
+        msg = (
+            f"None of the {len(attempts)} saved copies could be restored. "
+            "Floppy changed nothing."
+        )
+    else:
+        msg = "Floppy found no saved copies to restore."
+    failure = RestoreError(msg, "restore latest")
+    failure.report = _failure_report(attempts, db_path, directory)
+    raise failure
 
 
 def _restore_verified(db_path: str, source: Path) -> Path:
@@ -810,8 +926,8 @@ def _restore_failure_page(error: RestoreError) -> str:
         "<h1>The repair did not work.</h1>"
         f"<p>{html.escape(str(error))} Your damaged database is exactly where it "
         "was, so nothing is lost.</p>"
-        "<p><a href='/'>Go back</a> and try an older saved copy. If it keeps "
-        "failing, copy the report below into a new issue so it can be traced.</p>"
+        "<p>Copy the report below into a new issue so it can be traced. It "
+        "lists every saved copy Floppy tried and why each one failed.</p>"
         "<div class='card'><h2>Report</h2>"
         "<p><button data-copy='details'>Copy details</button></p>"
         f"<pre id='details'>{html.escape(error.report)}</pre></div>"
@@ -1038,10 +1154,8 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._is_same_origin():
             self._send(403, "cross-site request", "text/plain; charset=utf-8")
             return
-        fields = self._read_body()
-        name = (fields.get("snapshot") or [""])[0] if fields is not None else ""
         try:
-            aside = restore_snapshot(self.db_path, name)
+            name, aside = restore_latest(self.db_path)
         except RestoreError as error:
             _log(f"[entrypoint] Restore failed:\n{error.report}")
             self._send(409, _restore_failure_page(error), "text/html; charset=utf-8")
