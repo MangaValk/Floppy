@@ -259,13 +259,19 @@ else
     echo "[entrypoint] SQLite schema is current; skipping migrate and its handlers" >&2
 fi
 
-# The image collects static files at build time with DEBUG unset, so
-# debug_toolbar's app (and its static assets) are never installed then. If an
-# operator turns DEBUG on for this container, re-collect now under the actual
-# runtime settings so /static/debug_toolbar/... stops 404ing instead of
-# serving a stale, DEBUG-less build (#1224).
-echo "[entrypoint] Collecting static files" >&2
-python manage.py collectstatic --noinput
+# An unchanged image already contains the complete collection. The lightweight
+# check also verifies ownership for the image's default IDs. Any changed input,
+# missing file, runtime app change (including DEBUG's toolbar), or absent build
+# record keeps the ordinary collectstatic and ownership-repair paths (#1224).
+echo "[entrypoint] Preparing static files" >&2
+static_from_image=false
+if python config/static_collection.py; then
+    static_from_image=true
+    echo "[entrypoint] Reusing image static files" >&2
+else
+    echo "[entrypoint] Collecting static files" >&2
+    python manage.py collectstatic --noinput
+fi
 
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
@@ -343,6 +349,11 @@ done
 # Bound recursive ownership fixes for the image-managed service directories: a
 # stalled bind mount must degrade to a warning instead of hanging boot (#341).
 for dir in /floppy/staticfiles /var/log/nginx /var/lib/nginx; do
+    if [ "$dir" = /floppy/staticfiles ] && [ "$static_from_image" = true ] && \
+       [ "$PUID" = 1000 ] && [ "$PGID" = 1000 ]; then
+        echo "[entrypoint] Reusing image static ownership" >&2
+        continue
+    fi
     echo "[entrypoint] Chowning ${dir}" >&2
     timeout 600 chown -R abc:abc -- "$dir" || \
         echo "[entrypoint] WARNING: chown of ${dir} failed or timed out (stalled mount?); continuing" >&2
