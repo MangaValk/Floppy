@@ -103,7 +103,7 @@
              loading="lazy"
              class="w-full aspect-[2/3] rounded-md object-cover bg-[var(--color-surface-alt)] ring-2"
              :class="!choice.value ? 'ring-[var(--color-accent)]' : 'ring-transparent'">
-        <span class="absolute top-1 right-1 rounded bg-[var(--color-accent)] px-1.5 text-xs text-white" x-show="!choice.value" x-cloak>&#10003;</span>
+        <span class="absolute top-1 right-1 rounded bg-[var(--color-accent)] px-1.5 text-xs text-[var(--color-accent-contrast)]" x-show="!choice.value" x-cloak>&#10003;</span>
         <span class="mt-1 block text-xs text-[var(--color-text-muted)]">{% translate "Current" %}</span>
       </button>
 
@@ -113,7 +113,7 @@
           <img :src="choice.value"
                alt=""
                class="w-full aspect-[2/3] rounded-md object-cover bg-[var(--color-surface-alt)] ring-2 ring-[var(--color-accent)]">
-          <span class="absolute top-1 right-1 rounded bg-[var(--color-accent)] px-1.5 text-xs text-white">&#10003;</span>
+          <span class="absolute top-1 right-1 rounded bg-[var(--color-accent)] px-1.5 text-xs text-[var(--color-accent-contrast)]">&#10003;</span>
           <span class="mt-1 block text-xs text-[var(--color-text-muted)]">{% translate "New" %}</span>
         </div>
       </template>

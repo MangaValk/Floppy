@@ -13,7 +13,7 @@
          onerror="this.closest('button').remove()"
          class="w-full aspect-[2/3] rounded-md object-cover bg-[var(--color-surface-alt)] ring-2"
          :class="choice.value === $el.closest('button').dataset.url ? 'ring-[var(--color-accent)]' : 'ring-transparent'">
-    <span class="absolute top-1 right-1 rounded bg-[var(--color-accent)] px-1.5 text-xs text-white"
+    <span class="absolute top-1 right-1 rounded bg-[var(--color-accent)] px-1.5 text-xs text-[var(--color-accent-contrast)]"
           x-show="choice.value === $el.closest('button').dataset.url" x-cloak>&#10003;</span>
     <span class="mt-1 block text-xs text-[var(--color-text-muted)] line-clamp-2">{{ candidate.title }}</span>
   </button>
