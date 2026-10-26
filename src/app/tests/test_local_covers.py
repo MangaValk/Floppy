@@ -361,7 +361,7 @@ class RenderingTests(CoverTestCase):
 
 
 class CandidatesTests(CoverTestCase):
-    """The Find cover picker."""
+    """The pictures the cover picker offers."""
 
     def candidates(self):
         return self.client.get(
@@ -380,7 +380,17 @@ class CandidatesTests(CoverTestCase):
 
         self.assertContains(response, "Moonlight Courier, Vol. 1")
         self.assertNotContains(response, "No art")
-        self.assertContains(response, reverse("update_item_cover", args=[self.item.id]))
+        self.assertContains(response, 'data-url="https://covers.openlibrary.org/a.jpg"')
+        self.assertNotContains(response, "w-24 shrink-0")
+
+    def test_the_strip_variant_makes_narrow_tiles(self):
+        results = {"results": [{"title": "A", "image": "https://covers.openlibrary.org/a.jpg"}]}
+        with patch.object(cover_views.services, "search", return_value=results):
+            response = self.client.get(
+                reverse("item_cover_candidates", args=[self.item.id]) + "?variant=strip"
+            )
+
+        self.assertContains(response, "w-24 shrink-0")
 
     def test_the_users_barcode_is_offered_first(self):
         group = CollectionFieldGroup.objects.create(user=self.user, name="Details")
@@ -399,7 +409,7 @@ class CandidatesTests(CoverTestCase):
         with patch.object(cover_views.services, "search", side_effect=RuntimeError("down")):
             response = self.candidates()
 
-        self.assertContains(response, "No covers found")
+        self.assertContains(response, "No other covers found")
 
     def test_other_peoples_items_are_not_listed(self):
         other = self.make_item("Not Mine")
@@ -425,4 +435,5 @@ class MetadataTabTests(CoverTestCase):
         )
 
         self.assertContains(response, reverse("update_item_cover", args=[self.item.id]))
-        self.assertContains(response, "Find cover")
+        self.assertContains(response, "choose an image")
+        self.assertContains(response, "enter a URL")

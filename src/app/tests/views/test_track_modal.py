@@ -344,8 +344,8 @@ class TrackModalViewTests(TestCase):
         self.assertContains(response, "Discover")
         # A tracked item gets the Cover section (upload, link, find) in place of
         # the old single Image URL box.
-        self.assertContains(response, "Find cover")
-        self.assertContains(response, "Use link")
+        self.assertContains(response, "choose an image")
+        self.assertContains(response, "enter a URL")
         self.assertContains(response, "Metadata Provider")
         self.assertContains(response, "Fix match")
         self.assertContains(response, "Custom")

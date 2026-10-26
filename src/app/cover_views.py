@@ -167,18 +167,15 @@ def _candidates(user, item):
 @login_required
 @require_GET
 def item_cover_candidates(request, item_id):
-    """Show covers other sources have for an item, to pick one."""
+    """Return the picker tiles for covers other sources have for an item."""
     item = get_object_or_404(Item, id=item_id)
     if not user_has_item(request.user, item):
         raise Http404
     return render(
         request,
-        "app/components/cover_candidates.html",
+        "app/components/image_picker_tiles.html",
         {
-            "item": item,
             "candidates": _candidates(request.user, item),
-            "return_url": helpers.normalize_navigation_url(
-                request.GET.get("return_url")
-            ),
+            "variant": "strip" if request.GET.get("variant") == "strip" else "grid",
         },
     )
