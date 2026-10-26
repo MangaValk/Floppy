@@ -146,6 +146,9 @@ def record_collection() -> bool:
 if __name__ == "__main__":
     if sys.argv[1:] == ["--record"]:
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+        # Run as a script, sys.path[0] is config/: `config` is not importable
+        # and config/celery.py would shadow the celery package.
+        sys.path[0] = str(_BASE_DIR)
         sys.argv = ["manage.py", "collectstatic"]
         import django
 
