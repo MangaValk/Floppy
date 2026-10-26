@@ -2224,6 +2224,27 @@ def media_list(request, media_type):
         if _media_list_filter_cache_key
         else None
     )
+    # Concurrent cold requests for one key would all run the same build; let one
+    # build and the rest read its result. The lock is short-lived and waiters
+    # fall back to building, so a dead builder cannot wedge anyone.
+    _media_list_build_lock_key = None
+    _order_cache_built = bool(_media_list_cache_key) and not use_sql_media_pagination
+    if _media_list_filter_cache_key and (
+        filter_data is None or (_order_cache_built and _media_list_cached is None)
+    ):
+        if cache_utils.acquire_media_list_build_lock(_media_list_filter_cache_key):
+            _media_list_build_lock_key = _media_list_filter_cache_key
+        elif cache_utils.wait_for_media_list_build(
+            _media_list_filter_cache_key,
+            lambda: cache.get(_media_list_filter_cache_key) is not None
+            and (
+                not _order_cache_built or cache.get(_media_list_cache_key) is not None
+            ),
+        ):
+            _media_list_cached = (
+                cache.get(_media_list_cache_key) if _media_list_cache_key else None
+            )
+            filter_data = cache.get(_media_list_filter_cache_key)
 
     # time_left keeps its own sorted-order cache (the sort is the expensive
     # part). Check it BEFORE building the full media list: on a hit with warm
@@ -2415,15 +2436,24 @@ def media_list(request, media_type):
             filter_data["show_progress"] = media_type in PROGRESS_MEDIA_TYPES
             # Tag counts ignore the tag filter itself, or every other tag
             # would count 0 (#1072).
-            tag_rows = (
-                _menu_rows(replace(menu_filters, tags=()))
+            # Counting reads only the item ids, so the tag-free pass skips the
+            # menu columns.
+            tag_item_ids = (
+                LibraryQueryExecutor(
+                    request.user,
+                    from_media_list_filters(
+                        replace(menu_filters, tags=()), (media_type,)
+                    ),
+                )
+                .filtered.order_by()
+                .values_list("pk", flat=True)
                 if tag_values
-                else filter_data_rows
+                else item_ids
             )
             filter_data.update(
                 _build_media_list_tag_data(
                     request.user,
-                    [SimpleNamespace(**row) for row in tag_rows],
+                    [SimpleNamespace(id=pk) for pk in tag_item_ids],
                 ),
             )
             if _media_list_filter_cache_key:
@@ -2436,6 +2466,8 @@ def media_list(request, media_type):
                     request.user.id,
                     _media_list_filter_cache_key,
                 )
+                if _media_list_build_lock_key:
+                    cache_utils.release_media_list_build_lock(_media_list_build_lock_key)
     elif _media_list_cached is None:
         # Podcasts always render from PodcastShowTracker further below, and
         # music's artists/albums subviews render from ArtistTracker/
@@ -2671,6 +2703,8 @@ def media_list(request, media_type):
                     request.user.id,
                     _media_list_filter_cache_key,
                 )
+                if _media_list_build_lock_key:
+                    cache_utils.release_media_list_build_lock(_media_list_build_lock_key)
         media_list = apply_rating_filter(media_list, rating_filter)
         media_list = apply_range_filters(media_list)
         media_list = apply_collection_filter(
@@ -2816,6 +2850,8 @@ def media_list(request, media_type):
             cache_utils.register_media_list_cache_key(
                 request.user.id, _media_list_cache_key
             )
+            if _media_list_build_lock_key and filter_data is not None:
+                cache_utils.release_media_list_build_lock(_media_list_build_lock_key)
     elif filter_data is None:
         # Order cache hit but filter_data cache missed: hydrate every cached
         # row (one bulk query) instead of the full filter/sort pipeline, then
@@ -2948,6 +2984,8 @@ def media_list(request, media_type):
                 request.user.id,
                 _media_list_filter_cache_key,
             )
+            if _media_list_build_lock_key:
+                cache_utils.release_media_list_build_lock(_media_list_build_lock_key)
 
     # Handle time_left sorting for TV shows
     if _time_left_active:

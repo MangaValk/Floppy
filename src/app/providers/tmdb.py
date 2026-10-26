@@ -1008,6 +1008,11 @@ def fetch_and_cache_seasons(media_id, season_numbers, tv_data, language=None, *,
             handle_error(error)
 
         if is_first_batch:
+            # tv() records the backdrop it already fetched; do the same here so
+            # a season/episode page doesn't pay a second /tv request for it.
+            backdrops.remember_tmdb_backdrop(
+                MediaTypes.TV.value, media_id, response.get("backdrop_path")
+            )
             # Always refresh the root TV payload from the same TMDB response
             # so season fetches can pick up updated external_ids (including
             # tvdb_id) even when the show cache already existed before this

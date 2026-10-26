@@ -76,6 +76,7 @@ def build_history_index(
         .annotate(
             day=TruncDate("end_date"),
         )
+        .order_by()
         .values_list("day", flat=True)
         .distinct()
     ) if include_episode else []
@@ -89,6 +90,7 @@ def build_history_index(
         .annotate(
             day=TruncDate("start_date"),
         )
+        .order_by()
         .values_list("day", flat=True)
         .distinct()
     ) if include_episode else []
@@ -107,6 +109,7 @@ def build_history_index(
         .annotate(
             day=TruncDate("end_date"),
         )
+        .order_by()
         .values_list("day", flat=True)
         .distinct()
     )
@@ -118,6 +121,7 @@ def build_history_index(
         .annotate(
             day=TruncDate("start_date"),
         )
+        .order_by()
         .values_list("day", flat=True)
         .distinct()
     )
@@ -169,12 +173,14 @@ def build_history_index(
         reading_end_days = (
             reading_qs.filter(end_date__isnull=False)
             .annotate(day=TruncDate("end_date"))
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
         reading_start_days = (
             reading_qs.filter(end_date__isnull=True, start_date__isnull=False)
             .annotate(day=TruncDate("start_date"))
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -192,6 +198,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("end_date"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -208,6 +215,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("end_date"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -218,6 +226,7 @@ def build_history_index(
         video_days = (
             VideoPlay.objects.filter(video__user=user)
             .annotate(day=TruncDate("end_date"))
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -234,6 +243,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("end_date"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -245,6 +255,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("start_date"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -256,6 +267,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("created_at"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -275,6 +287,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("end_date"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -286,6 +299,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("start_date"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )
@@ -297,6 +311,7 @@ def build_history_index(
             .annotate(
                 day=TruncDate("created_at"),
             )
+            .order_by()
             .values_list("day", flat=True)
             .distinct()
         )

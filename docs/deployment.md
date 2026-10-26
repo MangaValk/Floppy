@@ -622,6 +622,12 @@ See [docs/architecture/log-redaction.md](architecture/log-redaction.md).
 
 ## Upgrading container images
 
+For SQLite upgrades with pending migrations, the container takes a verified
+recovery snapshot [automatically at startup](architecture/sqlite-startup.md#pending-migrations-automatic-snapshot-at-startup)
+before migrating. Set `FLOPPY_SQLITE_AUTO_SNAPSHOT=false` to require
+[offline migration preparation](architecture/sqlite-startup.md#pending-migrations-explicit-offline-preparation)
+instead. Routine restarts with no pending migrations do not require this.
+
 **Before pulling or recreating a pickle-era deployment**, complete the
 [Celery drain procedure](security-hardening.md#celery-json-transition)
 using the old image and configuration. Ordinary pull/recreate commands do not
@@ -660,16 +666,23 @@ lists the upgrade notices to include with the next hardened release.
 
 ## SQLite startup recovery
 
+Normal restarts use a bounded schema/incident check, with no full-database
+warming or integrity scan. Pending migrations require an unchanged recovery
+snapshot verified offline against both structural and relational failures.
+See [SQLite startup and migration preparation](architecture/sqlite-startup.md)
+for the preparation command, background verifier and exact blocking conditions.
+
 This section covers a broken *relationship* between rows, which Floppy can
-often repair automatically. Physical corruption of the file itself is a
+often repair during explicit offline maintenance. Physical corruption of the file itself is a
 different failure: the startup log and recovery page say "Floppy cannot read
 the database file," and the fix is to restore a copy of the file, not repair
 rows. `sqlite-recovery/` below does not help there, because it is only ever
 written while repairing a relationship; use `BACKUP_DIR/database/` instead
 (see the SQLite data paths section above).
 
-Floppy checks SQLite storage and relationships before it runs migrations.
-If the check finds an album artist credit whose album or artist no longer
+Stop all database writers and use `python manage.py sqlite_startup --recover`
+in a one-off container with the same image and mounts. This invokes the
+existing backup-protected recovery policy. If that check finds an album artist credit whose album or artist no longer
 exists, Floppy creates a verified backup, removes only that invalid credit,
 and checks the database again.
 
@@ -689,8 +702,8 @@ choices:
 1. **Restore or repair:** stop Floppy, back up the database with its `-wal` and
    `-shm` files, then restore a known-good copy or repair the named rows.
 2. **Quarantine:** set
-   `FLOPPY_SQLITE_CONFLICT_ACTION=quarantine:<incident-token>` and recreate the
-   container. Floppy first writes and verifies a full backup under
+   `FLOPPY_SQLITE_CONFLICT_ACTION=quarantine:<incident-token>` for the offline
+   `sqlite_startup --recover` command. Floppy first writes and verifies a full backup under
    `sqlite-recovery/`, then removes the orphaned child rows and verifies all
    relationships again. Floppy refuses to quarantine a table that has no usable
    SQLite row ID or that carries any trigger; the log names the reason and those
@@ -809,24 +822,15 @@ directly.
 
 ### If the SQLite startup check times out
 
-The startup SQLite scan writes its progress to `<database>.integrity.status.json`
-beside the database as it runs, and the container log gets one heartbeat line
-roughly every 30 seconds while the scan is in progress. Each heartbeat reports
-the current phase, phase elapsed time, SQLite progress callbacks, callback rate,
-time since the last observed progress, and a state:
-
-- `active` means a progress callback was observed recently.
-- `quiet` means no callback was observed for more than 45 seconds. This can
-  indicate slow storage or a blocked operation; it does not prove corruption.
-- `none_yet` means the phase has not produced its first callback.
-
-A low but nonzero callback rate means the scan is advancing slowly. If the scan
-still exceeds its bound, the entrypoint stops it, records `status: timeout` in
-the sidecar along with this telemetry, and the recovery page (both the live
-page and the offline `floppy-recovery.html` copy) shows the same diagnosis
-instead of the generic "cannot read the report" page. A timeout does not mean
-the database is corrupt; it means the scan did not finish in time. Run
-`floppy_preflight` (above) for a completed answer.
+Admission stops after 30 seconds instead of running a multi-hour scan. Check
+the command's diagnosis and storage/lock state. A timeout alone is not a
+corruption finding and does not force a scan on the next ordinary restart.
+Full verification runs independently after startup or through explicit,
+bounded maintenance. Its phase/results live in `<database>.verification.json`;
+the container logs report deadline failures. The old recovery scanner's
+progress telemetry remains available when explicitly running `--recover`.
+See the [startup workflow](architecture/sqlite-startup.md) before retrying
+pending migrations or recovery.
 
 ### Verifying a published image actually has a fix
 

@@ -13,7 +13,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import OperationalError
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -40,6 +40,10 @@ class StatisticsSyncTestCase(TestCase):
 
     def setUp(self):
         cache.clear()
+        # Non-eager tests must not inspect the developer's live broker queues.
+        self.enterContext(
+            patch("app.statistics_sync.higher_priority_task_waiting", return_value=False)
+        )
         self.user = get_user_model().objects.create_user(
             username=f"sync-{self.id()[-40:]}", password="secret123"
         )
@@ -299,7 +303,8 @@ class BulkImportStatisticsTests(StatisticsSyncTestCase):
     def test_sqlite_defers_other_users_but_postgres_does_not(self):
         other = get_user_model().objects.create_user(username="other-import")
         ImportRun.objects.create(user=other, source="mdblist")
-        self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
+        with patch.object(statistics_sync.connection, "vendor", "sqlite"):
+            self.assertTrue(statistics_sync._bulk_import_active(self.user.id))
         with patch.object(statistics_sync.connection, "vendor", "postgresql"):
             self.assertFalse(statistics_sync._bulk_import_active(self.user.id))
 
@@ -808,10 +813,28 @@ class ReconcilerTests(StatisticsSyncTestCase):
     def test_midnight_rollover_is_found_without_any_change(self):
         self.full_sync()
         self.assertEqual(statistics_sync.users_needing_sync(), [])
+        generation = self.state().generation
 
         tomorrow = timezone.now() + timedelta(days=1)
         with patch("django.utils.timezone.now", return_value=tomorrow):
             self.assertEqual(statistics_sync.users_needing_sync(), [self.user.id])
+            result = self.full_sync()
+            self.assertEqual(self.state().generation, generation)
+            self.assertEqual(
+                set(result["published"]),
+                set(statistics_sync.HOT_RANGES + statistics_sync.HEAVY_RANGES),
+            )
+            # Even All Time contains today's history card and calendar label.
+            # An unchanged generation alone cannot make yesterday's payload fresh.
+            for payload in result["published"].values():
+                self.assertEqual(
+                    payload["history_highlights"]["today_day"],
+                    timezone.localdate().day,
+                )
+                self.assertEqual(
+                    payload["history_highlights"]["today_month"],
+                    timezone.localdate().month,
+                )
 
     def test_users_without_state_are_bootstrapped_for_warming(self):
         StatisticsSyncState.objects.filter(user_id=self.user.id).delete()
@@ -820,14 +843,71 @@ class ReconcilerTests(StatisticsSyncTestCase):
 
         self.assertIn(self.user.id, statistics_sync.users_needing_sync())
 
-    def test_reconcile_is_scheduled_every_minute_on_the_interactive_lane(self):
+    def test_reconcile_is_scheduled_every_minute_on_the_default_lane(self):
         from django.conf import settings
 
         entry = settings.CELERY_BEAT_SCHEDULE["reconcile_statistics_sync"]
         self.assertEqual(entry["task"], "Reconcile statistics sync")
         self.assertLessEqual(entry["schedule"], 60)
+        self.assertEqual(entry["options"]["expire_seconds"], entry["schedule"])
         route = settings.CELERY_TASK_ROUTES["Reconcile statistics sync"]
-        self.assertEqual(route["queue"], "interactive")
+        self.assertNotIn("queue", route)
+
+
+
+class ReconcilerSchedulePersistenceTests(TransactionTestCase):
+    """The real scheduler may close connections; exercise it in autocommit."""
+
+    def test_beat_updates_existing_reconciler_with_a_message_lifetime(self):
+        from celery import Celery
+        from django.conf import settings
+        from django_celery_beat.models import IntervalSchedule, PeriodicTask
+        from django_celery_beat.schedulers import DatabaseScheduler
+
+        self.assertEqual(
+            settings.CELERY_BEAT_SCHEDULER,
+            "django_celery_beat.schedulers:DatabaseScheduler",
+        )
+        interval, _ = IntervalSchedule.objects.get_or_create(
+            every=60, period=IntervalSchedule.SECONDS
+        )
+        periodic = PeriodicTask.objects.create(
+            name="reconcile_statistics_sync",
+            task="Reconcile statistics sync",
+            interval=interval,
+        )
+        tomorrow = timezone.now() + timedelta(days=1)
+        for absolute_expiry, enabled in ((None, True), (tomorrow, True), (tomorrow, False)):
+            with self.subTest(absolute_expiry=absolute_expiry, enabled=enabled):
+                periodic.expires = absolute_expiry
+                periodic.expire_seconds = None
+                periodic.enabled = enabled
+                periodic.save()
+                with Celery("reconciler_schedule_test", set_as_current=False) as app:
+                    app.conf.update(
+                        broker_url="memory://",
+                        result_expires=None,
+                        beat_schedule={
+                            periodic.name: settings.CELERY_BEAT_SCHEDULE[periodic.name],
+                        },
+                    )
+                    scheduler = DatabaseScheduler(app=app)
+                    try:
+                        periodic.refresh_from_db()
+                        self.assertIsNone(periodic.expires)
+                        self.assertEqual(periodic.expire_seconds, 60)
+                        self.assertEqual(periodic.enabled, enabled)
+                        self.assertEqual(
+                            PeriodicTask.objects.get(name=periodic.name).pk, periodic.pk
+                        )
+                        if enabled:
+                            self.assertEqual(
+                                scheduler.schedule[periodic.name].options["expires"], 60
+                            )
+                        else:
+                            self.assertNotIn(periodic.name, scheduler.schedule)
+                    finally:
+                        scheduler.close()
 
 
 class ReadPathTests(StatisticsSyncTestCase):

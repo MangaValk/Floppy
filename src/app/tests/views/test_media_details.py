@@ -452,6 +452,53 @@ class MediaDetailsViewTests(TestCase):
             status_code=503,
         )
 
+    @patch("app.media_details_views._build_series_graph_data", return_value=None)
+    @patch("app.providers.services.get_media_metadata")
+    def test_secondary_fragment_skips_series_graph_scans(
+        self,
+        mock_get_metadata,
+        mock_graph,
+    ):
+        """Only the shell renders the series graphs, so only it scans episodes."""
+        item = Item.objects.create(
+            media_id="279978",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+            title="Graph Show",
+            image="https://example.com/graph-show.jpg",
+        )
+        TV.objects.create(item=item, user=self.user, status=Status.IN_PROGRESS.value)
+        mock_get_metadata.return_value = {
+            "media_id": item.media_id,
+            "source": Sources.TMDB.value,
+            "media_type": MediaTypes.TV.value,
+            "title": "Graph Show",
+            "image": item.image,
+            "synopsis": "",
+            "details": {},
+            "related": {},
+            "cast": [],
+            "crew": [],
+            "studios_full": [],
+        }
+        url = reverse(
+            "media_details",
+            kwargs={
+                "source": Sources.TMDB.value,
+                "media_type": MediaTypes.TV.value,
+                "media_id": item.media_id,
+                "title": "graph-show",
+            },
+        )
+
+        response = self.client.get(url, {"fragment": "secondary"})
+        self.assertEqual(response.status_code, 200)
+        mock_graph.assert_not_called()
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_graph.call_count, 3)
+
     @patch("app.providers.services.get_media_metadata")
     def test_media_details_keeps_tracked_tmdb_show_available_when_provider_returns_404(
         self,
@@ -1371,6 +1418,11 @@ class MediaDetailsViewTests(TestCase):
             detail_response,
             reverse("prefetch_artist_covers", args=[artist.id]),
         )
+        # The page render arms an early poll; the swapped-in fragment must
+        # not, or every swap re-fires `load` and polls once per second.
+        self.assertContains(
+            detail_response, 'hx-trigger="load delay:500ms, every 5s"'
+        )
         self.assertContains(
             detail_response,
             f'id="album-cover-{scored_album.id}"',
@@ -1393,6 +1445,8 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertContains(refresh_response, "hx-preserve", html=False)
         self.assertContains(refresh_response, "Refreshing cover art")
+        self.assertContains(refresh_response, 'hx-trigger="every 5s"')
+        self.assertNotContains(refresh_response, "load delay")
 
     @patch("app.services.music.needs_discography_sync", return_value=False)
     @patch("app.services.music_scrobble.dedupe_artist_albums")
@@ -4378,6 +4432,15 @@ class MediaDetailsViewTests(TestCase):
         self.assertContains(response, 'role="dialog"', html=False)
         self.assertContains(response, 'href="https://trakt.tv/shows/test-tv-show"')
         self.assertContains(response, "Trakt")
+
+        # The poller must only exist while the modal is open: it sits inside an
+        # x-if template (not merely x-show) so a closed modal issues no requests.
+        soup = BeautifulSoup(response.content, "html.parser")
+        poller = soup.find(attrs={"hx-get": fragment_url})
+        self.assertIsNotNone(poller)
+        self.assertIsNotNone(
+            poller.find_parent("template", attrs={"x-if": "graphOpen"}),
+        )
 
         fragment = self.client.get(fragment_url)
         self.assertEqual(fragment.status_code, 200)
@@ -9528,6 +9591,126 @@ class MediaDetailsViewTests(TestCase):
             item_id=item.id,
             lookup_policy="cached_only",
         )
+
+    @patch("integrations.tasks.fetch_collection_metadata_for_item.delay")
+    @patch("app.providers.tmdb.process_episodes", return_value=[])
+    @patch("app.providers.services.get_media_metadata")
+    def test_season_collection_uses_the_correct_show_identity(
+        self,
+        mock_get_metadata,
+        _mock_process_episodes,
+        mock_fetch_delay,
+    ):
+        PlexAccount.objects.create(
+            user=self.user,
+            plex_token="plex-token",
+            plex_username="plex-user",
+        )
+        cases = (
+            ("season_details", MediaTypes.TV.value, MediaTypes.TV.value, False),
+            (
+                "anime_season_details",
+                MediaTypes.TV.value,
+                MediaTypes.ANIME.value,
+                False,
+            ),
+            (
+                "anime_season_details",
+                MediaTypes.ANIME.value,
+                MediaTypes.ANIME.value,
+                False,
+            ),
+            ("anime_season_details", MediaTypes.TV.value, MediaTypes.TV.value, True),
+        )
+        for index, (route, identity_type, library_type, tracked) in enumerate(cases):
+            with self.subTest(route=route, identity=identity_type, tracked=tracked):
+                media_id = str(166800 + index)
+                show_item = Item.objects.create(
+                    media_id=media_id,
+                    source=Sources.TMDB.value,
+                    media_type=identity_type,
+                    library_media_type=library_type,
+                    title="Test TV Show",
+                )
+                Item.objects.create(
+                    media_id=media_id,
+                    source=Sources.TMDB.value,
+                    media_type=MediaTypes.TV.value,
+                    library_media_type=(
+                        MediaTypes.ANIME.value
+                        if library_type == MediaTypes.TV.value
+                        else MediaTypes.TV.value
+                    ),
+                    title="Other library identity",
+                )
+                season_item = Item.objects.create(
+                    media_id=media_id,
+                    source=Sources.TMDB.value,
+                    media_type=MediaTypes.SEASON.value,
+                    library_media_type=(
+                        library_type
+                        if tracked
+                        else (
+                            MediaTypes.ANIME.value
+                            if route == "anime_season_details"
+                            else MediaTypes.SEASON.value
+                        )
+                    ),
+                    season_number=1,
+                    title="Season 1",
+                )
+                mock_get_metadata.return_value = {
+                    "title": "Test TV Show",
+                    "media_id": media_id,
+                    "source": Sources.TMDB.value,
+                    "media_type": MediaTypes.TV.value,
+                    "image": "http://example.com/show.jpg",
+                    "season/1": {
+                        "title": "Season 1",
+                        "season_title": "Season 1",
+                        "media_id": media_id,
+                        "media_type": MediaTypes.SEASON.value,
+                        "source": Sources.TMDB.value,
+                        "image": "http://example.com/season.jpg",
+                        "episodes": [],
+                    },
+                }
+                if tracked:
+                    show = TV.objects.create(
+                        item=show_item,
+                        user=self.user,
+                        status=Status.PLANNING.value,
+                    )
+                    Season.objects.create(
+                        item=season_item,
+                        user=self.user,
+                        related_tv=show,
+                        status=Status.PLANNING.value,
+                    )
+                mock_fetch_delay.reset_mock()
+
+                with self.assertNoLogs("app.season_details_views", level="ERROR"):
+                    response = self.client.get(
+                        reverse(
+                            route,
+                            kwargs={
+                                "source": Sources.TMDB.value,
+                                "media_id": media_id,
+                                "title": "test-tv-show",
+                                "season_number": 1,
+                            },
+                        ),
+                        {"fragment": "secondary"},
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["fetching_collection_data"])
+                self.assertEqual(response.context["item_id_for_polling"], show_item.id)
+                mock_fetch_delay.assert_called_once_with(
+                    user_id=self.user.id,
+                    item_id=show_item.id,
+                    lookup_policy="cached_only",
+                )
 
     @patch("integrations.tasks.fetch_collection_metadata_for_item.delay")
     @patch("app.providers.tmdb.process_episodes", return_value=[])

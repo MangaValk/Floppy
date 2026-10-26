@@ -8,6 +8,7 @@ import gzip
 import hashlib
 import json
 import os
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -20,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 from scripts import benchmark_fixtures as common  # noqa: E402
 from scripts import benchmark_server as server  # noqa: E402
 
-PROTOCOL = "bench06-matrix-v1"
+PROTOCOL = "bench10-matrix-v2"
 # Match constrained_benchmark.sh's application quotas, not whole-host limits.
 PROFILES = {
     "minimal": {"cpus": 1, "memory": 1024**3},
@@ -37,7 +38,7 @@ NOTES = [
     "Containers share a physical host/VM. CPU quotas and a local lock do not eliminate external contention, thermal variation or noisy neighbors. Idle host probes are a screening gate, not proof of isolation.",
     "Hosted CI is rejected. Explicit dedicated self-hosted CI may run this manually; these artifacts are not PR timing gates.",
     "Container wall includes schema/fixture creation, worker startup/shutdown and serialization. Raw existing-worker samples retain separate generation, cold/warm or task timings.",
-    "Sampler CPU and idle probe calibration are reported without subtraction. Sampling contributes to cgroup CPU/memory; child-process probe cost is not separately isolated.",
+    "Sampler CPU and idle probe calibration are reported without subtraction. Observer-off keeps supervision and boundary reads; only periodic process/cgroup samples and calibration are disabled. Child-process probe cost is not separately isolated.",
     "Process snapshots may miss short-lived/exited processes. RSS sums double-count sharing; USS/PSS are null if unsupported/denied. Sampled memory maxima are not exact peaks; cgroup memory.peak is retained separately.",
     "Only synthetic fixtures and mocked providers; no production DB, broker, beat or HTTP server. Current-model schema is not migration replay. No production throughput or webhook claim.",
     "Fixture/plan/graph invariants repeat for pinned code/image/backend/seed; timings/resources and overlap pairs vary. Small N is calibration, not statistical significance.",
@@ -101,7 +102,151 @@ def snapshot(root, target):
         destination = target / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
+    (target / "source-manifest.json").write_text(
+        json.dumps(
+            {
+                name: hashlib.sha256((target / name).read_bytes()).hexdigest()
+                for name in source_files(root)
+            },
+            sort_keys=True,
+        )
+    )
     return digest.hexdigest()
+
+
+def source_worker(script, arguments, output):
+    """Assert actual imported project code against the frozen image manifest."""
+    manifest = json.loads((ROOT / "source-manifest.json").read_text())
+    previous_argv = sys.argv
+    sys.argv = [str(ROOT / "scripts" / script), *arguments]
+    try:
+        runpy.run_path(sys.argv[0], run_name="__main__")
+    finally:
+        origins = {}
+        failures = []
+        for name, module in list(sys.modules.items()):
+            path = getattr(module, "__file__", None)
+            if not path:
+                continue
+            path = Path(path).resolve()
+            owned = name.split(".")[0] in {
+                "app",
+                "api",
+                "config",
+                "events",
+                "integrations",
+                "lists",
+                "users",
+            }
+            if path.is_relative_to(ROOT) and ".venv" not in path.parts:
+                relative = path.relative_to(ROOT).as_posix()
+                actual = hashlib.sha256(path.read_bytes()).hexdigest()
+                origins[relative] = actual
+                if manifest.get(relative) != actual:
+                    failures.append(relative)
+            elif owned:
+                failures.append(name + ":outside-frozen-root")
+        relative = "scripts/" + script
+        actual = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
+        origins[relative] = actual
+        if manifest.get(relative) != actual:
+            failures.append(relative)
+        Path(output).write_text(
+            json.dumps(
+                {
+                    "passed": not failures,
+                    "loaded_sha256": origins,
+                    "failures": failures,
+                    "root": str(ROOT),
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        sys.argv = previous_argv
+        if failures:
+            message = "Loaded source does not match frozen manifest"
+            raise RuntimeError(message)
+
+
+def boundary(event):
+    """Record lifecycle clocks without process arguments or environment."""
+    return {
+        "event": event,
+        "wall_epoch_s": time.time(),
+        "monotonic_s": time.monotonic(),
+    }
+
+
+def support_snapshot(container):
+    """Read owned service and shared VM counters without commands/credentials."""
+    result = {
+        "boundary": boundary("support_snapshot"),
+        "cpu_usage_usec": None,
+        "vm_cpu_ticks": None,
+        "memory_available_bytes": None,
+        "cpu_pressure": None,
+        "external_cpu_s": None,
+        "scope": "owned PostgreSQL cgroup; /proc counters span shared Linux VM",
+    }
+    if not container:
+        result["scope"] = "PostgreSQL absent"
+        return result
+    command = "cat /sys/fs/cgroup/cpu.stat; echo VM; head -n 1 /proc/stat; echo MEM; cat /proc/meminfo; echo PSI; cat /proc/pressure/cpu"
+    try:
+        raw = run(["docker", "exec", container, "sh", "-c", command])
+        cpu, rest = raw.split("VM\n", 1)
+        vm, rest = rest.split("MEM\n", 1)
+        memory, pressure = rest.split("PSI\n", 1)
+        result["cpu_usage_usec"] = int(
+            dict(line.split() for line in cpu.splitlines())["usage_usec"]
+        )
+        result["vm_cpu_ticks"] = [int(value) for value in vm.split()[1:9]]
+        result["memory_available_bytes"] = (
+            int(
+                next(
+                    line.split()[1]
+                    for line in memory.splitlines()
+                    if line.startswith("MemAvailable:")
+                )
+            )
+            * 1024
+        )
+        result["cpu_pressure"] = pressure.strip()
+    except (subprocess.CalledProcessError, ValueError, KeyError, StopIteration):
+        result["unsupported"] = "service counters unavailable"
+    return result
+
+
+def cleanup_owned(containers):
+    """Remove only owned IDs and verify their absence; retain shutdown tail."""
+    events = [boundary("service_shutdown_start")]
+    receipts = {}
+    for role, container in containers.items():
+        if not container:
+            continue
+        removed = subprocess.run(
+            ["docker", "rm", "-f", "-v", container],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        try:
+            remaining = run(
+                ["docker", "ps", "--all", "--no-trunc", "--format", "{{.ID}}"]
+            )
+            absent = container not in remaining.splitlines()
+        except subprocess.CalledProcessError:
+            absent = False  # Daemon failure is not evidence of absence.
+        receipts[role] = {"remove_exit": removed, "absence_verified": absent}
+    events.append(boundary("cleanup_verified"))
+    return {
+        "events": events,
+        "containers": receipts,
+        "passed": all(
+            r["remove_exit"] == 0 and r["absence_verified"] for r in receipts.values()
+        ),
+    }
 
 
 def run(command, **kwargs):
@@ -143,6 +288,8 @@ def process_sample(process, labels):
             rows.append(
                 {
                     "process": label,
+                    "pid": child.pid,
+                    "start_epoch_s": child.create_time(),
                     "cpu_s": cpu.user + cpu.system,
                     "memory_bytes": common.memory(child.pid),
                 }
@@ -254,29 +401,52 @@ def container_worker(options):
     ]
     if options.workload == "fixtures":
         command += ["--runs", str(options.runs)]
+    command = [
+        sys.executable,
+        "-c",
+        "from scripts.benchmark_matrix import source_worker; import sys; "
+        "source_worker(sys.argv[1], sys.argv[3:], sys.argv[2])",
+        script,
+        str(directory / "origins.json"),
+        *command[2:],
+    ]
+    if options.workload in {"empty", "idle"}:
+        command = [
+            sys.executable,
+            "-c",
+            "import time; time.sleep("
+            + str(options.control_seconds if options.workload == "idle" else 0)
+            + ")",
+        ]
     labels = {}
     parent = psutil.Process()
     cpu, started = time.process_time(), time.perf_counter()
-    for _ in range(20):
+    for _ in range(20 if options.observer == "on" else 0):
         process_sample(parent, labels)
     calibration = {
-        "calls": 20,
+        "calls": 20 if options.observer == "on" else 0,
         "wall_s": time.perf_counter() - started,
         "cpu_s": time.process_time() - cpu,
     }
+    from scripts import container_memory_sample as memory_sampler
+    from scripts.memory_aging_report import exposure_summary, resource_delta
+
     before = cgroup()
+    resource_before = memory_sampler.sample()
     started, cpu = time.perf_counter(), time.process_time()
     samples = []
     with (directory / "worker.log").open("w") as log:
         child = subprocess.Popen(command, stdout=log, stderr=log)
         while child.poll() is None:
-            samples.append(
-                {
-                    "elapsed_s": time.perf_counter() - started,
-                    "processes": process_sample(parent, labels),
-                    "cgroup": cgroup(),
-                }
-            )
+            if options.observer == "on":
+                samples.append(
+                    {
+                        "elapsed_s": time.perf_counter() - started,
+                        "exposure": {"start": memory_sampler._clocks()},
+                        "processes": process_sample(parent, labels),
+                        "cgroup": cgroup(),
+                    }
+                )
             with contextlib.suppress(subprocess.TimeoutExpired):
                 child.wait(timeout=options.sample_interval)
     wall = time.perf_counter() - started
@@ -284,21 +454,47 @@ def container_worker(options):
     if child.returncode:
         message = "Offline worker failed; inspect the private worker.log"
         raise RuntimeError(message)
-    receipt = json.loads((directory / "work/sample.json").read_text())
-    check = correctness(
-        options.workload,
-        receipt,
-        directory / "work/fixture.json.gz",
-        options.seed,
-        options.size,
-    )
+    if options.workload in {"empty", "idle"}:
+        receipt = {"control": options.workload, "observer": options.observer}
+        check = {"passed": True, "fixture_sha256": None, "invariants": receipt}
+        origins = None
+        units = 0
+    else:
+        receipt = json.loads((directory / "work/sample.json").read_text())
+        check = correctness(
+            options.workload,
+            receipt,
+            directory / "work/fixture.json.gz",
+            options.seed,
+            options.size,
+        )
+        origins = json.loads((directory / "origins.json").read_text())
+        units = (
+            options.size
+            if options.workload == "fixtures"
+            else 6 * len(receipt["measurements"])
+        )
+    resource_after = memory_sampler.sample()
+    exposure = exposure_summary([resource_before, *samples, resource_after])
     result = {
         "protocol": PROTOCOL,
         "wall_s": wall,
+        "observer": options.observer,
+        "loaded_origins": origins,
+        "completed_units": units,
+        "throughput_units_per_s": units / wall,
+        "throughput_scope": "fixture items or logical Celery jobs per supervised worker wall including setup",
+        "redis_scope": "embedded application cgroup for celery; separate CPU unavailable"
+        if options.workload == "celery"
+        else "absent",
         "sampler_cpu_s": sampler_cpu,
         "calibration": calibration,
         "cgroup_before": before,
         "cgroup_after": cgroup(),
+        "resource_before": resource_before,
+        "resource_after": resource_after,
+        "resource_delta": resource_delta(resource_before, resource_after),
+        "exposure": exposure,
         "samples": samples,
         "correctness": check,
         "runtime": common.machine(),
@@ -347,6 +543,7 @@ def host_noise():
     import psutil
 
     return {
+        "scope": "controller OS global; Docker VM attribution unknown",
         "cpu_percent": psutil.cpu_percent(interval=0.5),
         "available_ram_bytes": psutil.virtual_memory().available,
     }
@@ -384,6 +581,7 @@ def matrix(options):
         tempfile.TemporaryDirectory(prefix="floppy-bench06-") as scratch,
     ):
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lifecycle = [boundary("setup_start")]
         source_sha = snapshot(ROOT, Path(scratch))
         image = options.image or f"floppy:bench06-{source_sha[:12]}"
         if options.build:
@@ -404,6 +602,7 @@ def matrix(options):
                     stdout=log,
                     stderr=log,
                 )
+        lifecycle.append(boundary("build_complete"))
         metadata = json.loads(run(["docker", "image", "inspect", image]))[0]
         if (metadata["Config"]["Labels"] or {}).get(
             "org.floppy.benchmark.source"
@@ -430,6 +629,8 @@ def matrix(options):
                         )
                         target.mkdir(parents=True)
                         postgres = application = None
+                        cell_events = [boundary("cell_setup_start")]
+                        cell = None
                         settling = wait_for_idle(
                             options.max_host_cpu_percent, options.quiet_wait_seconds
                         )
@@ -441,7 +642,6 @@ def matrix(options):
                                         "docker",
                                         "run",
                                         "--detach",
-                                        "--rm",
                                         "--network",
                                         "none",
                                         "--cpus",
@@ -458,6 +658,14 @@ def matrix(options):
                                         "POSTGRES_USER=bench",
                                         "-e",
                                         "POSTGRES_PASSWORD=bench",
+                                        *(
+                                            [
+                                                "--tmpfs",
+                                                "/var/lib/postgresql/data:rw,size=128m",
+                                            ]
+                                            if options.postgres_tmpfs
+                                            else []
+                                        ),
                                         pg_image,
                                     ]
                                 )
@@ -529,9 +737,16 @@ def matrix(options):
                                 str(repeat),
                                 "--sample-interval",
                                 str(options.sample_interval),
+                                "--observer",
+                                options.observer,
+                                "--control-seconds",
+                                str(options.control_seconds),
                             ]
+                            support_before = support_snapshot(postgres)
+                            cell_events.append(boundary("workload_launch"))
                             application = run(command)
                             status = run(["docker", "wait", application])
+                            cell_events.append(boundary("application_exit"))
                             inspection = json.loads(
                                 run(["docker", "inspect", application])
                             )[0]
@@ -552,27 +767,52 @@ def matrix(options):
                                 "pids_limit": inspection["HostConfig"]["PidsLimit"],
                                 "oom_killed": inspection["State"]["OOMKilled"],
                             }
-                            cells.append(
-                                {
-                                    "key": key,
-                                    "repeat": repeat,
-                                    "limits": actual,
-                                    "noise_before": noise_before,
-                                    "settling": settling,
-                                    "noise_after": host_noise(),
-                                    **result,
-                                }
-                            )
+                            cell = {
+                                "key": key,
+                                "repeat": repeat,
+                                "limits": actual,
+                                "noise_before": noise_before,
+                                "settling": settling,
+                                "noise_before_cleanup": host_noise(),
+                                "lifecycle": cell_events,
+                                "postgresql_before": support_before,
+                                "postgresql_after": support_snapshot(postgres),
+                                "application_identity": {
+                                    "container_id": application,
+                                    "started_at": inspection["State"]["StartedAt"],
+                                    "finished_at": inspection["State"]["FinishedAt"],
+                                },
+                                **result,
+                            }
+                            cells.append(cell)
                             print(f"Finished {key} repeat={repeat}", flush=True)
                         finally:
-                            for container in (application, postgres):
-                                if container:
-                                    subprocess.run(
-                                        ["docker", "rm", "-f", "-v", container],
-                                        stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL,
-                                        check=False,
+                            if postgres:
+                                with contextlib.suppress(subprocess.CalledProcessError):
+                                    (target / "postgresql.log").write_text(
+                                        run(
+                                            ["docker", "logs", postgres],
+                                            stderr=subprocess.STDOUT,
+                                        )
                                     )
+                            cleanup = cleanup_owned(
+                                {"application": application, "postgresql": postgres}
+                            )
+                            post = host_noise()
+                            (target / "cleanup.json").write_text(
+                                json.dumps(
+                                    {
+                                        "cleanup": cleanup,
+                                        "noise_after": post,
+                                        "lifecycle": cell_events,
+                                    },
+                                    indent=2,
+                                )
+                                + "\n"
+                            )
+                            if cell is not None:
+                                cell["cleanup"] = cleanup
+                                cell["noise_after"] = post
         summary = {
             key: server.summarize(
                 [cell["wall_s"] for cell in cells if cell["key"] == key]
@@ -581,6 +821,8 @@ def matrix(options):
         }
         issues = []
         for cell in cells:
+            if not cell["cleanup"]["passed"]:
+                issues.append("cleanup_unverified")
             if not cell["settling"]["qualified"]:
                 issues.append("host_did_not_settle")
             profile = cell["key"].split("/")[0]
@@ -595,6 +837,7 @@ def matrix(options):
                 max(
                     cell["noise_before"]["cpu_percent"],
                     cell["noise_after"]["cpu_percent"],
+                    cell["noise_before_cleanup"]["cpu_percent"],
                 )
                 > options.max_host_cpu_percent
             ):
@@ -621,7 +864,8 @@ def matrix(options):
                 issues.append("cross_profile_result_drift")
             datasets[data_key] = data
         report = {
-            "schema_version": 1,
+            "schema_version": 2,
+            "lifecycle": lifecycle,
             "protocol": PROTOCOL,
             "git_sha": run(["git", "rev-parse", "HEAD"], cwd=ROOT),
             "source_sha256": source_sha,
@@ -632,12 +876,17 @@ def matrix(options):
             ).hexdigest(),
             "method_sha256": hashlib.sha256(
                 b"".join(
-                    name.encode() + hashlib.sha256((ROOT / name).read_bytes()).digest()
-                    for name in source_files(ROOT)
+                    name.encode()
+                    + hashlib.sha256((Path(scratch) / name).read_bytes()).digest()
+                    for name in json.loads(
+                        (Path(scratch) / "source-manifest.json").read_text()
+                    )
                     if name.startswith("scripts/benchmark_")
                     or name
                     in {
                         "scripts/celery_trace.py",
+                        "scripts/container_memory_sample.py",
+                        "scripts/memory_aging_report.py",
                         "scripts/Dockerfile.benchmark",
                         "src/app/benchmark_data.py",
                         "src/config/test_settings.py",
@@ -662,11 +911,22 @@ def matrix(options):
                 "runs": options.runs,
                 "repeats": options.repeats,
                 "sample_interval_s": options.sample_interval,
+                "observer": options.observer,
+                "control_seconds": options.control_seconds,
+                "postgres_storage": "tmpfs128MiB"
+                if options.postgres_tmpfs
+                else "disposable-volume",
                 "max_host_cpu_percent": options.max_host_cpu_percent,
                 "quiet_wait_seconds": options.quiet_wait_seconds,
                 "dedicated_ci": options.dedicated_host,
             },
             "eligible": not issues,
+            "resource_claim_eligible": False,
+            "resource_claim_issues": [
+                "exclusive_host_unverified",
+                "owned_redis_cpu_not_separated",
+                "long_windows_not_run_by_matrix",
+            ],
             "quality_issues": sorted(set(issues)),
             "cells": cells,
             "summary": summary,
@@ -674,6 +934,11 @@ def matrix(options):
             "command": [
                 "python",
                 "scripts/benchmark_matrix.py",
+                *(["--postgres-tmpfs"] if options.postgres_tmpfs else []),
+                "--observer",
+                options.observer,
+                "--control-seconds",
+                str(options.control_seconds),
                 "--profiles",
                 *options.profiles,
                 "--databases",
@@ -723,6 +988,8 @@ def matrix(options):
             )
         lines += [
             "",
+            "Resource/idle/growth claims eligible: **False**. Exclusive host and long-window attribution require separate receipts; scalar host screens alone do not qualify these claims.",
+            "",
             "## Resources and correctness",
             "",
             "| Cell/repeat | Sampler CPU s | Process snapshots | Fixture SHA256 |",
@@ -756,6 +1023,11 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--image")
+    parser.add_argument(
+        "--postgres-tmpfs",
+        action="store_true",
+        help="Use bounded disposable PostgreSQL tmpfs, recorded as distinct storage scope",
+    )
     parser.add_argument("--postgres-image", default="postgres:16-alpine")
     parser.add_argument(
         "--profiles", choices=PROFILES, nargs="+", default=list(PROFILES)
@@ -768,10 +1040,12 @@ def main():
     )
     parser.add_argument(
         "--workloads",
-        choices=("fixtures", "celery"),
+        choices=("fixtures", "celery", "empty", "idle"),
         nargs="+",
         default=["fixtures", "celery"],
     )
+    parser.add_argument("--observer", choices=("on", "off"), default="on")
+    parser.add_argument("--control-seconds", type=float, default=5)
     parser.add_argument("--size", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--runs", type=int, default=3)
@@ -791,13 +1065,16 @@ def main():
         "--database", choices=("sqlite", "postgresql"), help=argparse.SUPPRESS
     )
     parser.add_argument(
-        "--workload", choices=("fixtures", "celery"), help=argparse.SUPPRESS
+        "--workload",
+        choices=("fixtures", "celery", "empty", "idle"),
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("--repeat-index", type=int, default=1, help=argparse.SUPPRESS)
     options = parser.parse_args()
     options.output = options.output.resolve()
     if (
-        options.size < 10
+        not 0 <= options.control_seconds <= 86400
+        or options.size < 10
         or options.size % 10
         or min(options.runs, options.repeats) < 2
         or not 0.1 <= options.sample_interval <= 30

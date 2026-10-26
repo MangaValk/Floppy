@@ -407,6 +407,16 @@ def refresh_discover_profiles(
     }
 
 
+@shared_task(name="Purge expired Discover caches", ignore_result=True)
+def purge_expired_discover_caches():
+    """Bound durable Discover cache tables by deleting long-expired rows."""
+    from app.discover import cache_repo
+
+    deleted = cache_repo.purge_expired_caches()
+    logger.info("discover_cache_purge deleted=%s", deleted)
+    return deleted
+
+
 @shared_task(name="Warm Discover API Cache")
 def warm_discover_api_cache():
     """Warm provider-backed Discover API cache for core TMDb and Trakt rows."""

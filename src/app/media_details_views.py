@@ -278,6 +278,12 @@ def media_details(
     defer_detail_secondary = (
         not render_secondary_only and media_type != MediaTypes.PODCAST.value
     )
+    # Only the shell renders the score chips that draw the series graphs; the
+    # secondary fragment would otherwise scan the episode rows for nothing.
+    graphs_rendered = not render_secondary_only and media_type in (
+        MediaTypes.TV.value,
+        MediaTypes.ANIME.value,
+    )
     detail_return_url = _detail_request_url(request)
     detail_carousel_fragment_url = (
         _detail_request_url(request, fragment=DETAIL_CAROUSEL_FRAGMENT)
@@ -431,10 +437,12 @@ def media_details(
                     PODCAST_DETAIL_RSS_REFRESH_SECONDS,
                 )
             ):
-                from app.fork_services_podcast import refresh_show_from_rss
+                from app.tasks_podcast import refresh_podcast_show_from_rss_task
 
+                # Queued, so a slow feed host never holds the render; new
+                # episodes show on the next view.
                 _best_effort_detail_followup(
-                    lambda: refresh_show_from_rss(show),
+                    lambda: refresh_podcast_show_from_rss_task.delay(show.id),
                     operation_name="podcast_show_rss_refresh",
                 )
 
@@ -2044,7 +2052,7 @@ def media_details(
                 (media_metadata.get("related") or {}).get("seasons"),
                 display_provider,
             )
-            if media_type in (MediaTypes.TV.value, MediaTypes.ANIME.value)
+            if graphs_rendered
             and display_provider in {Sources.TMDB.value, Sources.TVDB.value}
             else None
         ),
@@ -2053,7 +2061,7 @@ def media_details(
             or _build_stored_season_scores_graph(
                 display_provider, media_id, use_trakt=True
             )
-            if media_type in (MediaTypes.TV.value, MediaTypes.ANIME.value)
+            if graphs_rendered
             else None
         ),
         "imdb_series_graph_data": (
@@ -2061,7 +2069,7 @@ def media_details(
             or _build_stored_season_scores_graph(
                 display_provider, media_id, use_imdb=True
             )
-            if media_type in (MediaTypes.TV.value, MediaTypes.ANIME.value)
+            if graphs_rendered
             else None
         ),
         "metadata_provider_options": metadata_provider_options,

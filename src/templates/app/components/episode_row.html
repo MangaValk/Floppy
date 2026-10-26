@@ -172,6 +172,7 @@
   {% if not public_view|default:False %}
     <div class="shrink-0" x-data="{ trackOpen: false }">
       {% include "app/components/detail_episode_track_button.html" with episode=episode detail_return_url=detail_return_url request=request track_button_oob=False target_suffix="-list" only %}
+      <template x-teleport="body">
       <div x-show="trackOpen"
       @mousedown.self="trackOpen = false"
            x-cloak
@@ -183,6 +184,7 @@
           <div id="{% component_id 'track' episode %}-list"></div>
         </div>
       </div>
+      </template>
     </div>
   {% endif %}
 </div>

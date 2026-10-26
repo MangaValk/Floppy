@@ -66,19 +66,25 @@ class _ResolvedReportPublicationError(OSError):
         self.previous_restored = previous_restored
 
 
-def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
-    """Summarize every relationship conflict without retaining every row."""
+def _inspect_foreign_keys(
+    conn: sqlite3.Connection, only_table: str | None = None
+) -> dict:
+    """Summarize every relationship conflict without retaining every row.
+
+    ``only_table`` limits the scan to one table (``foreign_key_check(table)``).
+    """
     counts = Counter()
     samples = []
     conflict_hash = 0
     can_quarantine = True
     total = 0
 
-    for table, row_id, parent, foreign_key_id in conn.execute(
-        "PRAGMA foreign_key_check"
-    ):
+    pragma = "PRAGMA foreign_key_check"
+    if only_table is not None:
+        pragma += "(" + _quote_identifier(only_table) + ")"
+    for conflict_table, row_id, parent, foreign_key_id in conn.execute(pragma):
         total += 1
-        counts[(table, parent, foreign_key_id)] += 1
+        counts[(conflict_table, parent, foreign_key_id)] += 1
         can_quarantine = can_quarantine and row_id is not None
         if len(samples) < _MAX_CONFLICT_SAMPLES:
             samples.append(
@@ -86,7 +92,7 @@ def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
                     "foreign_key_id": foreign_key_id,
                     "parent": parent,
                     "row": row_id,
-                    "table": table,
+                    "table": conflict_table,
                 }
             )
         conflict_hash = (
@@ -94,7 +100,7 @@ def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
             + int.from_bytes(
                 sha256(
                     json.dumps(
-                        [table, row_id, parent, foreign_key_id],
+                        [conflict_table, row_id, parent, foreign_key_id],
                         separators=(",", ":"),
                     ).encode()
                 ).digest(),
@@ -196,7 +202,9 @@ def _read_incident_report(db_path: str) -> dict | None:
     finally:
         if descriptor != -1:
             os.close(descriptor)
-    if report.get("database") != str(Path(db_path).resolve()):
+    if not isinstance(report, dict) or report.get("database") != str(
+        Path(db_path).resolve()
+    ):
         return None
     return report
 
@@ -299,13 +307,12 @@ def _verified_path(db_path: str) -> Path:
 
 
 def record_verified_database(db_path: str, *, source: str) -> None:
-    """Record that a full storage check of this database just passed.
+    """Record a historical verification and its source file identity.
 
-    ``source`` is ``"startup"`` for the entrypoint's scan or ``"snapshot"`` for
-    the nightly snapshot, whose ``quick_check`` runs on a page-for-page copy
-    read from the live file. The device and inode tie the record to this exact
-    file, so a restored or replaced database never inherits it. Best-effort: a
-    missing record only means the next start runs the full scan.
+    ``startup`` is the legacy/offline policy's full scan; ``snapshot`` checks
+    structure only and cannot vouch for relationships. ``offline-snapshot``
+    checks both. This record never authorizes pending migrations: that needs
+    an unchanged recovery snapshot and a separate migration permit.
     """
     database_path = Path(db_path).resolve()
     try:
@@ -346,6 +353,8 @@ def recent_verification(
     record = _read_sidecar(_verified_path(db_path), db_path)
     if record is None:
         return None, "no verification on record"
+    if record.get("source") == "snapshot":
+        return None, "snapshot quick_check does not verify relationships"
     verified_at = _parse_timestamp(record.get("verified_at"))
     now = datetime.now(UTC)
     if verified_at is None or verified_at > now:
@@ -923,8 +932,38 @@ class _SnapshotVerificationError(sqlite3.DatabaseError):
     """The copy failed quick_check: the source's pages were copied verbatim."""
 
 
-def _backup_to_staging(source, directory_descriptor, staging_name, *, timeout=5.0):
+def _sweep_copy(staging_path) -> bool | None:
+    """Page-sweep the finished copy: True ok, False damaged, None unavailable."""
+    from config import sqlite_page_sweep
+
+    try:
+        result = sqlite_page_sweep.sweep(str(staging_path))
+    except (
+        sqlite_page_sweep.SweepUnavailableError,
+        sqlite_page_sweep.SweepExpiredError,
+    ):
+        return None
+    if result["problems"]:
+        _log(f"[db-snapshot] page sweep of the copy failed: {result['problems'][:3]}")
+        return False
+    return True
+
+
+def _backup_to_staging(
+    source,
+    directory_descriptor,
+    staging_name,
+    *,
+    timeout=5.0,
+    verify="quick_check",
+    outcome=None,
+):
     """Verify a copy before handing it to the descriptor-based publisher.
+
+    ``verify="page_sweep"`` checks the copy with the sequential page sweep
+    instead of ``PRAGMA quick_check`` (random b-tree reads: hours on slow
+    storage). If the sweep cannot run it falls back to ``quick_check``. What
+    was actually used is stored in ``outcome["verified"]``.
 
     Linux opens the reserved file through its pinned directory descriptor.
     Other POSIX hosts use a private system-temporary workspace: SQLite needs
@@ -944,11 +983,26 @@ def _backup_to_staging(source, directory_descriptor, staging_name, *, timeout=5.
             )
             os.close(descriptor)
         with closing(sqlite3.connect(staging_path, timeout=timeout)) as destination:
-            source.backup(destination)
-            result = destination.execute("PRAGMA quick_check").fetchall()
-            if result != [("ok",)]:
-                message = "backup quick_check did not return 'ok'"
-                raise _SnapshotVerificationError(message)
+            # Release the source read lock between small backup steps. The
+            # pause caps copy pressure while live web/worker traffic runs.
+            source.backup(destination, pages=256, progress=lambda *_: time.sleep(0.002))
+            swept = None
+            if verify == "page_sweep":
+                # The sweep opens its own connection: close this one first so
+                # the copy is checkpointed and a plain file.
+                destination.close()
+                swept = _sweep_copy(staging_path)
+                if swept is False:
+                    message = "backup page sweep found structural damage"
+                    raise _SnapshotVerificationError(message)
+            if swept is None:
+                with closing(sqlite3.connect(staging_path, timeout=timeout)) as check:
+                    result = check.execute("PRAGMA quick_check").fetchall()
+                if result != [("ok",)]:
+                    message = "backup quick_check did not return 'ok'"
+                    raise _SnapshotVerificationError(message)
+            if outcome is not None:
+                outcome["verified"] = "page_sweep" if swept else "quick_check"
         if not sys.platform.startswith("linux"):
             descriptor = os.open(
                 staging_name,
@@ -1065,10 +1119,14 @@ def create_live_database_snapshot(
     db_path: str,
     dest_dir: Path,
     *,
-    max_keep: int,
+    max_keep: int | None,
     timeout_seconds: float,
+    verify: str = "quick_check",
+    outcome: dict | None = None,
 ) -> Path | None:
     """Write a verified SQLite snapshot from a live, concurrently-written database.
+
+    ``verify`` and ``outcome`` are passed to ``_backup_to_staging``.
 
     Unlike _create_verified_backup, the caller holds no write lock here: other
     processes (gunicorn, other Celery workers) may be writing to db_path at the
@@ -1086,6 +1144,8 @@ def create_live_database_snapshot(
             dest_dir,
             max_keep=max_keep,
             timeout_seconds=timeout_seconds,
+            verify=verify,
+            outcome=outcome,
         )
     except sqlite3.DatabaseError as error:
         _log(f"[db-snapshot] Could not write a database snapshot: {error}")
@@ -1146,8 +1206,10 @@ def _write_live_snapshot(
     database_path: Path,
     dest_dir: Path,
     *,
-    max_keep: int,
+    max_keep: int | None,
     timeout_seconds: float,
+    verify: str = "quick_check",
+    outcome: dict | None = None,
 ) -> Path:
     with suppress(FileExistsError):
         dest_dir.mkdir(mode=0o700, parents=True)
@@ -1188,7 +1250,12 @@ def _write_live_snapshot(
                 timeout=timeout_seconds,
             )
             _backup_to_staging(
-                source, dest_descriptor, staging_name, timeout=timeout_seconds
+                source,
+                dest_descriptor,
+                staging_name,
+                timeout=timeout_seconds,
+                verify=verify,
+                outcome=outcome,
             )
             source.close()
             source = None
@@ -1230,14 +1297,15 @@ def _write_live_snapshot(
             os.unlink(staging_name, dir_fd=dest_descriptor)
             os.fsync(dest_descriptor)
             succeeded = True
-            # The copy passed quick_check page for page, so it vouches for the
-            # live file it was read from and lets the next start skip the scan.
+            # Record structural verification only. This does not establish
+            # relational integrity or authorize pending migrations.
             record_verified_database(str(database_path), source="snapshot")
             # Prune after the new copy is in place, never before -- see the
             # matching comment on the _create_verified_backup call site.
-            _prune_recovery_backups(
-                dest_dir, max_keep=max_keep, newest=dest_dir / final_name
-            )
+            if max_keep is not None:
+                _prune_recovery_backups(
+                    dest_dir, max_keep=max_keep, newest=dest_dir / final_name
+                )
             _log(
                 f"[db-snapshot] page_cache_release path={final_name} "
                 f"bytes={snapshot_bytes} advice={advice}",

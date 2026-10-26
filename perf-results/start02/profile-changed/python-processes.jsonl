@@ -1,1 +1,0 @@
-{"label": "static_check", "argv": ["python", "config/static_collection.py"], "body_wall_s": 0.4972223750082776, "lifetime_cpu_s": 0.8354469999999999, "maxrss_kib": 15340, "io": "rchar: 1006536\nwchar: 81767\nsyscr: 154\nsyscw: 9\nread_bytes: 770048\nwrite_bytes: 87476\ncancelled_write_bytes: 0\n"}

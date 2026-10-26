@@ -387,6 +387,12 @@ class ItemBackfillCommitTests(TransactionTestCase):
             patch("app.tasks.enqueue_runtime_backfill_items", side_effect=lambda ids: observed.append((ids, connection.in_atomic_block))),
             patch("app.tasks.enqueue_genre_backfill_items"),
             patch("app.tasks.enqueue_credits_backfill_items"),
+            # Run the deferred task inline so the test does not depend on
+            # whether Celery is eager when it runs.
+            patch(
+                "app.tasks.enqueue_item_backfills.delay",
+                side_effect=tasks.enqueue_item_backfills.run,
+            ),
         ):
             with transaction.atomic():
                 item = Item.objects.create(

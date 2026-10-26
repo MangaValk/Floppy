@@ -187,9 +187,10 @@ def _build_detail_activity_state(
             last_played = None
 
             # Iterate through all seasons and episodes
-            seasons = current_instance.seasons.all().select_related("item")
+            # Chaining select_related would bypass the prefetch cache (1 query per season).
+            seasons = current_instance.seasons.all()
             for season in seasons:
-                episodes = season.episodes.all().select_related("item")
+                episodes = season.episodes.all()
                 for episode in episodes:
                     # Only count episodes that have been watched (have end_date)
                     if not episode.end_date:

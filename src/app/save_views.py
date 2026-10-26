@@ -1353,6 +1353,7 @@ def episode_drop(request):
 
 
 POLL_LOOKBACK_SECONDS = 45  # > poll interval, tolerates jitter/delay
+POLL_MAX_GAP_SECONDS = 24 * 60 * 60  # hidden-tab catch-up cap
 
 
 @require_GET
@@ -1364,7 +1365,12 @@ def episode_history_poll(request, season_id):
     so the season page polls this endpoint to catch up.
     """
     related_season = get_object_or_404(Season, pk=season_id, user=request.user)
-    since = timezone.now() - timedelta(seconds=POLL_LOOKBACK_SECONDS)
+    try:
+        gap = min(max(int(request.GET.get("gap", 0)), 0), POLL_MAX_GAP_SECONDS)
+    except ValueError:
+        gap = 0
+    lookback = gap + POLL_LOOKBACK_SECONDS
+    since = timezone.now() - timedelta(seconds=lookback)
 
     recent_item_ids = (
         Episode.objects.filter(related_season=related_season, created_at__gte=since)
