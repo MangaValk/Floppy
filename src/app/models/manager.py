@@ -2617,6 +2617,41 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             episode_number,
         )
 
+        # A user-scoped TV/season lookup is item-driven. Without SQLite
+        # statistics the planner walks every row of the user's TV/seasons by
+        # user_id and probes each item, which is thousands of random reads on
+        # a large database; resolving the (indexed) item ids first lets it
+        # seek by item instead.
+        if "user" in params and media_type in (
+            MediaTypes.TV.value,
+            MediaTypes.SEASON.value,
+            MediaTypes.ANIME.value,
+        ):
+            item_params = {
+                key.removeprefix("item__"): value
+                for key, value in params.items()
+                if key.startswith("item__")
+            }
+            other_params = {
+                key: value
+                for key, value in params.items()
+                if not key.startswith("item__")
+            }
+            item_queryset = apps.get_model("app", "Item").objects.filter(**item_params)
+            if media_type != MediaTypes.ANIME.value:
+                if library_media_type:
+                    item_queryset = item_queryset.filter(
+                        library_media_type=library_media_type,
+                    )
+                else:
+                    item_queryset = item_queryset.exclude(
+                        library_media_type=MediaTypes.ANIME.value,
+                    )
+            return model.objects.filter(
+                item_id__in=list(item_queryset.values_list("id", flat=True)),
+                **other_params,
+            )
+
         queryset = model.objects.filter(**params)
 
         # FORK: bucket-aware scoping, mirrors api.helpers.resolve_item_queryset —
