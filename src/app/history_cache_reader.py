@@ -16,7 +16,6 @@ from app.history_cache_day_builder import (
     build_history_day,
     history_media_types_by_day,
 )
-from app.history_cache_range_prefetch import HistoryRangePrefetch
 from app.history_cache_index import (
     _missing_history_day_keys,
     build_history_index,
@@ -29,6 +28,7 @@ from app.history_cache_lifecycle import (
     schedule_history_day_cache_coverage,
     schedule_history_refresh,
 )
+from app.history_cache_range_prefetch import HistoryRangePrefetch
 from app.history_cache_serialization import (
     _deserialize_history_day,
     _serialize_history_day,
