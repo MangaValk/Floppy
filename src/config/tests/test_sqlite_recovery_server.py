@@ -660,3 +660,189 @@ class RecoveryPageTests(SimpleTestCase):
         report = {"total_conflicts": 2, "can_quarantine": True, "affected": []}
         page = recovery.render_page(report, interactive=True)
         self.assertIsNone(re.search(r"<a\b[^>]*>\s*<button", page))
+
+
+class RestoreSnapshotTests(SimpleTestCase):
+    """Issue #1053: restore the newest verified snapshot from the damaged-file page."""
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.data = self.root / "data"
+        self.snapshots = self.root / "backups" / "database"
+        self.data.mkdir()
+        self.snapshots.mkdir(parents=True)
+        self.db_path = str(self.data / "db.sqlite3")
+        env = mock.patch.dict(os.environ, {"BACKUP_DIR": str(self.root / "backups")})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def make_db(self, path, marker):
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE t (v TEXT)")
+        conn.execute("INSERT INTO t VALUES (?)", (marker,))
+        conn.commit()
+        conn.close()
+
+    def make_snapshot(self, name, marker, mtime):
+        path = self.snapshots / name
+        self.make_db(path, marker)
+        os.utime(path, (mtime, mtime))
+        return path
+
+    def damage_live_database(self):
+        from config.sqlite_integrity import _write_incident_report
+
+        Path(self.db_path).write_bytes(b"this is not a database" * 500)
+        Path(f"{self.db_path}-wal").write_bytes(b"stale wal")
+        Path(f"{self.db_path}-shm").write_bytes(b"stale shm")
+        report = {
+            "groups": [], "samples": [], "total_conflicts": 0,
+            "fingerprint": "f" * 8, "can_quarantine": False,
+            "unsafe_reasons": ["Physical corruption detected: test"],
+        }
+        _write_incident_report(self.db_path, report, status="corrupt")
+
+    def marker(self, path):
+        conn = sqlite3.connect(path)
+        try:
+            return conn.execute("SELECT v FROM t").fetchone()[0]
+        finally:
+            conn.close()
+
+    def serve(self):
+        recovery._Handler.db_path = self.db_path
+        server = ThreadingHTTPServer(("127.0.0.1", 0), recovery._Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def post(self, base, fields):
+        request = urllib.request.Request(  # noqa: S310
+            f"{base}/restore", data=urllib.parse.urlencode(fields).encode()
+        )
+        return urllib.request.urlopen(request)  # noqa: S310
+
+    def leftovers(self):
+        return [p.name for p in self.data.iterdir() if p.name.startswith(".")]
+
+    def test_snapshots_are_listed_newest_first_and_skip_staging_files_and_links(self):
+        self.make_snapshot("db-old.sqlite3", "old", 1_000)
+        self.make_snapshot("db-new.sqlite3", "new", 2_000)
+        self.make_snapshot(".db-staging.sqlite3", "tmp", 3_000)
+        (self.snapshots / "link.sqlite3").symlink_to(self.snapshots / "db-new.sqlite3")
+        (self.snapshots / "notes.txt").write_text("x")
+        names = [item["name"] for item in recovery.list_snapshots()]
+        self.assertEqual(names, ["db-new.sqlite3", "db-old.sqlite3"])
+
+    def test_page_offers_restore_only_when_a_snapshot_exists(self):
+        report = {"status": "corrupt", "unsafe_reasons": ["x"]}
+        self.assertNotIn("/restore", recovery.render_page(report, interactive=True))
+        self.make_snapshot("db-new.sqlite3", "new", 2_000)
+        page = recovery.render_page(report, interactive=True)
+        self.assertIn("action='/restore'", page)
+        self.assertIn("db-new.sqlite3", page)
+        self.assertIn("(newest)", page)
+
+    def test_restore_replaces_database_and_moves_damaged_files_aside(self):
+        self.make_snapshot("db-new.sqlite3", "restored", 2_000)
+        self.damage_live_database()
+        aside = recovery.restore_snapshot(self.db_path, "db-new.sqlite3")
+        self.assertEqual(self.marker(self.db_path), "restored")
+        # A stale WAL beside the restored file would be replayed into it.
+        self.assertFalse(Path(f"{self.db_path}-wal").exists())
+        self.assertFalse(Path(f"{self.db_path}-shm").exists())
+        self.assertEqual(
+            sorted(p.name for p in aside.iterdir()),
+            ["db.sqlite3", "db.sqlite3-shm", "db.sqlite3-wal"],
+        )
+        self.assertFalse(Path(f"{self.db_path}.integrity.json").exists())
+        self.assertTrue((self.snapshots / "db-new.sqlite3").exists())
+        self.assertEqual(self.leftovers(), [])
+
+    def test_unknown_or_path_like_names_are_refused_and_nothing_changes(self):
+        self.make_snapshot("db-new.sqlite3", "new", 2_000)
+        self.damage_live_database()
+        before = Path(self.db_path).read_bytes()
+        outside = self.root / "outside.sqlite3"
+        self.make_db(outside, "outside")
+        for name in ("missing.sqlite3", "../../outside.sqlite3", str(outside), ""):
+            with self.subTest(name=name), self.assertRaises(recovery.RestoreError):
+                recovery.restore_snapshot(self.db_path, name)
+        self.assertEqual(Path(self.db_path).read_bytes(), before)
+
+    def test_a_damaged_snapshot_is_refused_and_live_files_stay(self):
+        (self.snapshots / "db-bad.sqlite3").write_bytes(b"garbage" * 1000)
+        self.damage_live_database()
+        before = Path(self.db_path).read_bytes()
+        with self.assertRaises(recovery.RestoreError):
+            recovery.restore_snapshot(self.db_path, "db-bad.sqlite3")
+        self.assertEqual(Path(self.db_path).read_bytes(), before)
+        self.assertTrue(Path(f"{self.db_path}-wal").exists())
+
+    def test_a_failed_swap_puts_the_damaged_files_back(self):
+        self.make_snapshot("db-new.sqlite3", "new", 2_000)
+        self.damage_live_database()
+        before = Path(self.db_path).read_bytes()
+        real_replace = Path.replace
+
+        def fail_on_install(path, target):
+            if path.name.startswith(".db.sqlite3.restore-"):
+                raise OSError("disk went away")
+            return real_replace(path, target)
+
+        with mock.patch.object(Path, "replace", fail_on_install), \
+                self.assertRaises(recovery.RestoreError):
+            recovery.restore_snapshot(self.db_path, "db-new.sqlite3")
+        self.assertEqual(Path(self.db_path).read_bytes(), before)
+        self.assertEqual(Path(f"{self.db_path}-wal").read_bytes(), b"stale wal")
+        self.assertEqual(self.leftovers(), [])
+
+    def test_post_restores_and_asks_startup_to_check_again(self):
+        self.make_snapshot("db-old.sqlite3", "old", 1_000)
+        self.make_snapshot("db-new.sqlite3", "newest", 2_000)
+        self.damage_live_database()
+        base = self.serve()
+        with self.post(base, {"snapshot": "db-new.sqlite3"}) as response:
+            self.assertEqual(response.status, 200)
+        self.assertEqual(self.marker(self.db_path), "newest")
+        self.assertEqual(
+            json.loads(Path(f"{self.db_path}.integrity.decision").read_text()),
+            {"action": "retry"},
+        )
+
+    def test_post_is_refused_when_the_database_is_not_marked_damaged(self):
+        self.make_snapshot("db-new.sqlite3", "new", 2_000)
+        self.make_db(self.db_path, "live")
+        base = self.serve()
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post(base, {"snapshot": "db-new.sqlite3"})
+        self.assertEqual(ctx.exception.code, 409)
+        self.assertEqual(self.marker(self.db_path), "live")
+
+    def test_post_from_another_site_is_refused(self):
+        self.make_snapshot("db-new.sqlite3", "new", 2_000)
+        self.damage_live_database()
+        base = self.serve()
+        request = urllib.request.Request(  # noqa: S310
+            f"{base}/restore",
+            data=urllib.parse.urlencode({"snapshot": "db-new.sqlite3"}).encode(),
+            headers={"Sec-Fetch-Site": "cross-site"},
+        )
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(request)  # noqa: S310
+        self.assertEqual(ctx.exception.code, 403)
+        self.assertTrue(Path(f"{self.db_path}-wal").exists())
+
+    def test_post_with_a_bad_snapshot_shows_why_and_changes_nothing(self):
+        (self.snapshots / "db-bad.sqlite3").write_bytes(b"garbage" * 1000)
+        self.damage_live_database()
+        base = self.serve()
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post(base, {"snapshot": "db-bad.sqlite3"})
+        self.assertEqual(ctx.exception.code, 409)
+        self.assertIn("did not restore", ctx.exception.read().decode())
+        self.assertFalse(Path(f"{self.db_path}.integrity.decision").exists())
