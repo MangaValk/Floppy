@@ -151,6 +151,40 @@ Start from `cursor=0`, which is always valid. Read `oldest_sequence` and
 Progress does not create history. Completion applies to the identified movie or
 episode only, and a retry never becomes a rewatch.
 
+### When the user marks something watched by hand
+
+Send the same `stop` you send for a finished title, with `"manual": true`
+and no position:
+
+```http
+POST /api/v1/scrobble/
+
+{"action": "stop", "media_type": "movie", "ids": {"imdb": "tt0133093", "tmdb": "603"},
+ "title": "The Matrix", "completed": true, "manual": true,
+ "client_event_id": "mark-1b6e..."}
+```
+
+| Situation | Result |
+|---|---|
+| Title Floppy has never seen | Created and Completed, one watch |
+| Title planned or in progress | That entry becomes Completed, no second row |
+| Title already watched | Nothing changes. It is agreement, not a rewatch |
+| Same `client_event_id` again | The first result, no second mutation |
+| `stop` without `manual` | A play. A second viewing is a rewatch |
+
+An episode is marked the same way, with `season_number` and `episode_number`.
+`manual` must be a boolean (`400` otherwise) and is ignored on `start` and
+`pause`. Add `played_at` when the client knows when the user watched it;
+otherwise Floppy uses the time of the request.
+
+**Unmark is not sent.** There is no call that reverses a mark without deciding
+what to do with the user's history, so a client should leave Floppy as it is
+when the user unmarks. Floppy's own unmark keeps past plays.
+
+**Do not use `PUT .../watched-state/` for this.** It records the watched
+state in Floppy's sync ledger only. It adds no library entry and does not turn
+a Planning entry into Completed, so the title would not look watched in Floppy.
+
 ## 4. Offline retries
 
 Send `client_event_id` (or the `Idempotency-Key` header) on every mutation.
@@ -192,6 +226,33 @@ past a page you failed to apply.
 
 Deletes arrive as entries with `kind: "delete"`. Absence from a page is never a
 delete.
+
+### Reading Floppy state into a client
+
+A client that shows Floppy's resume positions and watched flags (for example a
+"Continue Watching" row) needs three things from each feed row.
+
+| Field | Why a client needs it |
+|---|---|
+| `media_type`, `media_id`, `source` | Which title. For an episode, `media_id` is the **show's** id |
+| `season_number`, `episode_number` | Which episode. `null` for a movie. Without these, two episodes of one show are indistinguishable |
+| `ids` | Provider ids (`tmdb`, `imdb`, `tvdb`) to match against the client's own catalogue. An episode carries its show's ids |
+| `position_seconds`, `duration_seconds`, `completed` | Progress feed only. Absolute seconds, so a client does not have to guess from a percentage |
+| `watched`, `play_count`, `watched_at` | Watched-state feed only |
+| `origin_key` | Progress feed only. Skip rows whose `origin_key` is your own connection's: they are your echo |
+
+Rules for applying them:
+
+- A progress row with `completed: true` is not a resume position. Show the item
+  as watched (or advance to the next episode), never as resumable.
+- A progress row with `kind: "delete"` clears the resume position. It does not
+  mean the item is unwatched.
+- Progress and watched state are separate feeds. Applying a position never
+  creates a play, and a watched flag never invents a position.
+- On a first connection, read `newest_sequence` from the feed (`0` if it is null), then page the
+  snapshot at `GET /api/v1/playback/progress/` (`?completed=false` for resume
+  candidates), then pull the feed from the sequence you read first. Rows may
+  repeat across the two reads; applying the same row twice is harmless.
 
 ## 6. Resets and expired cursors
 
@@ -250,13 +311,19 @@ user enters their server address and the app token; NuvioTV checks it with
 `GET /api/v1/sync/connections/` and sends playback to `POST /api/v1/scrobble/`.
 
 NuvioTV only knows how far through a title it is, as a percentage, never in
-seconds. So it sends an explicit `completed` flag and no position:
+seconds. So every event carries `progress_percent` (0 to 100), and a stop also
+sends an explicit `completed` flag. Floppy multiplies the percentage by the
+title's length (the event's `duration_seconds` if sent, else the runtime it
+holds) to get the position, so a seek shows on the Now Playing card at the next
+event and a stop leaves a resume point. If it does not know the length, the card
+shows the percentage itself. `position_seconds`, when a client has it, always
+wins over `progress_percent`.
 
 | NuvioTV event | Sent to Floppy | Result in Floppy |
 |---|---|---|
-| Playback starts or pauses | `start` / `pause` | Now Playing card only |
-| Stop at 80% or more | `stop`, `completed: true` | Completed, one play |
-| Stop from 1% to 80% | `stop`, `completed: false` | In Progress, never Completed |
+| Playback starts or pauses | `start` / `pause`, `progress_percent` | Now Playing card at that position |
+| Stop at 80% or more | `stop`, `progress_percent`, `completed: true` | Completed, one play, resume point stored |
+| Stop from 1% to 80% | `stop`, `progress_percent`, `completed: false` | In Progress, never Completed, resume point stored |
 | Stop under 1% | Not sent | Nothing (a skim) |
 
 It identifies a title by `imdb`, `tmdb` or `tvdb` as strings, plus `anidb` for
@@ -264,8 +331,12 @@ anime. An event with none of them, an episode with no season and episode number,
 or an episode numbered by TVDB order is not sent, because Floppy never matches by
 title.
 
-What it does not do: send a resume position (it has no seconds to send),
-read history or lists back, or send ratings. The Nuvio and Floppy sides of those
+The proposed tracker does not send a manual **Mark Watched** yet. It is not
+playback, so the table above does not cover it. A client that adds it sends the
+manual stop described in step 3; the exact bodies are in
+`src/api/tests/test_nuviotv_manual_mark.py`.
+
+What it does not do: send seconds (it has none), read history or lists back, or send ratings. The Nuvio and Floppy sides of those
 are separate changes.
 
 The exact bodies it sends are the fixtures in
@@ -274,6 +345,44 @@ The exact bodies it sends are the fixtures in
 ```bash
 SECRET=test-only scripts/test.sh api.tests.test_nuviotv_scrobble_contract
 ```
+
+## Library source (reading saved titles)
+
+NuvioTV lists a provider under Sources, Library Source only if its client can
+read the user's saved titles. The server side of that already exists: Floppy's
+saved titles are the entries with status Planning, and a client reads them with
+the credential it was given.
+
+```
+GET /api/v1/media/?status=planning&limit=50&offset=0
+GET /api/v1/media/movie/?status=planning
+GET /api/v1/media/tv/?status=planning
+```
+
+The default tracking token carries `watchlist:read`, so no extra scope is
+needed. Each row's `item` has `source`, `media_id` and `media_type`; `item.ids`
+adds `imdb` and `tvdb` when Floppy has resolved them. For `source: "tmdb"`,
+`media_id` is the TMDB id. Follow `pagination.next` until it is `null`.
+
+What a client should do with what it gets:
+
+- Place only titles whose `source` it can map (`tmdb` for movies and TV).
+  Anything else (games, books, music, MAL anime) is a title it cannot place;
+  skip it and say so rather than guessing by title.
+- Treat it as a full read. There is no change feed for saved titles (the
+  `sync/changes` feed carries watched state only), so re-read the list rather
+  than expecting deltas.
+- Do not merge it with Floppy custom lists or Discover rows. They are separate
+  endpoints and separate capabilities.
+
+The read is pinned by `api.tests.test_nuvio_library_source`:
+
+```bash
+SECRET=test-only scripts/test.sh api.tests.test_nuvio_library_source
+```
+
+The NuvioTV side (binding a library provider so Floppy appears in the Library
+Source list) is client work and is not part of this server contract.
 
 ## Errors
 
@@ -301,7 +410,7 @@ call needed a scope the token does not carry.
 |---|---|---|
 | Browsing Floppy lists and Discover rows | Yes | No |
 | Catalog metadata | Yes | No |
-| Saved-item sync | No | Yes |
+| Saved-item sync | No | Yes (read: see Library source) |
 | Watched state sync | No | Yes |
 | Resume progress sync | No | Yes |
 | Reconciliation | No | Yes |

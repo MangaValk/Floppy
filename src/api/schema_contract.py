@@ -19,6 +19,7 @@ VERIFIED_OPERATIONS = frozenset(
     | {
         ("/api/v1/info/", "GET"),
         ("/apis/listenbrainz/1/submit-listens/", "POST"),
+        ("/apis/listenbrainz/1/user/{username}/listens/", "GET"),
         ("/apis/listenbrainz/1/validate-token/", "GET"),
     }
 )

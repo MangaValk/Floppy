@@ -538,6 +538,53 @@ class CalendarAiredShowRecheckTests(CalendarFixturesMixin, TestCase):
         self._checked(tv_item, days_ago=8)
         self.assertIn(tv_item, get_items_to_process(self.user))
 
+    def _tmdb_counterpart(self, tvdb_item, *, datetime_value):
+        self.tv_item.provider_external_ids = {"tvdb_id": tvdb_item.media_id}
+        self.tv_item.save(update_fields=["provider_external_ids"])
+        season_item = Item.objects.create(
+            media_id=self.tv_item.media_id,
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.SEASON.value,
+            title="Breaking Bad",
+            image="http://example.com/breakingbad.jpg",
+            season_number=2,
+        )
+        Event.objects.create(
+            item=season_item,
+            content_number=1,
+            datetime=datetime_value,
+        )
+
+    @patch("events.calendar.selectors.tmdb.movie_changes", return_value=set())
+    @patch("events.calendar.selectors.tmdb.tv_changes", return_value=set())
+    def test_tvdb_show_follows_its_tmdb_counterpart_before_the_week_is_up(
+        self, _tv, _movie
+    ):
+        """A new season the TMDB identity already sees should refresh TVDB too."""
+        tvdb_item = self._tvdb_show()
+        self._checked(tvdb_item, days_ago=1)
+        self._tmdb_counterpart(
+            tvdb_item,
+            datetime_value=timezone.now() + timezone.timedelta(days=7),
+        )
+
+        self.assertIn(tvdb_item, get_items_to_process(self.user))
+
+    @patch("events.calendar.selectors.tmdb.movie_changes", return_value=set())
+    @patch("events.calendar.selectors.tmdb.tv_changes", return_value=set())
+    def test_tvdb_show_with_only_past_counterpart_events_stays_skipped(
+        self, _tv, _movie
+    ):
+        """The counterpart trigger needs an upcoming episode, not just any event."""
+        tvdb_item = self._tvdb_show()
+        self._checked(tvdb_item, days_ago=1)
+        self._tmdb_counterpart(
+            tvdb_item,
+            datetime_value=timezone.now() - timezone.timedelta(days=7),
+        )
+
+        self.assertNotIn(tvdb_item, get_items_to_process(self.user))
+
     @patch("events.calendar.selectors.tmdb.movie_changes", return_value=set())
     @patch("events.calendar.selectors.tmdb.tv_changes", return_value=set())
     @override_settings(CALENDAR_AIRED_SHOW_RECHECK_DAYS=0)

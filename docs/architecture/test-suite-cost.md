@@ -8,6 +8,97 @@ All numbers below are from one cloud container: 4 CPUs, 16 GiB RAM, SQLite,
 `--parallel` (so 4 workers), `--exclude-tag slow --exclude-tag network`.
 6,115 tests across 420 test files.
 
+## October 21 CI investigation
+
+These newer hosted measurements are separate from the older local figures
+below. The referenced run discovered 9,480 offline tests (9,478 executed).
+
+| Successful run | Test step | Test execution | Notes |
+| --- | --- | --- | --- |
+| [39542220106](https://github.com/dannyvfilms/Floppy/actions/runs/39542220106) | 75m40s | 4,144.417s | Release, ctrace coverage with per-test contexts |
+| [39538589973](https://github.com/dannyvfilms/Floppy/actions/runs/39538589973) | about 38m | 2,081.421s | Nearby PR, no coverage |
+| [39692521277](https://github.com/dannyvfilms/Floppy/actions/runs/39692521277) | 47m43s | 2,588.239s | Referenced release; tests ultimately passed |
+
+These runs use different commits, so this is evidence of the cost difference,
+not a controlled coverage benchmark. In the successful release, Docker smoke
+took 5m53s and publication itself took 2m56s. In
+[39692521277](https://github.com/dannyvfilms/Floppy/actions/runs/39692521277),
+tests, smoke and both upgrade replays passed; publication was blocked by
+five virtualenv advisories in lint. Updating only the locked package from 21.7.13 to
+21.14.12 passes the complete Python audit with the existing OAuth exception.
+
+CI now runs two isolated jobs: `app`, and
+`users integrations lists events api config`. Each remains serial with real
+migrations; this does not re-enable the multiprocessing path described below.
+The existing `test (3.12)` check requires both jobs to succeed. MCP/script
+tests and migration graph checks run once. Both shards retain slow/browser
+regressions and exclude network-tagged tests. Coverage files are merged before
+generating Codecov output and the affected-test map, retaining all test contexts.
+
+The expected wall-time cost is the slower shard plus coverage merging, rather
+than the sum of both groups. The tradeoff is one additional migration replay
+and dependency/browser installation, plus another hosted runner. Hosted
+improved timings still need measurement after this workflow runs; the old
+20-minute local figure is not a valid current hosted baseline. `--timing` now
+reports setup, teardown and total time, and `--durations 30` reports individual
+tests plus the twenty most expensive modules. Module totals include method
+setup/teardown but exclude class fixtures and database creation.
+
+Reproduce the two CI shards in separate terminals (Chromium must be installed):
+
+```bash
+SECRET=test-only FLOPPY_TEST_FAST_DB=0 FLOPPY_TEST_PARALLEL=1 scripts/test.sh app --timing --durations 30
+SECRET=test-only FLOPPY_TEST_FAST_DB=0 FLOPPY_TEST_PARALLEL=1 scripts/test.sh users integrations lists events api config --timing --durations 30
+```
+
+Local full offline validation on the Mac, with real migrations and no coverage:
+
+| Shard | Reported tests | Skipped | Database setup | Test execution | Total |
+| --- | --- | --- | --- | --- | --- |
+| app | 4,191 | 5 | 197.515s | 1,331.019s | 1,530.410s |
+| other | 5,295 | 19 | 167.418s | 1,247.553s | 1,416.793s |
+
+Both passed, including benchmarks and browser regressions. The jobs overlapped
+on a machine with other work running; their totals are not a controlled
+before/after comparison with the hosted coverage runs. Concurrent UI work
+added seven browser tests after these runs; fresh discovery verified that the
+two app-label sets still preserve the full multiset without overlap
+(4,200 + 5,295 = 9,495 discovered tests). Those later UI tests are outside this
+validation run. The final guard's socket/SSRF checks passed separately (68
+tests), and two covered regression processes merged all 21 recorded contexts.
+
+The module summaries identified these expensive groups in the full runs:
+preflight (165.450s), statistics views (129.555s), Trakt allocation scaling
+(100.384s), Home card projection (72.657s), API tracking (71.002s), and core
+media API tests (68.373s). First-start preflight includes another real database
+creation; the profiling and allocation regressions remain enabled.
+
+Ordinary test settings now guard CPython socket audit events as well as
+requests. External DNS, TCP and UDP fail before I/O, including aiohttp and
+standard-library HTTP clients. Loopback and Unix sockets remain available.
+Blocked DNS raises `socket.gaierror`, preserving the resolver contract used
+by URL validation before it reaches a mocked HTTP transport.
+IP-literal parsing remains available locally, so metadata-address checks
+still validate the actual address before a mocked transport is reached.
+This matters even when HTTP is mocked: `validate_self_hosted_url()` resolves
+the hostname first. A controlled local Mac check of that function measured:
+
+| Existing fixture URL | System DNS, HTTP-only guard baseline | Socket/DNS guard |
+| --- | --- | --- |
+| `https://abs.example.com` | 0.022505s | 0.000841s |
+| `https://kavita.local:5000` | 5.008777s | 0.000027s |
+
+Both paths report an unresolvable fixture host and perform no HTTP request.
+The baseline deliberately used the real resolver; the guarded path performed
+no DNS I/O. These are single-call local measurements, not projected hosted
+savings: resolver behavior and negative caching vary by environment.
+
+`scripts/test.sh --network` still opts in before settings load. This is a
+Python-process boundary: child executables such as Chromium do not inherit
+Python audit hooks, and intentionally mocked socket functions perform no I/O.
+Keep browser fixtures local and provider calls mocked; the guard does not
+replace those contracts.
+
 ## Headline
 
 | | before | after |

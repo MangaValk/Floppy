@@ -24,7 +24,7 @@ class PagePipelineCostTests(TestCase):
 
     def test_translation_catalog_is_versioned_and_browser_cached(self):
         page = self.client.get(reverse("home")).content.decode()
-        match = re.search(r'<script src="(/jsi18n/\?v=[^"]+)">', page)
+        match = re.search(r'<script[^>]*\ssrc="(/jsi18n/\?v=[^"]+)"', page)
 
         self.assertIsNotNone(match, "the catalog URL must carry a version")
         catalog_url = match.group(1).replace("&amp;", "&")

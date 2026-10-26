@@ -20,6 +20,20 @@ from config.sqlite_integrity import check_database_integrity, write_startup_stat
 
 
 class RecoveryPageTests(SimpleTestCase):
+    def test_admission_diagnosis_is_shown_without_recovery_choices(self):
+        page = recovery.render_page(
+            None,
+            interactive=True,
+            status={
+                "status": "blocked",
+                "error_class": "startup_admission",
+                "error_message": "Run sqlite_startup --prepare-migrations <offline>",
+            },
+        )
+        self.assertIn("sqlite_startup --prepare-migrations &lt;offline&gt;", page)
+        self.assertIn("Stop all application containers", page)
+        self.assertNotIn("<form", page)
+
     def setUp(self):
         super().setUp()
         self.env_patcher = mock.patch.dict(os.environ, {"FLOPPY_SQLITE_AUTO_REPAIR": "false"})

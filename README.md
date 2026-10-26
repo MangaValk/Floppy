@@ -208,6 +208,7 @@ Links into the old sections of this page land here:
   [Docker Run](docs/deployment.md#docker-run) ·
   [Portainer and Unraid](docs/deployment.md#portainer-and-unraid)
 - [SQLite data paths](docs/deployment.md#sqlite-data-paths) ·
+  [SQLite startup and migration preparation](docs/architecture/sqlite-startup.md) ·
   [PostgreSQL](docs/deployment.md#postgresql) ·
   [Persistence checklist](docs/deployment.md#persistence-checklist)
 - [Environment variables](docs/deployment.md#environment-variables) ·

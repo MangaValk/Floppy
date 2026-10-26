@@ -47,6 +47,26 @@ def _settable_media_types(slug):
     return types
 
 
+def _existing_library_count(user, media_type, current_provider):
+    """Return how many tracked entries are not on the current default.
+
+    These are deliberately left alone when the provider changes. The count is
+    what makes the settings page describe the real state instead of relying on
+    a dismissible one-time prompt.
+    """
+    if media_type == MediaTypes.TV.value:
+        from app.services import library_migration
+
+        return library_migration.tv_items_to_move(user, current_provider).count()
+
+    if media_type == MediaTypes.ANIME.value:
+        from app.tasks_anime_library_repair import anime_rows_needing_conversion
+
+        return len(anime_rows_needing_conversion(user))
+
+    return 0
+
+
 def _provider_summary(user):
     """Return one entry per enabled media type, showing its resolved provider.
 
@@ -54,6 +74,10 @@ def _provider_summary(user):
     one is currently configured, so the modal can point at what's missing
     instead of just hiding it. A media type is only editable (has a working
     dropdown + Save) when it has a stored per-user default field.
+
+    ``existing_count`` is the number of tracked entries still on the other
+    provider or in the other Anime shape. The page offers moving them as a
+    separate, optional action; changing the default never does it implicitly.
     """
     summary = []
     for media_type in user.get_sidebar_media_types():
@@ -72,11 +96,17 @@ def _provider_summary(user):
                         "label": source.label,
                         "configured": metadata_resolution.provider_is_enabled(
                             source.value,
+                            user,
                         ),
                     }
                     for source in all_sources
                 ],
                 "configurable": media_type in PROVIDER_DEFAULT_MEDIA_TYPES,
+                "existing_count": (
+                    _existing_library_count(user, media_type, current)
+                    if media_type in PROVIDER_DEFAULT_MEDIA_TYPES
+                    else 0
+                ),
             },
         )
     return summary
@@ -183,16 +213,18 @@ def metadata_settings(request):
                 },
             )
 
+    duplicate_anime_count = 0
+    if user.anime_enabled:
+        from app.tasks_anime_library_repair import duplicate_pair_count
+
+        duplicate_anime_count = duplicate_pair_count(user_id=user.id)
+
     context = {
         "credential_groups": groups,
         "can_edit_instance": can_edit_instance,
         "provider_summary": _provider_summary(user),
         "anime_library_mode_choices": AnimeLibraryModeChoices.choices,
-        "tv_provider_prompt": request.session.pop("tv_provider_prompt", None),
-        "anime_shape_prompt_count": request.session.pop(
-            "anime_shape_prompt_count",
-            None,
-        ),
+        "duplicate_anime_count": duplicate_anime_count,
     }
     if not can_edit_instance:
         # Floppy's setup never flags anyone, so the owner of a fresh install is
@@ -225,33 +257,10 @@ def set_media_type_provider(request, media_type):
 
     field = _provider_default_field(media_type)
     if getattr(request.user, field) != source:
+        # The default only decides where new titles come from. Existing homes
+        # are left alone; moving them is an explicit action on this page.
         setattr(request.user, field, source)
         request.user.save(update_fields=[field])
-
-        if media_type == MediaTypes.TV.value:
-            # Shows already tracked on the other provider are left alone until
-            # the user asks to move them, so the nightly job must not move
-            # them either.
-            from app.services import library_migration
-
-            movable = library_migration.tv_items_to_move(request.user, source).count()
-            if movable:
-                request.user.tv_auto_move_to_default_provider = False
-                request.user.save(update_fields=["tv_auto_move_to_default_provider"])
-                request.session["tv_provider_prompt"] = {
-                    "count": movable,
-                    "label": metadata_resolution.metadata_provider_label(source),
-                }
-
-        if media_type == MediaTypes.ANIME.value:
-            # Switching provider only decides the shape of newly added shows.
-            # Existing ones are left alone unless the user asks, because the
-            # MAL-to-series mapping is N:1 and cannot be re-derived in bulk.
-            from app.tasks_anime_library_repair import anime_rows_needing_conversion
-
-            convertible = anime_rows_needing_conversion(request.user)
-            if convertible:
-                request.session["anime_shape_prompt_count"] = len(convertible)
 
     if media_type == MediaTypes.ANIME.value:
         anime_library_mode = request.POST.get("anime_library_mode")

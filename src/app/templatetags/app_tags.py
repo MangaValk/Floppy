@@ -1373,7 +1373,7 @@ def _untracked_season_next_episode_url(item, seasons, actual_media_type):
     season without a Season row. Untracked seasons are only visible through
     their calendar events (same source as _next_episode_air_date_value).
     """
-    from events.models import Event
+    from events.models import Event, released_q
 
     is_dict = isinstance(item, dict)
     media_id = item["media_id"] if is_dict else getattr(item, "media_id", None)
@@ -1396,7 +1396,7 @@ def _untracked_season_next_episode_url(item, seasons, actual_media_type):
         )
         .exclude(item__season_number__in=tracked_season_numbers)
         .exclude(datetime__year__lt=1900)
-        .filter(datetime__lte=timezone.now())
+        .filter(released_q("datetime", timezone.now()))
         .order_by("item__season_number", "content_number")
         .select_related("item")
         .first()
@@ -1434,7 +1434,7 @@ def _next_episode_number_for_season_item(item, media):
     if not media_id or not source or season_number is None:
         return None
 
-    from events.models import Event
+    from events.models import Event, released_q
 
     event_numbers = (
         Event.objects.filter(
@@ -1443,9 +1443,9 @@ def _next_episode_number_for_season_item(item, media):
             item__media_type=MediaTypes.SEASON.value,
             item__season_number=season_number,
             content_number__isnull=False,
-            datetime__lte=timezone.now(),
         )
         .exclude(datetime__year__lt=1900)
+        .filter(released_q("datetime", timezone.now()))
         .values_list("content_number", flat=True)
     )
     episode_numbers = sorted({int(number) for number in event_numbers})

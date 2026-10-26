@@ -591,6 +591,25 @@ class AnimeMigrationAtomicityTests(TransactionTestCase):
         ):
             self._assert_preflight_refused_without_writes()
 
+    def test_regular_tv_tracking_on_the_grouped_item_is_ambiguous(self):
+        """A TV-library row on the same show must refuse, not crash.
+
+        Regression: converting a flat MAL anime whose grouped show was already
+        tracked as a normal TV show reached `bulk_create` and raised
+        IntegrityError on `unique(user, item)`.
+        """
+        self.grouped_item.delete()
+        tv_item = Item.objects.create(
+            media_id="9350138",
+            source=Sources.TVDB.value,
+            media_type=MediaTypes.TV.value,
+            library_media_type=MediaTypes.TV.value,
+            title="Frieren: Beyond Journey's End",
+        )
+        TV.objects.create(item=tv_item, user=self.user, status=Status.IN_PROGRESS.value)
+
+        self._assert_preflight_refused_without_writes()
+
     def _concurrent_submit(self, preflight):
         barrier = Barrier(2)
 

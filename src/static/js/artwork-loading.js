@@ -72,11 +72,20 @@
     const detail = event.detail;
     if (!detail?.xhr || detail.shouldSwap === false) return;
     const xhr = detail.xhr;
-    const page = new DOMParser().parseFromString(detail.serverResponse || xhr.responseText || "", "text/html");
+    const response = detail.serverResponse || xhr.responseText || "";
+    const firstTag = response.match(/<([a-z][^\s/>]*)/i)?.[1].toLowerCase();
+    const isDocument = firstTag === "html" || firstTag === "body";
+    // Parsing table fragments as documents discards their thead/tbody/tr/td
+    // elements. A template preserves them until HTMX swaps into the table.
+    const page = isDocument
+      ? new DOMParser().parseFromString(response, "text/html")
+      : document.createElement("template");
+    if (!isDocument) page.innerHTML = response;
+    const root = isDocument ? page : page.content;
     let prepared = false;
-    page.querySelectorAll("img.media-card-poster[src], img[data-media-artwork][src]").forEach(function(image, index) {
+    root.querySelectorAll("img.media-card-poster[src], img[data-media-artwork][src]").forEach(function(image, index) {
       if (promoteArtwork(image, xhr.responseURL || location.href, index < 8)) prepared = true;
     });
-    if (prepared) event.detail.serverResponse = page.documentElement.outerHTML;
+    if (prepared) detail.serverResponse = isDocument ? page.documentElement.outerHTML : page.innerHTML;
   });
 })();

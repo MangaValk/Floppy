@@ -33,3 +33,33 @@ status controls matters on the open screen. For example:
   account for the space taken by the sidebar.
 - Browser resizing validates layout geometry. Native camera and status insets
   also require simulator checks or explicit inset emulation.
+
+## Safari side-rail paint
+
+Safari 27.1 can report a narrower layout viewport than the display even with
+`viewport-fit=cover`: the closed portrait simulator measured `screen.width =
+466`, `innerWidth = clientWidth = visualViewport.width = 382`, at scale 1 and
+visual viewport offset 0. The remaining 84px is decorative paint space, not
+additional room for application controls.
+
+`static/js/safari-rail.js` adds an aria-hidden column outside `.app-shell` only
+for touch iPhone Safari with a measured 40–200px gap. Standalone mode is excluded.
+The shell retains its width. The column carries the page background, a
+scroll-timeline-driven copy of the header background/border/shadow. The original
+mobile hero's backdrop wrapper grows equally left and right so its centre stays
+on the safe area while the right side reaches the rail. Its logo and content keep
+their original geometry. No artwork is cloned or mirrored. Resizing and HTMX
+navigation refresh the column. Pinch zoom restores horizontal panning.
+The sidebar scrim also paints in document space across both widths, keeping its
+50% dimming and click-to-close behavior without Safari's opaque fixed-layer tint.
+
+Safari's collapsing toolbar changes `innerHeight` while `clientHeight` stays
+fixed; the header's scroll range must use `innerHeight` to remain aligned.
+Do not replace the column with fixed overflow or clip the whole app: Safari
+needs actual document overflow to paint the rail. The technique comes from
+[Offform's simulator investigation](https://www.offform.design/designing-websites-for-iphone-duo-how-we-made-our-framer-sites-go-edge-to-edge/).
+
+`app.tests.test_safari_rail_browser` covers layout preservation, browser/mode
+guards, resizing, theme changes, deferred hero arrival and navigation away.
+These Chromium geometry tests cannot validate Safari's native rail compositing;
+check it in Device Hub as well.

@@ -2565,25 +2565,45 @@
         <div class="bg-[var(--color-surface-strong)] p-4 rounded-lg">
           <div class="flex items-center mb-3">{% source_display "simkl" %}</div>
           <p class="text-sm text-[var(--color-text-muted)] mb-3">{% translate "Import TV shows, movies and anime" %}</p>
-          {% if not simkl_configured %}
-            <div class="mb-3 rounded-md border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-[var(--color-text-secondary)] space-y-2">
-              <p class="text-[var(--color-link)] font-medium">{% translate "SIMKL needs your own API app" %}</p>
-              <ol class="list-decimal list-inside space-y-1">
-                <li>
-                  {% translate "Create an app at" %}
-                  <a href="https://simkl.com/settings/developer/"
-                     target="_blank"
-                     class="text-[var(--color-link)] underline hover:text-indigo-200">{% translate "SIMKL Developer" %}</a>.
-                </li>
-                <li>{% translate "Set the Redirect URI to" %} <code class="text-[var(--color-link)] break-all">{{ simkl_redirect_uri }}</code>.</li>
-                <li>
-                  {% translate "Add its Client ID and Client secret in" %}
-                  <a href="{% url 'metadata_settings' %}"
-                     class="text-[var(--color-link)] underline hover:text-indigo-200">{% translate "Settings > Metadata" %}</a>.
-                </li>
-              </ol>
-            </div>
-          {% endif %}
+          <div class="mb-3 rounded-md border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-[var(--color-text-secondary)] space-y-2">
+            <p class="text-[var(--color-link)] font-medium">{% translate "SIMKL needs your own API app" %}</p>
+            <ol class="list-decimal list-inside space-y-1">
+              <li>
+                {% translate "Create a Server app at" %}
+                <a href="https://simkl.com/settings/developer/"
+                   target="_blank"
+                   class="text-[var(--color-link)] underline hover:text-indigo-200">{% translate "SIMKL Developer" %}</a>.
+                {% translate "Choose “Server apps & services” so SIMKL issues a Client secret." %}
+              </li>
+              <li>
+                {% translate "Set its Redirect URI to this exact value:" %}
+                {# djlint:off #}
+                <div class="mt-2 flex items-center gap-2">
+                  <input type="text"
+                         id="simkl-redirect-uri"
+                         value="{{ simkl_redirect_uri }}"
+                         readonly
+                         class="flex-1 text-xs text-[var(--color-link)] font-mono bg-[var(--color-surface-dim)] p-2 rounded border-0 focus:ring-0 focus:outline-none cursor-text">
+                  <button type="button"
+                          class="flex items-center justify-center w-8 h-8 shrink-0 text-[var(--color-text-secondary)] hover:text-[var(--color-text)] bg-[var(--color-surface-hover)] rounded transition-colors cursor-pointer"
+                          data-copy-target="#simkl-redirect-uri"
+                          title="{% translate "Copy redirect URI" %}">
+                    {% include "app/icons/copy.svg" with classes="w-4 h-4" %}
+                  </button>
+                </div>
+                {# djlint:on #}
+                <span class="block mt-1 text-[var(--color-text-muted)]">{% translate "It must match character for character. On localhost or 127.0.0.1 the port is ignored, so you can register it without the port." %}</span>
+              </li>
+              <li>
+                {% translate "Add the app's Client ID and Client secret in" %}
+                <a href="{% url 'metadata_settings' %}"
+                   class="text-[var(--color-link)] underline hover:text-indigo-200">{% translate "Settings > Metadata" %}</a>.
+              </li>
+            </ol>
+            <p class="text-[var(--color-text-muted)]">
+              {% translate "Seeing “redirect_uri must match a registered URI”? The Redirect URI saved on the SIMKL app differs from the value above. Check the scheme, host, port, path and trailing slash." %}
+            </p>
+          </div>
           <form method="post" action="{% url 'simkl_oauth' %}">
             {% csrf_token %}
             <input type="hidden" name="frequency" x-model="importFrequency">

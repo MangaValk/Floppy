@@ -52,6 +52,7 @@ MEDIA_LIST_SORTS = {
     "id",
     "ended",
     "started",
+    "last_watched",
 }
 MEDIA_LIST_SORT_DEFAULTS_ASC = {
     "author",
@@ -763,7 +764,7 @@ def _next_episode_for_media(media):
                     item,
                     media,
                 )
-        from events.models import Event
+        from events.models import Event, released_q
 
         untracked_events = (
             Event.objects.filter(
@@ -771,8 +772,8 @@ def _next_episode_for_media(media):
                 item__media_id=item.media_id,
                 item__source=item.source,
                 content_number__isnull=False,
-                datetime__lte=timezone.now(),
             )
+            .filter(released_q("datetime", timezone.now()))
             .exclude(item__season_number=0)
             .exclude(item__season_number__in=excluded_season_numbers)
             .order_by("item__season_number", "content_number", "datetime")
@@ -803,15 +804,15 @@ def _next_episode_for_media(media):
             media,
         )
     if media_type == MediaTypes.ANIME.value:
-        from events.models import Event
+        from events.models import Event, released_q
 
         progress = int(getattr(media, "progress", 0) or 0)
         event = (
             Event.objects.filter(
                 item=item,
                 content_number__gt=progress,
-                datetime__lte=timezone.now(),
             )
+            .filter(released_q("datetime", timezone.now()))
             .exclude(datetime__year__lt=1900)
             .order_by("content_number", "datetime")
             .first()
@@ -865,6 +866,12 @@ def _sort_value(entry, sort, next_episode):
     if sort in {"end_date", "ended"}:
         return getattr(media, "aggregated_end_date", None) or getattr(
             media, "end_date", None
+        )
+    if sort == "last_watched":
+        return (
+            getattr(media, "aggregated_last_watched", None)
+            or getattr(media, "end_date", None)
+            or getattr(media, "progressed_at", None)
         )
     if sort in {"updated", "progressed_at"}:
         return getattr(media, "progressed_at", None)

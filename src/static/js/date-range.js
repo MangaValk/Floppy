@@ -691,8 +691,8 @@ function dateRangePicker(options = {}) {
     },
 
     getDateFormat() {
-      const scriptTag = document.querySelector("script[data-date-format]");
-      const selectedFormat = scriptTag?.dataset.dateFormat;
+      const formatElement = document.querySelector("[data-date-format]");
+      const selectedFormat = formatElement?.dataset.dateFormat;
       const dateFormats = this.getDateFormatValues();
 
       if (

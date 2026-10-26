@@ -1,3 +1,4 @@
+import json
 import logging
 from contextlib import suppress
 from datetime import UTC, date
@@ -299,6 +300,25 @@ def _track_modal_other_release_dates(media_type, item, user):
         }
         for event in events
     ]
+
+
+def _tags_tab_context(item, user):
+    """Return the shared tag editor context for an item-backed track modal."""
+    if item is None:
+        return {"tags_tab_available": False}
+
+    from app.tag_views import _user_tags_for_item
+
+    return {
+        "tags_tab_available": True,
+        "tags_item": item,
+        "user_tags": _user_tags_for_item(user, item),
+        "preview_genres_json": json.dumps(list(item.genres or [])),
+        "preview_implied_genres_json": json.dumps(
+            list(getattr(item, "implied_genres", None) or []),
+        ),
+        "tag_surface": "track",
+    }
 
 
 def _rewatch_action(media, media_type):
@@ -997,6 +1017,7 @@ def _render_standard_track_modal(
         "collection_tab_available": False,
         "collection_context": None,
     }
+    context.update(_tags_tab_context(metadata_item, request.user))
     context["status_history_tab_available"] = bool(
         media is not None
         and media_type in (MediaTypes.TV.value, MediaTypes.SEASON.value),
@@ -1214,12 +1235,15 @@ def track_modal(
             Sources.POCKETCASTS.value,
             Sources.GPODDER.value,
             Sources.AUDIOBOOKSHELF.value,
+            Sources.MANUAL.value,
         }
     ):
-        from app.models import PodcastEpisode, PodcastShow
+        from app.models import PodcastEpisode
+        from app.services.podcast_import import resolve_show_for_media_id
 
-        # Check if this is a show (podcast_uuid) or an episode (episode_uuid)
-        show = PodcastShow.objects.filter(podcast_uuid=media_id).first()
+        # Check if this is a show (podcast_uuid or an iTunes search id) or an
+        # episode (episode_uuid).
+        show = resolve_show_for_media_id(media_id, source=source)
         if show:
             return _render_podcast_show_track_modal(request, show)
 

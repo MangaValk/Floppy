@@ -66,19 +66,25 @@ class _ResolvedReportPublicationError(OSError):
         self.previous_restored = previous_restored
 
 
-def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
-    """Summarize every relationship conflict without retaining every row."""
+def _inspect_foreign_keys(
+    conn: sqlite3.Connection, only_table: str | None = None
+) -> dict:
+    """Summarize every relationship conflict without retaining every row.
+
+    ``only_table`` limits the scan to one table (``foreign_key_check(table)``).
+    """
     counts = Counter()
     samples = []
     conflict_hash = 0
     can_quarantine = True
     total = 0
 
-    for table, row_id, parent, foreign_key_id in conn.execute(
-        "PRAGMA foreign_key_check"
-    ):
+    pragma = "PRAGMA foreign_key_check"
+    if only_table is not None:
+        pragma += "(" + _quote_identifier(only_table) + ")"
+    for conflict_table, row_id, parent, foreign_key_id in conn.execute(pragma):
         total += 1
-        counts[(table, parent, foreign_key_id)] += 1
+        counts[(conflict_table, parent, foreign_key_id)] += 1
         can_quarantine = can_quarantine and row_id is not None
         if len(samples) < _MAX_CONFLICT_SAMPLES:
             samples.append(
@@ -86,7 +92,7 @@ def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
                     "foreign_key_id": foreign_key_id,
                     "parent": parent,
                     "row": row_id,
-                    "table": table,
+                    "table": conflict_table,
                 }
             )
         conflict_hash = (
@@ -94,7 +100,7 @@ def _inspect_foreign_keys(conn: sqlite3.Connection) -> dict:
             + int.from_bytes(
                 sha256(
                     json.dumps(
-                        [table, row_id, parent, foreign_key_id],
+                        [conflict_table, row_id, parent, foreign_key_id],
                         separators=(",", ":"),
                     ).encode()
                 ).digest(),
@@ -196,7 +202,9 @@ def _read_incident_report(db_path: str) -> dict | None:
     finally:
         if descriptor != -1:
             os.close(descriptor)
-    if report.get("database") != str(Path(db_path).resolve()):
+    if not isinstance(report, dict) or report.get("database") != str(
+        Path(db_path).resolve()
+    ):
         return None
     return report
 
@@ -299,13 +307,12 @@ def _verified_path(db_path: str) -> Path:
 
 
 def record_verified_database(db_path: str, *, source: str) -> None:
-    """Record that a full storage check of this database just passed.
+    """Record a historical verification and its source file identity.
 
-    ``source`` is ``"startup"`` for the entrypoint's scan or ``"snapshot"`` for
-    the nightly snapshot, whose ``quick_check`` runs on a page-for-page copy
-    read from the live file. The device and inode tie the record to this exact
-    file, so a restored or replaced database never inherits it. Best-effort: a
-    missing record only means the next start runs the full scan.
+    ``startup`` is the legacy/offline policy's full scan; ``snapshot`` checks
+    structure only and cannot vouch for relationships. ``offline-snapshot``
+    checks both. This record never authorizes pending migrations: that needs
+    an unchanged recovery snapshot and a separate migration permit.
     """
     database_path = Path(db_path).resolve()
     try:
@@ -346,6 +353,8 @@ def recent_verification(
     record = _read_sidecar(_verified_path(db_path), db_path)
     if record is None:
         return None, "no verification on record"
+    if record.get("source") == "snapshot":
+        return None, "snapshot quick_check does not verify relationships"
     verified_at = _parse_timestamp(record.get("verified_at"))
     now = datetime.now(UTC)
     if verified_at is None or verified_at > now:
@@ -944,7 +953,9 @@ def _backup_to_staging(source, directory_descriptor, staging_name, *, timeout=5.
             )
             os.close(descriptor)
         with closing(sqlite3.connect(staging_path, timeout=timeout)) as destination:
-            source.backup(destination)
+            # Release the source read lock between small backup steps. The
+            # pause caps copy pressure while live web/worker traffic runs.
+            source.backup(destination, pages=256, progress=lambda *_: time.sleep(0.002))
             result = destination.execute("PRAGMA quick_check").fetchall()
             if result != [("ok",)]:
                 message = "backup quick_check did not return 'ok'"
@@ -1065,7 +1076,7 @@ def create_live_database_snapshot(
     db_path: str,
     dest_dir: Path,
     *,
-    max_keep: int,
+    max_keep: int | None,
     timeout_seconds: float,
 ) -> Path | None:
     """Write a verified SQLite snapshot from a live, concurrently-written database.
@@ -1146,7 +1157,7 @@ def _write_live_snapshot(
     database_path: Path,
     dest_dir: Path,
     *,
-    max_keep: int,
+    max_keep: int | None,
     timeout_seconds: float,
 ) -> Path:
     with suppress(FileExistsError):
@@ -1230,14 +1241,15 @@ def _write_live_snapshot(
             os.unlink(staging_name, dir_fd=dest_descriptor)
             os.fsync(dest_descriptor)
             succeeded = True
-            # The copy passed quick_check page for page, so it vouches for the
-            # live file it was read from and lets the next start skip the scan.
+            # Record structural verification only. This does not establish
+            # relational integrity or authorize pending migrations.
             record_verified_database(str(database_path), source="snapshot")
             # Prune after the new copy is in place, never before -- see the
             # matching comment on the _create_verified_backup call site.
-            _prune_recovery_backups(
-                dest_dir, max_keep=max_keep, newest=dest_dir / final_name
-            )
+            if max_keep is not None:
+                _prune_recovery_backups(
+                    dest_dir, max_keep=max_keep, newest=dest_dir / final_name
+                )
             _log(
                 f"[db-snapshot] page_cache_release path={final_name} "
                 f"bytes={snapshot_bytes} advice={advice}",

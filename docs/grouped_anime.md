@@ -17,9 +17,10 @@ The Anime library's storage shape follows each user's **Anime Provider**:
 The shape is decided once, when a show is first tracked, and then stays put.
 Changing the Anime Provider only affects newly added shows: MAL identity is per
 cour while TMDB/TVDB identity is per show, so the mapping is N:1 and cannot be
-re-derived in bulk without guessing at or dropping history. When the preference
-changes and existing anime is in the other shape, Floppy offers a conversion
-instead of performing one, and leaves anything it cannot convert safely alone.
+re-derived in bulk without guessing at or dropping history. Existing entries
+keep their shape and keep receiving new plays. The Metadata settings page shows
+how many entries are in the other shape and offers conversion as a separate,
+optional action; anything it cannot convert safely is left alone.
 
 ## Where a scrobble lands
 
@@ -30,9 +31,10 @@ covers that episode. An episode that no MAL entry can accept is dropped with a
 warning rather than opening a row in TV Shows.
 
 Before this rule existed, a show could land in Anime on one episode and in TV
-Shows on the next and accrue progress in both. The scheduled **Repair
-duplicated anime libraries** task folds any such pairs back into one row; a
-pair it cannot resolve safely is reported and left untouched.
+Shows on the next and accrue progress in both. The **Repair duplicated anime
+libraries** task folds any such pairs back into one row; affected users can
+start it from Metadata settings, and a pair it cannot resolve safely is
+reported and left untouched.
 
 An anime-native id in the payload - an AniDB id from Plex/HAMA or from a
 scrobble client - selects *which entry* the episode belongs to. It never selects

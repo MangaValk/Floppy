@@ -77,6 +77,7 @@ from .contract_serializers import (
     TrackedMediaUpdateRequestSerializer,
     TrackMediaRequestSerializer,
 )
+from .errors import database_busy_response
 from .helpers import (
     MEDIA_TYPE_COMPLETE_MODEL_MAP,
     apply_image_url,
@@ -1076,7 +1077,10 @@ class MediaTypeListView(drf_views.APIView):
                     image=metadata.get("image") or "",
                     **Item.title_fields_from_metadata(metadata),
                 )
-            except Exception:
+            except Exception as error:
+                busy = database_busy_response(error, request=request)
+                if busy is not None:
+                    return busy
                 logger.exception("Internal Server Error.")
                 return Response(
                     {
@@ -2043,7 +2047,10 @@ class MediaListDetailView(drf_views.APIView):
                 operation_name="add item to list",
                 operation_logger=logger,
             )
-        except OperationalError:
+        except OperationalError as error:
+            busy = database_busy_response(error, request=request, report=False)
+            if busy is not None:
+                return busy
             return Response(
                 {"detail": "Database is busy. Please try again in a moment."},
                 status=HTTP.SERVICE_UNAVAILABLE,
@@ -3419,7 +3426,10 @@ class MediaSeasonListDetailView(drf_views.APIView):
                 operation_name="add item to list",
                 operation_logger=logger,
             )
-        except OperationalError:
+        except OperationalError as error:
+            busy = database_busy_response(error, request=request, report=False)
+            if busy is not None:
+                return busy
             return Response(
                 {"detail": "Database is busy. Please try again in a moment."},
                 status=HTTP.SERVICE_UNAVAILABLE,
@@ -4648,7 +4658,10 @@ class MediaEpisodeListDetailView(drf_views.APIView):
                 operation_name="add item to list",
                 operation_logger=logger,
             )
-        except OperationalError:
+        except OperationalError as error:
+            busy = database_busy_response(error, request=request, report=False)
+            if busy is not None:
+                return busy
             return Response(
                 {"detail": "Database is busy. Please try again in a moment."},
                 status=HTTP.SERVICE_UNAVAILABLE,

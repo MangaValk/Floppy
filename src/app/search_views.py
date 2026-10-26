@@ -211,8 +211,12 @@ def _merge_by_title(entries, extra_items, limit):
 class PodcastShowAdapter:
     """Adapter to make PodcastShowTracker compatible with media components."""
 
-    def __init__(self, tracker):
-        """Copy the tracker's fields and find or create the show's Item."""
+    def __init__(self, tracker, item=None):
+        """Copy the tracker's fields and find or create the show's Item.
+
+        ``item`` is the show's already-fetched Item, when the caller batched
+        the lookup; otherwise it is fetched or created here.
+        """
         self.tracker = tracker
         self.id = tracker.id
         self.status = tracker.status
@@ -223,15 +227,17 @@ class PodcastShowAdapter:
         self.created_at = tracker.created_at
         self.updated_at = tracker.updated_at
 
-        self.item, _ = Item.objects.get_or_create(
-            media_id=tracker.show.podcast_uuid,
-            source=tracker.show.source,
-            media_type=MediaTypes.PODCAST.value,
-            defaults={
-                "title": tracker.show.title,
-                "image": tracker.show.image or settings.IMG_NONE,
-            },
-        )
+        if item is None:
+            item, _ = Item.objects.get_or_create(
+                media_id=tracker.show.podcast_uuid,
+                source=tracker.show.source,
+                media_type=MediaTypes.PODCAST.value,
+                defaults={
+                    "title": tracker.show.title,
+                    "image": tracker.show.image or settings.IMG_NONE,
+                },
+            )
+        self.item = item
         show_image = tracker.show.image or settings.IMG_NONE
         if self.item.title != tracker.show.title or self.item.image != show_image:
             self.item.title = tracker.show.title
@@ -262,6 +268,17 @@ def _local_podcast_results(user, query, limit):
         .order_by("title", "id")
     )
     total = show_trackers.count() + tagged_only.count()
+    page_trackers = list(
+        show_trackers.select_related("show").order_by("show__title")[:limit],
+    )
+    # One query for the shows' existing Items instead of a get_or_create each.
+    existing_items = {
+        (item.media_id, item.source): item
+        for item in Item.objects.filter(
+            media_type=MediaTypes.PODCAST.value,
+            media_id__in=[t.show.podcast_uuid for t in page_trackers],
+        )
+    }
     results = [
         {
             "item": media.item,
@@ -269,8 +286,13 @@ def _local_podcast_results(user, query, limit):
             "matched_title": _matched_title(media.item, query, user),
         }
         for media in (
-            PodcastShowAdapter(tracker)
-            for tracker in show_trackers.order_by("show__title")[:limit]
+            PodcastShowAdapter(
+                tracker,
+                item=existing_items.get(
+                    (tracker.show.podcast_uuid, tracker.show.source),
+                ),
+            )
+            for tracker in page_trackers
         )
     ]
     results += [
@@ -523,6 +545,15 @@ def media_search(request):
                     user=request.user,
                     language=metadata_resolution.metadata_language_default(request.user),
                 )
+    except services.ProviderNotConfiguredError as exc:
+        logger.warning(
+            "Search skipped for media_type=%s query=%s: %s",
+            media_type,
+            query,
+            exception_summary(exc),
+        )
+        messages.error(request, str(exc))
+        data = {"page": 1, "total_results": 0, "total_pages": 0, "results": []}
     except services.ProviderAPIError as exc:
         logger.warning(
             "Search failed for media_type=%s query=%s: %s",

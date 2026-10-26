@@ -901,6 +901,7 @@ paths:
           - ended
           - id
           - itemid
+          - last_watched
           - mediaid
           - next_episode_air_date
           - platform
@@ -1208,6 +1209,7 @@ paths:
           - ended
           - id
           - itemid
+          - last_watched
           - mediaid
           - next_episode_air_date
           - platform
@@ -2899,6 +2901,65 @@ paths:
                 $ref: '#/components/schemas/ListenBrainzError'
           description: ''
       x-required-scope: scrobble:write
+  /apis/listenbrainz/1/user/{username}/listens/:
+    get:
+      operationId: getListenBrainzUserListens
+      description: Returns recorded plays newest first, so ListenBrainz clients such
+        as Multi-Scrobbler can check what has already reached Floppy before submitting
+        a play. Only the token owner's listens are available.
+      summary: Get listens for a user (ListenBrainz-compatible)
+      parameters:
+      - in: query
+        name: count
+        schema:
+          type: integer
+        description: Maximum listens to return (default 25).
+      - in: query
+        name: max_ts
+        schema:
+          type: integer
+        description: Exclusive upper bound on listened_at (Unix seconds).
+      - in: query
+        name: min_ts
+        schema:
+          type: integer
+        description: Exclusive lower bound on listened_at (Unix seconds).
+      - in: path
+        name: username
+        schema:
+          type: string
+        description: The token owner's Floppy username.
+        required: true
+      tags:
+      - apis
+      security:
+      - listenBrainzToken: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListenBrainzListens'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListenBrainzError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListenBrainzError'
+          description: ''
+      x-required-scope: music:read
   /apis/listenbrainz/1/validate-token/:
     get:
       operationId: validateListenBrainzToken
@@ -3539,6 +3600,45 @@ components:
       required:
       - code
       - error
+    ListenBrainzListen:
+      type: object
+      description: One recorded listen in ListenBrainz's response shape.
+      properties:
+        listened_at:
+          type: integer
+        track_metadata:
+          type: object
+          additionalProperties: {}
+      required:
+      - listened_at
+      - track_metadata
+    ListenBrainzListens:
+      type: object
+      description: ListenBrainz `user/listens` response wrapper.
+      properties:
+        payload:
+          $ref: '#/components/schemas/ListenBrainzListensPayload'
+      required:
+      - payload
+    ListenBrainzListensPayload:
+      type: object
+      description: Page of listens for a user.
+      properties:
+        count:
+          type: integer
+        listens:
+          type: array
+          items:
+            $ref: '#/components/schemas/ListenBrainzListen'
+        latest_listen_ts:
+          type: integer
+        oldest_listen_ts:
+          type: integer
+      required:
+      - count
+      - latest_listen_ts
+      - listens
+      - oldest_listen_ts
     ListenBrainzStatus:
       type: object
       description: Successful submission response.

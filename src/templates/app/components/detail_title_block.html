@@ -121,7 +121,6 @@
                       {% endif %}
                     </span>
                   {% endif %}
-                  <span class="ms-1.5 inline-flex shrink-0 opacity-70 group-hover:opacity-100" aria-hidden="true">{% include "app/icons/history.svg" with classes="w-3.5 h-3.5" %}</span>
                 </button>
             {% endif %}
           </div>
@@ -130,8 +129,13 @@
         {% if not public_view|default:False and current_instance %}
           {# Picks up plays recorded by webhooks/scrobblers (Plex, generic scrobble API), #}
           {# which write history directly with no open response to OOB-swap into. #}
-          <div hx-get="{% url 'episode_history_poll' current_instance.id %}"
-               hx-trigger="every 15s"
+          {# Skipped while the tab is hidden; `gap` (seconds since the last poll) widens the #}
+          {# server lookback so a poll on return still catches plays missed meanwhile. #}
+          <div id="episode-history-poll"
+               hx-get="{% url 'episode_history_poll' current_instance.id %}"
+               hx-trigger="every 15s [!document.hidden], visibilitychange[!document.hidden] from:document"
+               hx-vals='js:{gap: Math.round((Date.now() - Number(document.getElementById("episode-history-poll").dataset.last || Date.now())) / 1000)}'
+               hx-on::after-request="if (event.detail.successful) this.dataset.last = Date.now()"
                hx-swap="none"></div>
         {% endif %}
 

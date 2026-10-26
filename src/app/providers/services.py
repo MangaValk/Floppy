@@ -31,6 +31,7 @@ from app.providers import (
     comicvine,
     gcd,
     googlebooks,
+    gpodder,
     hardcover,
     igdb,
     mal,
@@ -1079,6 +1080,19 @@ def _resolve_podcast_metadata(media_id, source, user=None):
     if show is not None:
         return _podcast_show_metadata(show)
 
+    if source in {Sources.POCKETCASTS.value, Sources.GPODDER.value}:
+        from app.services.podcast_import import (
+            PodcastImportError,
+            resolve_show_for_media_id,
+        )
+
+        try:
+            show = resolve_show_for_media_id(media_id, source=source)
+        except PodcastImportError:
+            show = None
+        if show is not None:
+            return _podcast_show_metadata(show)
+
     raise_not_found_error(source, media_id, "podcast episode")
     return None  # unreachable: raise_not_found_error always raises
 
@@ -1773,6 +1787,8 @@ def search(
         MediaTypes.PODCAST.value: lambda: (
             pocketcasts.search(query, page)
             if source == Sources.POCKETCASTS.value
+            else gpodder.search(query, page)
+            if source == Sources.GPODDER.value
             else None
         ),
         # Videos arrive from clients, so there is no provider to search.

@@ -470,6 +470,28 @@ class ListenBrainzTokenSerializer(serializers.Serializer):
     user_name = serializers.CharField()
 
 
+class ListenBrainzListenSerializer(serializers.Serializer):
+    """One recorded listen in ListenBrainz's response shape."""
+
+    listened_at = serializers.IntegerField()
+    track_metadata = serializers.DictField()
+
+
+class ListenBrainzListensPayloadSerializer(serializers.Serializer):
+    """Page of listens for a user."""
+
+    count = serializers.IntegerField()
+    listens = ListenBrainzListenSerializer(many=True)
+    latest_listen_ts = serializers.IntegerField()
+    oldest_listen_ts = serializers.IntegerField()
+
+
+class ListenBrainzListensSerializer(serializers.Serializer):
+    """ListenBrainz `user/listens` response wrapper."""
+
+    payload = ListenBrainzListensPayloadSerializer()
+
+
 class RecommendationSerializer(serializers.Serializer):
     """One recommended title for an external client."""
 

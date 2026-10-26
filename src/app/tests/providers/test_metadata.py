@@ -1723,6 +1723,9 @@ class Metadata(TestCase):
                     {"name": "Open world"},
                 ],
                 "platforms": [{"name": "PC"}],
+                "franchise": {"id": 10, "name": "The Witcher"},
+                "franchises": [{"id": 10, "name": "The Witcher"}],
+                "collections": [{"id": 20, "name": "The Witcher Series"}],
                 "involved_companies": [
                     {
                         "company": {
@@ -1754,6 +1757,12 @@ class Metadata(TestCase):
         self.assertEqual(response["details"]["format"], "Main game")
         self.assertEqual(response["details"]["release_date"], "2015-05-19")
         self.assertEqual(response["details"]["companies"], "CD Projekt Red")
+        self.assertEqual(response["provider_franchise_id"], "10")
+        self.assertEqual(response["provider_franchise_name"], "The Witcher")
+        self.assertEqual(response["provider_collection_id"], "20")
+        self.assertEqual(
+            response["provider_collection_name"], "The Witcher Series"
+        )
         self.assertEqual(
             response["details"]["themes"],
             ["Action", "Fantasy", "Open world"],

@@ -5198,11 +5198,6 @@
       justify-content: space-between;
     }
   }
-  .sm\:justify-end {
-    @media (width >= 40rem) {
-      justify-content: flex-end;
-    }
-  }
   .sm\:justify-start {
     @media (width >= 40rem) {
       justify-content: flex-start;
@@ -6188,6 +6183,46 @@
 @media (max-width: 47.999rem) {
   .settings-nav-collapsed {
     display: none;
+  }
+}
+html[data-safari-rail] {
+  overflow-x: hidden;
+}
+html[data-safari-rail]:not([data-safari-rail-zoomed]), html[data-safari-rail]:not([data-safari-rail-zoomed]) body {
+  touch-action: pan-y pinch-zoom;
+}
+#safari-rail {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  overflow: clip;
+  pointer-events: none;
+}
+#safari-rail > .safari-rail__header {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  z-index: 50;
+  animation: safari-rail-header linear both;
+  animation-timeline: scroll(root block);
+}
+html[data-safari-rail] .app-menu-overlay {
+  position: absolute;
+  right: calc(-1 * var(--safari-rail-width));
+  bottom: auto;
+  height: var(--safari-rail-height);
+}
+html[data-safari-rail] .detail-mobile-hero {
+  overflow: visible;
+}
+html[data-safari-rail] .detail-mobile-hero__backdrop {
+  left: calc(-1 * var(--safari-rail-width));
+  right: calc(-1 * var(--safari-rail-width));
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 4rem), transparent);
+}
+@keyframes safari-rail-header {
+  to {
+    transform: translateY(var(--rail-scroll));
   }
 }
 :root {
@@ -7468,6 +7503,9 @@ html.light .theme-toggle-icon-moon {
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title {
     padding-top: 3.25rem;
   }
+  .detail-carousel-grid.detail-hero-pending .detail-carousel-grid__title {
+    padding-top: 3.25rem;
+  }
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title h1 {
     position: absolute;
     width: 1px;
@@ -7522,6 +7560,11 @@ html.light .theme-toggle-icon-moon {
   .detail-mobile-hero img {
     position: absolute;
   }
+  .detail-mobile-hero__backdrop {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
   .detail-mobile-hero__blur {
     top: 0;
     left: 0;
@@ -7572,6 +7615,9 @@ html.light .theme-toggle-icon-moon {
     letter-spacing: normal;
   }
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title {
+    padding-top: 6.75rem;
+  }
+  .detail-carousel-grid.detail-hero-pending .detail-carousel-grid__title {
     padding-top: 6.75rem;
   }
   .detail-carousel-grid:has(.detail-mobile-hero__logo) .detail-carousel-grid__title > .mb-3 {
@@ -7964,6 +8010,19 @@ html.light .theme-toggle-icon-moon {
   }
   .detail-carousel-grid__header {
     margin-top: 0;
+  }
+  .detail-carousel-pending {
+    visibility: hidden;
+  }
+  .detail-carousel-grid.detail-hero-pending #detail-carousel-logo-slot {
+    display: flex;
+    align-items: flex-end;
+    min-height: 7rem;
+  }
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) #detail-carousel-logo-slot:has(.detail-carousel-overview-logo) {
+    display: flex;
+    align-items: flex-end;
+    min-height: 7rem;
   }
   .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)) {
     grid-template-areas: "poster preview" "strip strip" "header header" "chips chips" "synopsis synopsis";
@@ -9306,7 +9365,7 @@ html.light .theme-toggle-icon-moon {
     overflow-x: hidden;
   }
 }
-@media (max-width: 768px), (pointer: coarse) and (max-width: 1600px) and (max-height: 1100px), (hover: none) and (max-width: 1600px) and (max-height: 1100px) {
+@media (max-width: 600px), (orientation: landscape) and (pointer: coarse) and (max-width: 1000px) and (max-height: 720px), (orientation: landscape) and (hover: none) and (max-width: 1000px) and (max-height: 720px) {
   body {
     --card-cols: 3;
     --card-cap: 6.75rem;

@@ -45,6 +45,47 @@ class CardMetadataTests(SimpleTestCase):
         self.assertEqual(movie["display"], "always")
         self.assertTrue(movie["options"]["rating"]["hide_zero"])
 
+    def test_metadata_fields_are_offered_where_the_media_type_has_them(self):
+        """A metadata-backed property follows the media type's field registry."""
+        from users.card_metadata import editor_catalog
+
+        fields_by_type = {
+            entry["id"]: {field["id"] for field in entry["fields"]}
+            for entry in editor_catalog()
+        }
+        self.assertIn("platforms", fields_by_type["game"])
+        self.assertNotIn("platforms", fields_by_type["movie"])
+        self.assertNotIn("platforms", fields_by_type["boardgame"])
+
+    def test_parser_drops_a_metadata_field_the_type_does_not_have(self):
+        """Platform cannot be saved onto a movie profile."""
+        parsed = parse_card_metadata(
+            {
+                "version": 1,
+                "types": {
+                    "game": {"fields": ["platforms", "release_year"]},
+                    "movie": {"fields": ["platforms", "release_year"]},
+                },
+            }
+        )
+        self.assertEqual(parsed["types"]["game"]["fields"], ["platforms", "release_year"])
+        self.assertEqual(parsed["types"]["movie"]["fields"], ["release_year"])
+
+    def test_platform_line_reads_the_item_platforms(self):
+        """A game card shows its platforms, joined when there are several."""
+        from users.card_metadata import card_lines
+
+        user = SimpleNamespace(
+            card_metadata=parse_card_metadata(
+                {"version": 1, "types": {"game": {"fields": ["platforms"]}}}
+            )
+        )
+        item = SimpleNamespace(platforms=["PC", "PlayStation 5", "Switch"])
+        self.assertEqual(
+            card_lines(user, "game", item, None)[0]["text"],
+            "PC, PlayStation 5, Switch",
+        )
+
     def test_legacy_seed_removes_progress_when_the_bar_is_off(self):
         """progress_bar false drops the progress field on every type."""
         seeded = profiles_from_legacy("always", False, True)

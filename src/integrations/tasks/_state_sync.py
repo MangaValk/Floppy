@@ -6,6 +6,8 @@ long-running work that must never sit in front of one.
 """
 
 import logging
+import os
+import time
 from contextlib import suppress
 
 from celery import shared_task
@@ -42,13 +44,22 @@ def flush_outbound_batch(binding_id):
     return outbound.flush_binding(binding_id)
 
 
-@shared_task(name="Sweep pending watched state deliveries")
+# The sweep makes provider HTTP calls inline, so it can run long; it is bounded
+# so a wedged one frees the single background child instead of pinning it for
+# the global limit. Whatever it abandoned stays due and is picked up next tick.
+@shared_task(
+    name="Sweep pending watched state deliveries",
+    soft_time_limit=240,
+    time_limit=300,
+)
 def sweep_watched_state_deliveries(limit=100):
     """Pick up deliveries whose enqueue kick was lost, and due retries.
 
     The outbox is the source of truth for what still needs sending, so a
     dropped broker message costs latency rather than correctness.
     """
+    started = time.monotonic()
+    logger.info("sweep_watched_state start pid=%s limit=%s", os.getpid(), limit)
     swept = outbound.sweep_due_deliveries(limit=limit)
 
     from integrations import connection_health
@@ -66,8 +77,11 @@ def sweep_watched_state_deliveries(limit=100):
             with suppress(AdapterError):
                 adapter._request("GET", "account")
 
-    if swept:
-        logger.info("Swept %s pending watched-state deliveries", swept)
+    logger.info(
+        "sweep_watched_state finish swept=%s duration_ms=%.0f",
+        swept,
+        (time.monotonic() - started) * 1000,
+    )
     return swept
 
 
