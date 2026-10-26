@@ -31,6 +31,24 @@ CASES = (
 )
 
 
+class StaleReadCache:
+    """Cache wrapper whose reads wait for the other reader before returning."""
+
+    def __init__(self, real_cache, barrier):
+        """Wrap ``real_cache``; reads rendezvous on ``barrier``."""
+        self._real_cache = real_cache
+        self._barrier = barrier
+
+    def get(self, *args, **kwargs):
+        value = self._real_cache.get(*args, **kwargs)
+        self._barrier.wait(timeout=10)
+        return value
+
+    def __getattr__(self, name):
+        """Delegate every other cache method untouched."""
+        return getattr(self._real_cache, name)
+
+
 class StartupReconcileClaimTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
@@ -58,29 +76,26 @@ class StartupReconcileClaimTests(SimpleTestCase):
                     self.assertEqual(publish.call_count, 2)
 
     def test_concurrent_stale_reads_publish_only_one_message(self):
+        # Patch module-level names, not attributes on ``cache`` or the Celery
+        # task proxy: both resolve per thread, so a patch made here may not be
+        # seen by the pool threads (CI then ran the real task eagerly).
         for field, _version, method, path, _ in CASES:
             with self.subTest(field=field):
                 cache.clear()
                 barrier = threading.Barrier(2)
-                actual_get = cache.get
-
-                def stale_read(*args, actual_get=actual_get, barrier=barrier, **kwargs):
-                    value = actual_get(*args, **kwargs)
-                    barrier.wait(timeout=10)
-                    return value
-
                 with (
-                    patch(path) as publish,
-                    patch("app.apps.cache.get", side_effect=stale_read),
+                    patch(path.rsplit(".", 1)[0]) as task,
+                    patch("app.apps.cache", StaleReadCache(cache, barrier)),
+                    self.assertNoLogs("app.apps", level="WARNING"),
+                    ThreadPoolExecutor(max_workers=2) as pool,
                 ):
-                    with ThreadPoolExecutor(max_workers=2) as pool:
-                        list(
-                            pool.map(
-                                lambda _, method=method: getattr(self.config, method)(),
-                                range(2),
-                            )
+                    list(
+                        pool.map(
+                            lambda _, method=method: getattr(self.config, method)(),
+                            range(2),
                         )
-                publish.assert_called_once()
+                    )
+                task.apply_async.assert_called_once()
 
     def test_failed_publication_releases_claim_for_retry(self):
         for field, version, method, path, _ in CASES:
