@@ -26,14 +26,21 @@ Code: `src/app/local_covers.py` (storage), `src/app/cover_views.py` (views).
 | 10 MB at most, before and after download | Same cap as the provider image cache |
 | Re-encoded, longest side at most 1600 px | Drops EXIF (a phone photo carries its GPS position) and keeps a 12 MP photo from filling the disk |
 
-## Three ways in
+## The picker
 
-All three end at `local_covers.store_bytes`, so the rules above apply to each.
+The UI is the reusable `components/image_picker.html` (Plex-style): a bar with
+**choose an image**, **drag and drop** and **enter a URL**, over a grid (or, with
+`variant="strip"`, one scrolling row) holding the current picture and the pictures on
+offer. Another place needs only a `save_url` that accepts `cover_file` or `cover_url`, and a
+`candidates_url` that returns `components/image_picker_tiles.html`. `cover_change_section.html`
+is the cover's use of it.
 
-1. **Upload** a file.
+All three ways in end at `local_covers.store_bytes`, so the rules above apply to each.
+
+1. **Upload** a file (choose or drop).
 2. **Link** to an image. Links to a web page (a book or comic site) use the cover the
    page names in `og:image`, `twitter:image` or `<link rel="image_src">`.
-3. **Find cover**: Open Library by the item's Barcode field, then the item's provider
+3. **Offered pictures**: Open Library by the item's Barcode field, then the item's provider
    search results. Choosing one posts its link, so it is copied like any other link.
 
 Links are fetched with `integrations.safe_fetch`, not the artwork allowlist, because a
