@@ -88,8 +88,12 @@
              class="w-full h-10 px-3 bg-[var(--color-surface-strong)] rounded-md text-[var(--color-text)] text-sm border border-gray-600 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]">
     </div>
 
-    <div class="p-4 {% if variant == 'strip' %}flex gap-3 overflow-x-auto{% else %}grid grid-cols-2 sm:grid-cols-3 gap-3{% endif %}"
-         id="{{ uid }}-tiles">
+    <div class="p-4 {% if variant == 'strip' %}flex gap-3 overflow-x-auto{% else %}grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3{% endif %}"
+         id="{{ uid }}-tiles"
+         hx-get="{{ candidates_url }}{% if variant == 'strip' %}?variant=strip{% endif %}"
+         hx-trigger="intersect once"
+         hx-target="this"
+         hx-swap="beforeend">
       {# The picture in use now #}
       <button type="button"
               class="relative group {% if variant == 'strip' %}w-24 shrink-0{% endif %} text-left cursor-pointer"
@@ -113,12 +117,6 @@
           <span class="mt-1 block text-xs text-[var(--color-text-muted)]">{% translate "New" %}</span>
         </div>
       </template>
-
-      {# Pictures other sources have, loaded the first time this panel is shown #}
-      <div class="contents"
-           hx-get="{{ candidates_url }}{% if variant == 'strip' %}?variant=strip{% endif %}"
-           hx-trigger="intersect once"
-           hx-swap="outerHTML"></div>
     </div>
 
     <div class="flex justify-end gap-2 px-4 pb-4" x-show="choice.value" x-cloak>

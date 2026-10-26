@@ -359,6 +359,9 @@
   .top-0 {
     top: calc(var(--spacing) * 0);
   }
+  .top-1 {
+    top: calc(var(--spacing) * 1);
+  }
   .top-1\/2 {
     top: calc(1/2 * 100%);
   }
@@ -388,6 +391,9 @@
   }
   .right-0 {
     right: calc(var(--spacing) * 0);
+  }
+  .right-1 {
+    right: calc(var(--spacing) * 1);
   }
   .right-1\/2 {
     right: calc(1/2 * 100%);
@@ -496,6 +502,9 @@
   }
   .col-span-2 {
     grid-column: span 2 / span 2;
+  }
+  .col-span-full {
+    grid-column: 1 / -1;
   }
   .col-start-1 {
     grid-column-start: 1;
@@ -3003,6 +3012,9 @@
   .pb-3 {
     padding-bottom: calc(var(--spacing) * 3);
   }
+  .pb-4 {
+    padding-bottom: calc(var(--spacing) * 4);
+  }
   .pb-16 {
     padding-bottom: calc(var(--spacing) * 16);
   }
@@ -3552,6 +3564,9 @@
   .ring-\(--color-accent\) {
     --tw-ring-color: var(--color-accent);
   }
+  .ring-\[var\(--color-accent\)\] {
+    --tw-ring-color: var(--color-accent);
+  }
   .ring-\[var\(--color-accent\)\]\/30 {
     --tw-ring-color: var(--color-accent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -3731,13 +3746,6 @@
       }
     }
   }
-  .group-hover\:ring-\[var\(--color-accent\)\] {
-    &:is(:where(.group):hover *) {
-      @media (hover: hover) {
-        --tw-ring-color: var(--color-accent);
-      }
-    }
-  }
   .group-hover\/ep-row\:text-\[var\(--color-link\)\] {
     &:is(:where(.group\/ep-row):hover *) {
       @media (hover: hover) {
@@ -3752,11 +3760,6 @@
       }
     }
   }
-  .group-focus-visible\:ring-\[var\(--color-accent\)\] {
-    &:is(:where(.group):focus-visible *) {
-      --tw-ring-color: var(--color-accent);
-    }
-  }
   .peer-checked\:bg-indigo-600 {
     &:is(:where(.peer):checked ~ *) {
       background-color: var(--color-indigo-600);
@@ -3767,35 +3770,15 @@
       margin-right: calc(var(--spacing) * 3);
     }
   }
-  .file\:h-10 {
-    &::file-selector-button {
-      height: calc(var(--spacing) * 10);
-    }
-  }
-  .file\:cursor-pointer {
-    &::file-selector-button {
-      cursor: pointer;
-    }
-  }
   .file\:rounded {
     &::file-selector-button {
       border-radius: 0.25rem;
-    }
-  }
-  .file\:rounded-md {
-    &::file-selector-button {
-      border-radius: var(--radius-md);
     }
   }
   .file\:border-0 {
     &::file-selector-button {
       border-style: var(--tw-border-style);
       border-width: 0px;
-    }
-  }
-  .file\:bg-\[var\(--color-surface-strong\)\] {
-    &::file-selector-button {
-      background-color: var(--color-surface-strong);
     }
   }
   .file\:bg-indigo-600 {
@@ -3808,11 +3791,6 @@
       padding-inline: calc(var(--spacing) * 3);
     }
   }
-  .file\:px-4 {
-    &::file-selector-button {
-      padding-inline: calc(var(--spacing) * 4);
-    }
-  }
   .file\:py-2 {
     &::file-selector-button {
       padding-block: calc(var(--spacing) * 2);
@@ -3822,11 +3800,6 @@
     &::file-selector-button {
       font-size: var(--text-sm);
       line-height: var(--tw-leading, var(--text-sm--line-height));
-    }
-  }
-  .file\:text-\[var\(--color-text\)\] {
-    &::file-selector-button {
-      color: var(--color-text);
     }
   }
   .file\:text-white {
@@ -5392,6 +5365,12 @@
     @media (width >= 40rem) {
       font-size: var(--text-2xl);
       line-height: var(--tw-leading, var(--text-2xl--line-height));
+    }
+  }
+  .sm\:text-base {
+    @media (width >= 40rem) {
+      font-size: var(--text-base);
+      line-height: var(--tw-leading, var(--text-base--line-height));
     }
   }
   .sm\:text-lg {
