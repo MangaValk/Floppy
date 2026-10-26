@@ -1118,6 +1118,18 @@ def _schedule_credits_backfill_if_needed(item_id):
     enqueue_credits_backfill_items([item_id], countdown=3)
 
 
+def _defer_credits_backfill_check(item_id):
+    """Run the credits check after the save's response, not inside it."""
+    if not item_id:
+        return
+    from app.tasks import enqueue_item_backfills
+
+    transaction.on_commit(
+        lambda: enqueue_item_backfills.delay(item_id, ["credits_if_needed"]),
+        robust=True,
+    )
+
+
 @receiver(post_save, sender=Episode)
 def schedule_credits_backfill_on_episode_play(sender, instance, **kwargs):
     """Queue credits backfill for episode and related show when an episode play is saved."""
@@ -1128,13 +1140,13 @@ def schedule_credits_backfill_on_episode_play(sender, instance, **kwargs):
     if not getattr(instance, "end_date", None):
         return
     episode_item_id = getattr(instance, "item_id", None)
-    _schedule_credits_backfill_if_needed(episode_item_id)
+    _defer_credits_backfill_check(episode_item_id)
     related_season = getattr(instance, "related_season", None)
     season_item_id = getattr(getattr(related_season, "item", None), "id", None)
-    _schedule_credits_backfill_if_needed(season_item_id)
+    _defer_credits_backfill_check(season_item_id)
     related_tv = getattr(related_season, "related_tv", None)
     tv_item_id = getattr(related_tv, "item_id", None)
-    _schedule_credits_backfill_if_needed(tv_item_id)
+    _defer_credits_backfill_check(tv_item_id)
 
 
 @receiver(post_save, sender=Movie)
@@ -1148,7 +1160,7 @@ def schedule_credits_backfill_on_movie_play(sender, instance, **kwargs):
         getattr(instance, "end_date", None) or getattr(instance, "start_date", None)
     ):
         return
-    _schedule_credits_backfill_if_needed(getattr(instance, "item_id", None))
+    _defer_credits_backfill_check(getattr(instance, "item_id", None))
 
 
 @receiver([post_save, post_delete], sender=Music)
@@ -1615,10 +1627,12 @@ def schedule_runtime_backfill_on_item_save(
             MediaTypes.TV.value,
             MediaTypes.ANIME.value,
         ):
-            from app.tasks import enqueue_runtime_backfill_items
+            from app.tasks import enqueue_item_backfills
 
             transaction.on_commit(
-                lambda item_id=instance.id: enqueue_runtime_backfill_items([item_id]),
+                lambda item_id=instance.id: enqueue_item_backfills.delay(
+                    item_id, ["runtime"]
+                ),
                 robust=True,
             )
         elif (
@@ -1655,10 +1669,12 @@ def schedule_runtime_backfill_on_item_save(
     if genre_backfill_applicable and (
         genres_missing or genre_identity_changed or tmdb_tv_genre_verification_triggered
     ):
-        from app.tasks import enqueue_genre_backfill_items
+        from app.tasks import enqueue_item_backfills
 
         transaction.on_commit(
-            lambda item_id=instance.id: enqueue_genre_backfill_items([item_id]),
+            lambda item_id=instance.id: enqueue_item_backfills.delay(
+                item_id, ["genres"]
+            ),
             robust=True,
         )
 
@@ -1674,9 +1690,11 @@ def schedule_runtime_backfill_on_item_save(
             )
         )
     ):
-        from app.tasks import enqueue_credits_backfill_items
+        from app.tasks import enqueue_item_backfills
 
         transaction.on_commit(
-            lambda item_id=instance.id: enqueue_credits_backfill_items([item_id]),
+            lambda item_id=instance.id: enqueue_item_backfills.delay(
+                item_id, ["credits"]
+            ),
             robust=True,
         )

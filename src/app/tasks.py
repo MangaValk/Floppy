@@ -1338,6 +1338,21 @@ def backfill_item_metadata_task(
     return result
 
 
+@shared_task(name="Enqueue item backfills", ignore_result=True)
+def enqueue_item_backfills(item_id: int, kinds: list[str]):
+    """Queue per-item backfills a save would otherwise run inside its request."""
+    if "runtime" in kinds:
+        enqueue_runtime_backfill_items([item_id])
+    if "genres" in kinds:
+        enqueue_genre_backfill_items([item_id])
+    if "credits" in kinds:
+        enqueue_credits_backfill_items([item_id])
+    if "credits_if_needed" in kinds:
+        from app.signals import _schedule_credits_backfill_if_needed
+
+        _schedule_credits_backfill_if_needed(item_id)
+
+
 __all__ = [
     "CREDITS_BACKFILL_ITEMS_QUEUE_KEY",
     "CREDITS_BACKFILL_ITEMS_SCHEDULED_KEY",
@@ -1400,6 +1415,7 @@ __all__ = [
     "enqueue_due_provider_backfill_retries",
     "enqueue_external_ids_backfill_items",
     "enqueue_igdb_rating_backfill_items",
+    "enqueue_item_backfills",
     "enqueue_provider_backfill_items",
     "enrich_albums_task",
     "enrich_music_library_task",
