@@ -16,6 +16,7 @@ from app.history_cache_day_builder import (
     build_history_day,
     history_media_types_by_day,
 )
+from app.history_cache_range_prefetch import HistoryRangePrefetch
 from app.history_cache_index import (
     _missing_history_day_keys,
     build_history_index,
@@ -194,6 +195,9 @@ def get_month_history(
             missing_days,
             logging_style,
         )
+        prefetch = HistoryRangePrefetch(
+            user, missing_days, logging_style, day_media_types,
+        )
         history_days = []
         for day_key in month_day_keys:
             if day_key in cached_days:
@@ -206,6 +210,7 @@ def get_month_history(
                         day_key,
                         logging_style,
                         media_types=day_media_types.get(day_key),
+                        prefetch=prefetch,
                     ),
                     max_entries=HISTORY_ENTRIES_PER_DAY_PAGE,
                     entry_filter=entry_filter,
@@ -862,7 +867,14 @@ def refresh_history_cache(
         # the index as stale (serve it, schedule a rebuild) rather than
         # accepting pre-invalidation rows as fresh.
         era = _current_history_era(user_id, logging_style)
-        index_day_keys = build_history_index(user, logging_style_override=logging_style)
+        index_day_keys = build_history_index(
+            user,
+            logging_style_override=logging_style,
+            memo_eras=(
+                _current_history_era(user_id, "sessions"),
+                _current_history_era(user_id, "repeats"),
+            ),
+        )
         cache_history_index(user_id, logging_style, index_day_keys, era=era)
 
         warm_targets = []

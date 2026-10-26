@@ -41,3 +41,41 @@ class HistoryIndexDistinctDaysTests(TestCase):
                 f"distinct day query selects more than the day: {sql}",
             )
             self.assertNotIn("ORDER BY", sql)
+
+
+class HistoryIndexSharedScanTests(TestCase):
+    """Refreshing both styles of one save scans the shared types once."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = get_user_model().objects.create_user(
+            username="index-shared",
+            password="12345",
+        )
+
+    def _build(self, style, eras):
+        with CaptureQueriesContext(connection) as queries:
+            days = build_history_index(
+                self.user, logging_style_override=style, memo_eras=eras,
+            )
+        distinct = sum(
+            q["sql"].startswith("SELECT DISTINCT") for q in queries.captured_queries
+        )
+        return days, distinct
+
+    def test_second_style_reuses_shared_scan_and_matches_unmemoized(self):
+        eras = ("era-a", "era-b")
+        _, first = self._build("sessions", eras)
+        repeats, second = self._build("repeats", eras)
+        plain, plain_count = self._build("repeats", None)
+
+        self.assertLess(second, first)
+        self.assertLess(second, plain_count)
+        self.assertEqual(repeats, plain)
+
+    def test_changed_era_rebuilds_shared_scan(self):
+        _, first = self._build("sessions", ("era-a", "era-b"))
+        _, again = self._build("sessions", ("era-a2", "era-b"))
+        self.assertEqual(again, first)
