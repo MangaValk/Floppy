@@ -26,6 +26,11 @@ class StallWatchdogTests(SimpleTestCase):
         stall_watchdog._state["window_count"] = 0
         stall_watchdog._state["window_start"] = 0.0
 
+    # A scanner thread started by an earlier test in this process is still
+    # running and would report the request before the explicit scan below.
+    # A threshold it can never reach, with the explicit scan given a later
+    # clock, makes the count deterministic.
+    @override_settings(PERF_STALL_WARN_MS=60_000)
     def test_reports_blocked_request_once_before_it_finishes(self):
         """A request held past the threshold logs route, age and stack once."""
         release = threading.Event()
@@ -48,9 +53,9 @@ class StallWatchdogTests(SimpleTestCase):
         ):
             thread.start()
             inside.wait(2)
-            time.sleep(0.1)
-            self.assertEqual(stall_watchdog.scan(), 1)
-            self.assertEqual(stall_watchdog.scan(), 0)
+            later = time.monotonic() + 120
+            self.assertEqual(stall_watchdog.scan(now=later), 1)
+            self.assertEqual(stall_watchdog.scan(now=later), 0)
             release.set()
             thread.join(5)
         text = "\n".join(logs.output)
