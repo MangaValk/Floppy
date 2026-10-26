@@ -35,6 +35,7 @@ from lists.views_helpers import (
     _list_item_title_fields_from_metadata,
     _maybe_backfill_episode_title,
     list_has_item_identity,
+    list_metadata_language,
 )
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,12 @@ def add_list_item_search(request, list_id):
         episode_number = request.GET.get("episode_number")
 
         try:
-            media_metadata = services.get_media_metadata(media_type, media_id, source)
+            media_metadata = services.get_media_metadata(
+                media_type,
+                media_id,
+                source,
+                language=list_metadata_language(request.user),
+            )
         except Exception as exc:
             logger.exception(
                 "Quick add preview failed: list_id=%s media_type=%s media_id=%s",
@@ -199,7 +205,14 @@ def add_list_item_search(request, list_id):
     source = config.get_default_source_name(media_type).value
 
     try:
-        data = services.search(media_type, query, page, source)
+        data = services.search(
+            media_type,
+            query,
+            page,
+            source,
+            user=request.user,
+            language=list_metadata_language(request.user),
+        )
     except Exception as exc:
         logger.exception(
             "Quick add search failed: list_id=%s media_type=%s query=%s",
@@ -295,7 +308,11 @@ def add_list_item_submit(request, list_id):
         episode_number=episode_number,
     )
     if item is not None:
-        _maybe_backfill_episode_title(item, force=True)
+        _maybe_backfill_episode_title(
+            item,
+            force=True,
+            language=list_metadata_language(request.user),
+        )
     else:
         metadata = services.get_media_metadata(
             media_type,
@@ -303,6 +320,7 @@ def add_list_item_submit(request, list_id):
             source,
             [season_number] if season_number else None,
             episode_number,
+            language=list_metadata_language(request.user),
         )
         release_datetime = helpers.extract_release_datetime(metadata)
         item = Item.objects.create(

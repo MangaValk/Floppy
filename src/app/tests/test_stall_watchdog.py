@@ -2,6 +2,7 @@
 
 import threading
 import time
+from unittest import mock
 
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase
@@ -25,6 +26,11 @@ class StallWatchdogTests(SimpleTestCase):
         stall_watchdog._state["window_count"] = 0
         stall_watchdog._state["window_start"] = 0.0
 
+    # A scanner thread started by an earlier test in this process is still
+    # running and would report the request before the explicit scan below.
+    # A threshold it can never reach, with the explicit scan given a later
+    # clock, makes the count deterministic.
+    @override_settings(PERF_STALL_WARN_MS=60_000)
     def test_reports_blocked_request_once_before_it_finishes(self):
         """A request held past the threshold logs route, age and stack once."""
         release = threading.Event()
@@ -38,18 +44,22 @@ class StallWatchdogTests(SimpleTestCase):
         middleware = RequestPerformanceLoggingMiddleware(view)
         request = RequestFactory().get("/medialist/music?token=SECRET")
         thread = threading.Thread(target=middleware, args=(request,))
-        with self.assertLogs("app.stall_watchdog", level="WARNING") as logs:
+        # The background scanner would report the request between the
+        # threshold and this test's own scan, leaving the test with nothing
+        # to count. Only the explicit scans below may run.
+        with (
+            mock.patch.object(stall_watchdog, "_ensure_thread"),
+            self.assertLogs("app.stall_watchdog", level="WARNING") as logs,
+        ):
             thread.start()
             inside.wait(2)
-            time.sleep(0.1)
-            # The background scanner may report it first, so only the total
-            # is fixed: one report, however many scans ran.
-            stall_watchdog.scan()
-            self.assertEqual(stall_watchdog.scan(), 0)
+            later = time.monotonic() + 120
+            self.assertEqual(stall_watchdog.scan(now=later), 1)
+            self.assertEqual(stall_watchdog.scan(now=later), 0)
             release.set()
             thread.join(5)
         text = "\n".join(logs.output)
-        self.assertEqual(text.count("stalled_request"), 1)
+        self.assertIn("stalled_request", text)
         self.assertIn("route=medialist/<str:media_type>", text)
         self.assertIn(":view <-", text)
         self.assertNotIn("SECRET", text)
