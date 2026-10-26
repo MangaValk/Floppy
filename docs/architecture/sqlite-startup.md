@@ -85,6 +85,14 @@ They do not retry automatically after failure. The recovery snapshot remains
 available for inspection/restoration. Migration `events.0017` creates its
 datetime index transactionally, without Django's unrelated global FK exit
 scan; interrupted index creation and its migration record roll back together.
+The same skip now applies to every index-only migration:
+`config.sqlite_backend`'s schema editor omits Django's exit-time
+`foreign_key_check` when every statement it ran was `CREATE`/`DROP [UNIQUE]
+INDEX` and SQLite reports no row change (so a `RunPython` in the same migration
+still gets the scan). Table rebuilds and data changes keep it. **Tradeoff:** a
+foreign-key conflict already present is not re-found by an index migration; the
+background verifier's per-table `foreign_key_check` remains the detector. On a
+4 GB test database the scan cost about 50 s per migration.
 No production migration records are faked or deleted.
 
 ## Verification while serving traffic
