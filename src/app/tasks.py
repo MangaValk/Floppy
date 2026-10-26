@@ -175,6 +175,7 @@ from app.tasks_credits import (  # noqa: E402
     populate_credits_data_for_items,
 )
 from app.tasks_db_backup import write_database_snapshot  # noqa: E402
+from app.tasks_db_optimize import optimize_database_statistics  # noqa: E402
 from app.tasks_discover import (  # noqa: E402
     purge_expired_discover_caches,
     refresh_discover_profiles,
@@ -1430,6 +1431,7 @@ __all__ = [
     "is_provider_backfill_reconcile_complete",
     "migrate_tv_shows_to_preferred_provider_task",
     "move_user_tv_library_task",
+    "optimize_database_statistics",
     "populate_album_tracks_batch",
     "populate_credits_backfill_queue",
     "populate_credits_data_for_items",

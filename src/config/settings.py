@@ -1152,6 +1152,15 @@ BACKUP_DIR = config("BACKUP_DIR", default=str(BASE_DIR / "backups"))
 # exports above, which cannot replace a physically damaged db.sqlite3. Rides
 # the same BACKUP_DIR volume mount installs already have.
 DB_SNAPSHOT_ENABLED = config("DB_SNAPSHOT_ENABLED", default=True, cast=bool)
+# Daily PRAGMA optimize so SQLite always has planner statistics (SQLite only).
+# analysis_limit bounds each ANALYZE to a row sample, keeping the first run on a
+# multi-GB database short.
+DB_OPTIMIZE_ENABLED = config("DB_OPTIMIZE_ENABLED", default=True, cast=bool)
+DB_OPTIMIZE_ANALYSIS_LIMIT = config(
+    "DB_OPTIMIZE_ANALYSIS_LIMIT",
+    default=1000,
+    cast=int,
+)
 # How long an idempotency receipt stays replayable. A client that retries after
 # this window gets a fresh operation, not the prior result, so keep it longer
 # than the longest client backoff. Measure real retry intervals before lowering.
@@ -1760,6 +1769,9 @@ CELERY_TASK_ROUTES = {
     "Cleanup image cache": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Purge expired Discover caches": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Write database snapshot": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
+    "Optimize database planner statistics": {
+        "priority": CELERY_TASK_PRIORITY_BACKGROUND,
+    },
     "Backfill item metadata": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure genre backfill reconcile": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure watch provider backfill reconcile": {
@@ -2037,6 +2049,12 @@ CELERY_BEAT_SCHEDULE = {
     "purge_expired_discover_caches": {
         "task": "Purge expired Discover caches",
         "schedule": crontab(hour=4, minute=15),
+    },
+    # Interval, not crontab: a never-run interval entry is due as soon as beat
+    # starts, so a database with no statistics is fixed on the first boot.
+    "optimize_database_statistics": {
+        "task": "Optimize database planner statistics",
+        "schedule": 60 * 60 * 24,
     },
     "write_database_snapshot": {
         "task": "Write database snapshot",
