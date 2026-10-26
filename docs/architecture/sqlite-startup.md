@@ -34,11 +34,26 @@ migration/startup path and does not run SQLite verification.
 When migrations are pending and no valid permit exists, admission exits 11 and
 the entrypoint (services not yet started) runs `sqlite_startup
 --prepare-migrations --fast`: an online-API copy of the database, verified with
-`quick_check` on the copy, then a permit, then re-admission and migrate. It
-skips the relationship (`foreign_key_check`) scan, which runs afterwards in the
-background verifier. **Tradeoff:** a pre-existing foreign-key conflict is not
-caught before the migration; the verified copy is the restore point. Incidents
-and previous failed/blocked checks still block. Set
+the **page sweep** (`sqlite_page_sweep.py`, sequential) on the copy, then a
+permit, then re-admission and migrate. `PRAGMA quick_check` is not run on the
+copy: it walks b-trees in key order, which took 1.9 h on slow storage. The
+sweep proves the copy is a readable, structurally sound restore point (header,
+every b-tree page's layout, child pointers, overflow chains, freelist). If the
+sweep cannot run (no `sqlite_dbpage` and a non-empty WAL) the copy falls back to
+`quick_check`. The permit records what ran (`snapshot_verified`: `page_sweep` or
+`quick_check`; `quick_check_deferred`). The relationship (`foreign_key_check`)
+scan is skipped too.
+**Tradeoff:** record format and key order of the restore point, and
+pre-existing foreign-key conflicts, are verified only later, after the
+migration, by the background verifier. After a sweep-gated copy, preparation
+asks the verifier (`request_deferred_quick_check`) to re-run every table's
+`quick_check` in its next slices regardless of the 30-day cadence (progress file
+key `deferred_quick_check` with `pending_tables`, until all tables are done). A
+finding is a `corrupt` incident, as for any verifier finding. That deep check is
+limited to 150 s per table per slice (below), so on slow storage a large table
+may stay in `deep_incomplete` with the request pending: a coverage limit, not a
+pass. The copy is still the restore point, but it may hold damage the sweep
+cannot see. Incidents and previous failed/blocked checks still block. Set
 `FLOPPY_SQLITE_AUTO_SNAPSHOT=false` to require the manual step below. Measured
 here: 18.6s for a 2GB database on local SSD.
 
@@ -134,9 +149,10 @@ Findings use the existing reports: damage writes a `corrupt` incident and
 conflicts a `blocked` one, both blocking the next start; live rows are never
 touched. Busy/I/O/interrupted errors are transient and retried.
 
-`--prepare-migrations` keeps the copy-and-full-scan path (maintenance window,
-needed for the migration permit). The scheduled snapshot task still runs
-`quick_check` on its copy; that is not yet sliced or swept.
+`--prepare-migrations` without `--fast` (the explicit operator path) keeps the
+copy, `quick_check` and `foreign_key_check` path (maintenance window, needed for
+the migration permit). The scheduled snapshot task still runs `quick_check` on
+its copy; that is not yet sliced or swept.
 
 Observe `[sqlite-verification] slice status=...` logs and the progress file
 (`verified_through`, `unverified_units`, `fk_incomplete`, `deep_incomplete`).

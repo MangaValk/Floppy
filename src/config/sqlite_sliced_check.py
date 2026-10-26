@@ -228,6 +228,36 @@ def _check_table(
     return True
 
 
+def request_deferred_quick_check(db_path: str, *, reason: str) -> None:
+    """Make the next slices re-run every table's ``quick_check`` promptly.
+
+    The pre-migration snapshot was gated by the page sweep only, so record
+    format and key order are unproven until this runs on the migrated database.
+    Clearing each unit's verification makes all of them due, and clearing
+    ``deep_at`` makes the deep tier eligible regardless of its 30-day cadence.
+    """
+    state = _load(db_path)
+    for unit in state.setdefault("units", {}).values():
+        for key in ("verified_at", "deep_at", "deep_incomplete", "deep_tried"):
+            unit.pop(key, None)
+    state["deferred_quick_check"] = {"requested_at": _stamp(), "reason": reason}
+    _save(db_path, state)
+    integrity._log(f"[sqlite-verification] deferred quick_check scheduled ({reason})")
+
+
+def _settle_deferred(state: dict) -> None:
+    """Close the deferred request once every table has had its deep check."""
+    deferred = state.get("deferred_quick_check")
+    if not deferred:
+        return
+    tables = [n for n in state["units"] if n != _PAGES]
+    pending = sorted(n for n in tables if not state["units"][n].get("deep_at"))
+    deferred["pending_tables"] = pending
+    if not pending:
+        state.pop("deferred_quick_check")
+        integrity._log("[sqlite-verification] deferred quick_check completed")
+
+
 def run_slice(db_path: str) -> dict:
     """Do one bounded slice of verification; returns the persisted state."""
     started = time.monotonic()
@@ -307,6 +337,7 @@ def run_slice(db_path: str) -> dict:
                         }
                         units[name] = {**keep, "verified_at": _stamp()}
                     _save(db_path, state)
+                _settle_deferred(state)
                 _summarize(state)
                 state["status"] = "partial" if state["unverified_units"] else "ok"
         except sqlite3.DatabaseError as error:
