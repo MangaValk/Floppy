@@ -762,10 +762,24 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             # careful to defer. One SQL query, hundreds of MiB of JSON
             # decoding: exactly the shape production showed on
             # /medialist/movie, two minutes of wall time across eleven queries.
+            #
+            # Only an item with more than one row is ever aggregated (see the
+            # ``len(entries) > 1`` check below), so find those with one
+            # grouped count and hydrate just their rows. A library of
+            # single-row items then costs one count query, not a model per
+            # title.
+            duplicate_item_ids = list(
+                model.objects.filter(user=user.id, item_id__in=queried_item_ids)
+                .order_by()
+                .values("item_id")
+                .annotate(row_count=Count("pk"))
+                .filter(row_count__gt=1)
+                .values_list("item_id", flat=True),
+            )
             all_media = (
                 model.objects.filter(
                     user=user.id,
-                    item_id__in=queried_item_ids,
+                    item_id__in=duplicate_item_ids,
                 )
                 .only(*_aggregation_projection(model))
                 # Media's default ordering is ["user", "item", "-created_at"],
