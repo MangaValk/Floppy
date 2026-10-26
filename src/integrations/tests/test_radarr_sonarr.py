@@ -363,13 +363,13 @@ class ArrImporterTests(TestCase):
     @patch("integrations.imports.sonarr.services.get_media_metadata")
     @patch("integrations.imports.sonarr.SonarrClient.episodes")
     @patch("integrations.imports.sonarr.SonarrClient.series")
-    def test_sonarr_import_syncs_episode_collection_and_clears_legacy_show_state(
+    def test_sonarr_import_syncs_episode_collection_and_keeps_show_entry(
         self,
         mock_series,
         mock_episodes,
         mock_get_media_metadata,
     ):
-        """Sonarr should replace the old show-level placeholder with episode rows."""
+        """Sonarr should add episode rows and keep one show entry for TV Shows."""
         show_item = Item.objects.create(
             media_id="95396",
             source=Sources.TMDB.value,
@@ -427,19 +427,19 @@ class ArrImporterTests(TestCase):
 
         self.assertEqual(imported_counts[MediaTypes.TV.value], 1)
         self.assertEqual(warnings, "")
-        self.assertFalse(
+        self.assertTrue(
             CollectionSourceState.objects.filter(
                 user=self.user,
                 item=show_item,
                 source="sonarr",
             ).exists(),
         )
-        self.assertFalse(
-            CollectionEntry.objects.filter(
-                user=self.user,
-                item=show_item,
-            ).exists(),
+        show_entries = CollectionEntry.objects.filter(
+            user=self.user,
+            item=show_item,
         )
+        self.assertEqual(show_entries.count(), 1)
+        self.assertEqual(show_entries.get().audio_codec, "AAC")
 
         season_item = Item.objects.get(
             media_id="95396",
@@ -491,6 +491,60 @@ class ArrImporterTests(TestCase):
                 "collected_episodes": 1,
                 "total_episodes": 2,
             },
+        )
+
+    @patch("integrations.imports.sonarr.services.get_media_metadata")
+    @patch("integrations.imports.sonarr.SonarrClient.episodes")
+    @patch("integrations.imports.sonarr.SonarrClient.series")
+    def test_sonarr_import_adds_show_entry_once_and_drops_it_with_the_files(
+        self,
+        mock_series,
+        mock_episodes,
+        mock_get_media_metadata,
+    ):
+        """A series with files lists once as a show and leaves with its files."""
+        mock_get_media_metadata.return_value = {
+            "title": "Severance",
+            "image": "https://example.com/severance.jpg",
+            "genres": [],
+        }
+        mock_episodes.return_value = [
+            {
+                "seasonNumber": 1,
+                "episodeNumber": 1,
+                "title": "Good News About Hell",
+                "airDateUtc": "2022-02-18T00:00:00Z",
+                "episodeFileId": 11,
+            },
+        ]
+        row = {
+            "id": 77,
+            "title": "Severance",
+            "statistics": {"episodeFileCount": 1},
+            "tmdbId": 95396,
+            "seasons": [{"seasonNumber": 1}],
+        }
+        mock_series.return_value = [row]
+
+        sonarr.importer(None, self.user, "new")
+        sonarr.importer(None, self.user, "new")
+
+        show_entries = CollectionEntry.objects.filter(
+            user=self.user,
+            item__media_type=MediaTypes.TV.value,
+            item__media_id="95396",
+        )
+        self.assertEqual(show_entries.count(), 1)
+
+        mock_series.return_value = [{**row, "statistics": {"episodeFileCount": 0}}]
+        sonarr.importer(None, self.user, "new")
+
+        self.assertFalse(show_entries.exists())
+        self.assertFalse(
+            CollectionEntry.objects.filter(
+                user=self.user,
+                item__media_type=MediaTypes.EPISODE.value,
+            ).exists(),
         )
 
     @patch("integrations.imports.sonarr.services.get_media_metadata")
