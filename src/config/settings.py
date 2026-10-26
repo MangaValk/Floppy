@@ -345,6 +345,12 @@ if ENABLE_DEBUG_TOOLBAR:
 # Performance instrumentation: thresholded request and task summaries.
 PERF_LOG_ENABLED = config("PERF_LOG_ENABLED", default=True, cast=bool)
 PERF_LOG_SLOW_REQUEST_MS = config("PERF_LOG_SLOW_REQUEST_MS", default=500, cast=int)
+# A request still running after this long is logged once as stalled_request
+# with its stack, before it finishes. 0 disables the watchdog.
+PERF_STALL_WARN_MS = config("PERF_STALL_WARN_MS", default=10000, cast=int)
+PERF_STALL_MAX_REPORTS_PER_MINUTE = config(
+    "PERF_STALL_MAX_REPORTS_PER_MINUTE", default=10, cast=int
+)
 PERF_LOG_SLOW_TASK_MS = config("PERF_LOG_SLOW_TASK_MS", default=5000, cast=int)
 # A transaction open longer than this is logged with its request/task and
 # duration. SQLite has one writer, so a long transaction is the usual reason
