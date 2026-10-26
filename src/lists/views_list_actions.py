@@ -57,6 +57,7 @@ from lists.views_helpers import (
     _build_list_url_template,
     _list_item_title_fields_from_metadata,
     _maybe_backfill_episode_title,
+    list_metadata_language,
 )
 from users.models import ListDetailSortChoices, MediaSortChoices
 
@@ -405,7 +406,11 @@ def lists_modal(
 
     try:
         item = Item.objects.get(**lookup)
-        _maybe_backfill_episode_title(item, force=True)
+        _maybe_backfill_episode_title(
+            item,
+            force=True,
+            language=list_metadata_language(request.user),
+        )
     except Item.MultipleObjectsReturned:
         item = Item.objects.filter(**lookup).first()
     except Item.DoesNotExist:
@@ -429,6 +434,7 @@ def lists_modal(
                 source,
                 [season_number],
                 episode_number,
+                language=list_metadata_language(request.user),
             )
         item = Item.objects.create(
             media_id=media_id,
