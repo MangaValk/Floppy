@@ -25,6 +25,7 @@ from app.models import (
     Status,
 )
 from app.providers import services
+from app.services import metadata_resolution
 from integrations.imports import helpers as import_helpers
 from integrations.models import TraktAccount
 from lists.models import CustomList, CustomListItem
@@ -406,8 +407,19 @@ def _episode_title_fields_from_season_metadata(item, season_metadata):
     return None
 
 
+def list_metadata_language(user, fallback_user=None):
+    """Return the metadata language list search and add flows should request.
+
+    Anonymous visitors (public recommendations) fall back to the list owner's
+    language so titles match what the list owner sees.
+    """
+    if user is not None and getattr(user, "is_authenticated", False):
+        return metadata_resolution.metadata_language_default(user)
+    return metadata_resolution.metadata_language_default(fallback_user)
+
+
 def _maybe_backfill_episode_title(
-    item, *, season_item=None, season_metadata=None, force=False
+    item, *, season_item=None, season_metadata=None, force=False, language=None
 ):
     """Resolve malformed episode item titles that still store the show title."""
     if not force and not _episode_title_needs_backfill(item, season_item=season_item):
@@ -422,6 +434,7 @@ def _maybe_backfill_episode_title(
                 item.media_id,
                 item.source,
                 [item.season_number],
+                language=language,
             )
         except Exception as exc:
             logger.debug(
@@ -442,6 +455,7 @@ def _maybe_backfill_episode_title(
                 item.source,
                 [item.season_number],
                 item.episode_number,
+                language=language,
             )
         except Exception as exc:
             logger.debug(

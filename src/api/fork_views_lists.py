@@ -18,6 +18,7 @@ from lists.models import (
     ListActivityType,
     ListRecommendation,
 )
+from app.services import metadata_resolution
 from lists.views_add_reorder import apply_full_order, apply_reorder_action
 from lists.views_helpers import list_has_item_identity
 from lists.views_recommendations import get_or_create_recommendation_item
@@ -434,6 +435,9 @@ class ListRecommendationsView(drf_views.APIView):
                 season_number,
                 episode_number,
                 user=request.user,
+                language=metadata_resolution.metadata_language_default(
+                    request.user
+                ),
             )
         except Exception as e:
             return Response(
