@@ -42,12 +42,14 @@ class StallWatchdogTests(SimpleTestCase):
             thread.start()
             inside.wait(2)
             time.sleep(0.1)
-            self.assertEqual(stall_watchdog.scan(), 1)
+            # The background scanner may report it first, so only the total
+            # is fixed: one report, however many scans ran.
+            stall_watchdog.scan()
             self.assertEqual(stall_watchdog.scan(), 0)
             release.set()
             thread.join(5)
         text = "\n".join(logs.output)
-        self.assertIn("stalled_request", text)
+        self.assertEqual(text.count("stalled_request"), 1)
         self.assertIn("route=medialist/<str:media_type>", text)
         self.assertIn(":view <-", text)
         self.assertNotIn("SECRET", text)
