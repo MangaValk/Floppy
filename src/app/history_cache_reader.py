@@ -14,6 +14,7 @@ from app import helpers
 from app.history_cache_day_builder import (
     _build_and_cache_history_day,
     build_history_day,
+    history_media_types_by_day,
 )
 from app.history_cache_index import (
     _missing_history_day_keys,
@@ -188,6 +189,11 @@ def get_month_history(
             len(missing_days),
             refresh_lock is not None,
         )
+        day_media_types = history_media_types_by_day(
+            user,
+            missing_days,
+            logging_style,
+        )
         history_days = []
         for day_key in month_day_keys:
             if day_key in cached_days:
@@ -195,7 +201,12 @@ def get_month_history(
                 continue
             history_days.append(
                 _window_history_day(
-                    _build_and_cache_history_day(user, day_key, logging_style),
+                    _build_and_cache_history_day(
+                        user,
+                        day_key,
+                        logging_style,
+                        media_types=day_media_types.get(day_key),
+                    ),
                     max_entries=HISTORY_ENTRIES_PER_DAY_PAGE,
                     entry_filter=entry_filter,
                 )

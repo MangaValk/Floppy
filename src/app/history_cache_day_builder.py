@@ -82,6 +82,111 @@ def _span_may_touch_day(queryset, day_start, day_end):
     )
 
 
+def history_media_types_by_day(user, day_keys, logging_style):
+    """Map each day key to the media types whose rows can reach that day.
+
+    One date-only range query per media family replaces probing every family
+    for every missing day. Each family's set is a superset of what
+    ``build_history_day`` would find (the window is widened a day each side and
+    games/boardgames mark their whole span), so passing it as ``media_types``
+    only skips queries that would have returned nothing. Flat anime is always
+    included: its episode dates come from the change log.
+    """
+    days = {}
+    for key in day_keys:
+        day_date = _date_from_day_key(key)
+        if day_date:
+            days[day_date] = key
+    if not days:
+        return {}
+    tz = timezone.get_current_timezone()
+    margin = timedelta(days=1)
+    first, last = min(days), max(days)
+    win_start = (
+        timezone.make_aware(datetime.combine(first, datetime.min.time()), tz) - margin
+    )
+    win_end = (
+        timezone.make_aware(datetime.combine(last, datetime.min.time()), tz)
+        + margin
+        + margin
+    )
+    touched = {key: {MediaTypes.ANIME.value} for key in days.values()}
+
+    def mark(media_type, *values):
+        for value in values:
+            local = _localize_datetime(value)
+            key = local and days.get(local.date())
+            if key:
+                touched[key].add(media_type)
+
+    def mark_span(media_type, start, end):
+        if not start or not end:
+            return
+        lo, hi = sorted((_localize_datetime(start).date(), _localize_datetime(end).date()))
+        for day_date, key in days.items():
+            if lo <= day_date <= hi:
+                touched[key].add(media_type)
+
+    point = (
+        models.Q(end_date__gte=win_start, end_date__lt=win_end)
+        | models.Q(start_date__gte=win_start, start_date__lt=win_end)
+    )
+    for row in Episode.all_objects.filter(related_season__user=user).filter(
+        point
+    ).values_list("end_date", "start_date"):
+        mark(MediaTypes.EPISODE.value, *row)
+    for media_type, model in (
+        (MediaTypes.MOVIE.value, Movie),
+        (MediaTypes.BOOK.value, Book),
+        (MediaTypes.COMIC.value, Comic),
+        (MediaTypes.MANGA.value, Manga),
+    ):
+        for row in model.objects.filter(user=user).filter(point).values_list(
+            "end_date", "start_date"
+        ):
+            mark(media_type, *row)
+    for row in _music_history_dates(user, win_start, win_end):
+        mark(MediaTypes.MUSIC.value, row)
+    HistoricalPodcast = apps.get_model("app", "HistoricalPodcast")
+    for row in HistoricalPodcast.objects.filter(
+        models.Q(history_user=user) | models.Q(history_user__isnull=True),
+        end_date__gte=win_start,
+        end_date__lt=win_end,
+    ).values_list("end_date", flat=True):
+        mark(MediaTypes.PODCAST.value, row)
+    for row in VideoPlay.objects.filter(
+        video__user=user, end_date__gte=win_start, end_date__lt=win_end
+    ).values_list("end_date", flat=True):
+        mark(MediaTypes.VIDEO.value, row)
+    first_dt = Coalesce("start_date", "end_date", "created_at")
+    last_dt = Coalesce("end_date", "start_date", "created_at")
+    for media_type, model in (
+        (MediaTypes.GAME.value, Game),
+        (MediaTypes.BOARDGAME.value, BoardGame),
+    ):
+        rows = (
+            model.objects.filter(user=user)
+            .alias(span_lo=Least(first_dt, last_dt), span_hi=Greatest(first_dt, last_dt))
+            .filter(span_lo__lt=win_end, span_hi__gte=win_start)
+            .values_list("start_date", "end_date", "created_at")
+        )
+        for start, end, created in rows:
+            if logging_style == "sessions":
+                mark(media_type, start, end, created)
+            else:
+                mark_span(media_type, start or end or created, end or start or created)
+    return {key: touched[key] for key in days.values()}
+
+
+def _music_history_dates(user, win_start, win_end):
+    HistoricalMusic = apps.get_model("app", "HistoricalMusic")
+    return HistoricalMusic.objects.filter(
+        _music_history_user_q(user),
+        end_date__gte=win_start,
+        end_date__lt=win_end,
+    ).values_list("end_date", flat=True)
+
+
 def build_history_day(user, day_key, logging_style_override=None, media_types=None):
     """Build a single history day payload for a user."""
     if not day_key:
