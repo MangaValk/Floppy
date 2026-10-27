@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework.exceptions import AuthenticationFailed
 
 from api.authentication import authenticate_token
-from integrations.models import IntegrationToken
+from integrations.models import DEFAULT_INTEGRATION_SCOPES, IntegrationToken
 from integrations.oauth_models import (
     OAUTH_DEVICE_CODE_GRANT,
     OAUTH_REFRESH_TOKEN_GRANT,
@@ -504,6 +504,27 @@ class OAuthDeviceFlowTests(TestCase):
         )
         self.assertEqual(token.status_code, HTTP.OK)
         self.assertEqual(token.json()["scope"], "catalog:read")
+
+    def test_registered_app_gets_list_scopes_only_when_it_asks(self):
+        """A registered app may ask for lists, but naming no scope stays the tracking preset."""
+        client_id = self.register(client_name="FanFilm").json()["client_id"]
+
+        def requested(**extra):
+            response = self.client.post(
+                reverse("oauth_device_authorization"),
+                {"client_id": client_id, **extra},
+            )
+            self.assertEqual(response.status_code, HTTP.OK)
+            return OAuthDeviceAuthorization.objects.get(
+                device_code_digest=oauth_token_digest(response.json()["device_code"])
+            ).requested_scopes
+
+        self.assertEqual(requested(), DEFAULT_INTEGRATION_SCOPES)
+        self.assertEqual(
+            requested(scope="progress:read lists:read lists:write"),
+            ["progress:read", "lists:read", "lists:write"],
+        )
+        self.assertIn("lists:write", self.client.get(reverse("oauth_scope_metadata")).content.decode())
 
     def test_registration_rejects_missing_and_overlong_names(self):
         """The app must give a name, and a short one."""
