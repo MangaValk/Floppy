@@ -529,18 +529,35 @@ def get_cached_history_window(
             )
         history_days.append(day_payload)
 
+    # The viewer's enabled types alone only narrow what is shown, so build the
+    # complete day (and cache it for the next request) and window it below.
+    # Only an explicit media_type filter is worth filtering at the query.
+    build_media_types = (
+        requested_media_types if filters.get("media_type") else None
+    )
+    day_media_types, prefetch = {}, None
+    if build_media_types is None and len(missing_day_keys) > 1:
+        # Same span-wide load the month repair uses: one query per media
+        # family instead of a query bundle per missing day.
+        day_media_types = history_media_types_by_day(
+            user, missing_day_keys, logging_style
+        )
+        prefetch = HistoryRangePrefetch(
+            user, missing_day_keys, logging_style, day_media_types
+        )
     for day_key in missing_day_keys:
         # Filter cold builds at the query boundary; only complete days may
         # populate the shared day cache.
         day_payload = build_history_day(
             user,
             day_key,
-            media_types=requested_media_types,
+            media_types=day_media_types.get(day_key, build_media_types),
             logging_style_override=logging_style,
+            prefetch=prefetch,
         )
         if day_payload is None:
             continue
-        if requested_media_types is None:
+        if build_media_types is None:
             cache.set(
                 _day_cache_key(user.id, logging_style, day_key),
                 _serialize_history_day(day_payload),

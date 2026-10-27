@@ -192,6 +192,27 @@ class HistoryDateWindowTests(HistoryWindowFixture):
             {MediaTypes.MOVIE.value},
         )
 
+    def test_enabled_types_alone_read_and_fill_the_shared_day_cache(self):
+        """A viewer with disabled types must not rebuild days on every request."""
+        date_filters = self._range()
+        allowed = {MediaTypes.EPISODE.value, MediaTypes.SEASON.value}
+        params = {
+            "limit": 50, "offset": 0, "date_filters": date_filters,
+            "allowed_media_types": allowed,
+        }
+        cold, _ = history_cache_reader.get_cached_history_window(self.user, **params)
+        self.assertEqual(
+            {entry["media_type"] for day in cold for entry in day["entries"]},
+            {MediaTypes.EPISODE.value},
+        )
+        with CaptureQueriesContext(connection) as warm_queries:
+            warm, _ = history_cache_reader.get_cached_history_window(
+                self.user, **params,
+            )
+        self.assertEqual(self._comparable(warm), self._comparable(cold))
+        # The index is cached too, so only the cache is read.
+        self.assertEqual(len(warm_queries), 0)
+
     def test_the_api_page_does_not_scale_with_the_history(self):
         """Adding days outside the page must not add queries or entries."""
         date_filters = self._range()
