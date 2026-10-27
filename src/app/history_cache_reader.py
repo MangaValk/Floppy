@@ -283,6 +283,7 @@ def get_cached_history_day(
     )
 
 
+PREFETCH_MIN_DAYS = 2
 PREFETCH_MAX_SPAN_DAYS = 62
 
 
@@ -295,7 +296,7 @@ def _span_prefetch(user, day_keys, logging_style):
     dates = sorted(
         d for d in (_date_from_day_key(key) for key in day_keys) if d
     )
-    if len(dates) < 2 or (dates[-1] - dates[0]).days > PREFETCH_MAX_SPAN_DAYS:
+    if len(dates) < PREFETCH_MIN_DAYS or (dates[-1] - dates[0]).days > PREFETCH_MAX_SPAN_DAYS:
         return {}, None
     day_media_types = history_media_types_by_day(user, day_keys, logging_style)
     return day_media_types, HistoryRangePrefetch(
