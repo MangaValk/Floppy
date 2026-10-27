@@ -959,6 +959,9 @@ def _prepare_history_day_page(day, user, filters, offset=0):
     return annotated_day
 
 
+HISTORY_EAGER_MONTH_DAYS = 5
+
+
 def _history_day_fragment_query(request, offset):
     """Preserve the current history filters for the next day fragment."""
     query = request.GET.copy()
@@ -1287,6 +1290,13 @@ def history(request):
                     request,
                     day["next_entry_offset"],
                 )
+
+        if use_month_cache:
+            # Days below the fold load as they scroll into view: a busy month is
+            # several MB of cards, and the day fragment renders the same markup.
+            for day in history_days[HISTORY_EAGER_MONTH_DAYS:]:
+                day["lazy"] = True
+                day["lazy_query"] = _history_day_fragment_query(request, 0)
 
         context = {
             "user": request.user,

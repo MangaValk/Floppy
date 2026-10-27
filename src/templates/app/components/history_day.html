@@ -3,7 +3,8 @@
 {% load app_tags %}
 
 <div id="history-day-{{ day.day_key|default:'unknown' }}"
-     class="history-day space-y-4">
+     class="history-day space-y-4"
+     {% if day.lazy %}hx-get="{% url 'history_day_fragment' day_key=day.day_key %}?{{ day.lazy_query }}" hx-trigger="intersect once" hx-target="this" hx-swap="outerHTML"{% endif %}>
   <div class="flex items-center justify-between gap-4 pb-3 border-b border-[var(--color-border)]">
     <div class="history-date-row">
       {% if day.date %}<span class="text-xl font-semibold text-[var(--color-text)]">{{ day.weekday }}</span>{% endif %}
@@ -26,6 +27,9 @@
     </div>
   </div>
 
+  {% if day.lazy %}
+    <div class="h-40" aria-hidden="true"></div>
+  {% else %}
   {# Split entries by aspect ratio: 2:3 for video/games, 1:1 for music/podcasts #}
   {% with square_types="music,podcast" %}
     {# Standard 2:3 aspect ratio entries (TV, Movies, Games, Anime, etc.) #}
@@ -50,8 +54,9 @@
       {% endif %}
     {% endwith %}
   {% endwith %}
+  {% endif %}
 
-  {% if day.has_more %}
+  {% if day.has_more and not day.lazy %}
     <div class="flex justify-center pt-2">
       <button type="button"
               class="px-4 py-2 rounded-md bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-surface-strong)] transition-colors cursor-pointer text-sm"

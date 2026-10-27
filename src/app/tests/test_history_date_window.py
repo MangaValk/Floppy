@@ -329,3 +329,25 @@ class HistoryAnniversaryTests(HistoryWindowFixture):
             [day["date"] for day in second], [day["date"] for day in first],
         )
         self.assertEqual(len(queries), 0)
+
+
+class HistoryLazyMonthTests(HistoryWindowFixture):
+    """Days below the fold of a month view are placeholders, not cards."""
+
+    def test_month_view_defers_days_past_the_first_few(self):
+        from app.history_views import HISTORY_EAGER_MONTH_DAYS
+
+        self.client.login(**self.credentials)
+        # Eight consecutive days may straddle a month boundary; ask for the month
+        # holding the most recent one and count what that month renders.
+        response = self.client.get(
+            reverse("history"),
+            {"year": self.today.year, "m": self.today.month},
+        )
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        content = response.content.decode()
+        days = content.count('class="history-day')
+        lazy = content.count('hx-trigger="intersect once"')
+        self.assertEqual(lazy, max(days - HISTORY_EAGER_MONTH_DAYS, 0))
+        if lazy:
+            self.assertIn("/history/day/", content)
