@@ -808,6 +808,7 @@ def refresh_tab_cache(
 ) -> list[RowResult]:
     """Rebuild and persist a Discover tab payload."""
     from app.discover.service import get_discover_rows
+    from app.discover.service_helpers import credit_maps_scope
 
     media_type = _normalize_media_type(media_type)
     lock_key = _refresh_lock_key(user.id, media_type, show_more=show_more)
@@ -819,13 +820,14 @@ def refresh_tab_cache(
         if clear_provider_cache:
             clear_provider_cache_for_media_type(media_type)
 
-        rows = get_discover_rows(
-            user,
-            media_type,
-            show_more=show_more,
-            include_debug=False,
-            defer_artwork=False,
-        )
+        with credit_maps_scope():
+            rows = get_discover_rows(
+                user,
+                media_type,
+                show_more=show_more,
+                include_debug=False,
+                defer_artwork=False,
+            )
         current_activity_version = _get_activity_version(user.id, media_type)
         if current_activity_version != build_activity_version:
             version_drifted = True
