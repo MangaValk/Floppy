@@ -7,6 +7,7 @@ import datetime
 import logging
 from collections import defaultdict
 from datetime import timedelta
+from types import SimpleNamespace
 
 from django.apps import apps
 from django.db import connection, models
@@ -1084,8 +1085,8 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     item__season_number__gt=0,
                     content_number__isnull=False,
                 )
-                .select_related("item")
-                .only(
+                .order_by("item__season_number", "content_number")
+                .values_list(
                     "content_number",
                     "datetime",
                     "item__media_id",
@@ -1093,12 +1094,32 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     "item__season_number",
                     "item__release_datetime",
                 )
-                .order_by("item__season_number", "content_number")
             )
-            for event in season_events:
-                key = (event.item.media_id, event.item.source)
+            # A large library has tens of thousands of these rows. Plain
+            # namespaces carry the few attributes the next-episode date reads
+            # without paying for a model instance (and its signals) per row.
+            for (
+                content_number,
+                event_datetime,
+                media_id,
+                source,
+                season_number,
+                release_datetime,
+            ) in season_events:
+                key = (media_id, source)
                 if key in shows:
-                    events_by_show[key].append(event)
+                    events_by_show[key].append(
+                        SimpleNamespace(
+                            content_number=content_number,
+                            datetime=event_datetime,
+                            item=SimpleNamespace(
+                                media_id=media_id,
+                                source=source,
+                                season_number=season_number,
+                                release_datetime=release_datetime,
+                            ),
+                        ),
+                    )
         return events_by_show
 
     def attach_show_season_events(self, medias):
