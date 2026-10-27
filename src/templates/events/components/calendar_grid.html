@@ -4,6 +4,7 @@
 {% load events_tags %}
 {% load user_tags %}
 
+{% spaceless %}
 <div class="calendar-mobile-only md:hidden"
      data-mobile-calendar
      data-selected-day="{{ selected_day }}"
@@ -123,6 +124,7 @@
     {% endfor %}
   </div>
 </div>
+{% endspaceless %}
 
 <style>
   .calendar-mobile-only {

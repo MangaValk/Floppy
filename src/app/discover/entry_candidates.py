@@ -250,10 +250,16 @@ def _clear_out_next_entries(user, media_type: str):
     if not model:
         return []
 
+    # `progress` walks seasons and episodes (TV) per entry; prefetch them once
+    # instead of issuing a few queries per show.
     entries = list(
-        model.objects.filter(user=user, status=Status.IN_PROGRESS.value)
-        .select_related("item")
-        .order_by(*_activity_ordering(model))
+        BasicMedia.objects._apply_prefetch_related(
+            model.objects.filter(user=user, status=Status.IN_PROGRESS.value)
+            .select_related("item")
+            .order_by(*_activity_ordering(model)),
+            media_type,
+            list_mode=True,
+        )
     )
     if not entries:
         return []

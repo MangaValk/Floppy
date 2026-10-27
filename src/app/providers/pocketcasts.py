@@ -50,7 +50,7 @@ def search(query, page):
                 ITUNES_API_BASE,
                 params=params,
                 headers={"User-Agent": USER_AGENT},
-                timeout=settings.REQUEST_TIMEOUT,
+                timeout=services.request_timeout(),
             )
             response.raise_for_status()
             response_data = response.json()
@@ -127,7 +127,7 @@ def lookup_by_itunes_id(itunes_collection_id):
                 ITUNES_LOOKUP_BASE,
                 params=params,
                 headers={"User-Agent": USER_AGENT},
-                timeout=settings.REQUEST_TIMEOUT,
+                timeout=services.request_timeout(),
             )
             response.raise_for_status()
             response_data = response.json()

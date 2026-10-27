@@ -210,6 +210,7 @@ def _smart_list_detail_response(
         custom_list=custom_list,
         media_user=media_user,
         candidates=matched_items,
+        media_types=filtered_media_types,
         filters=FilterValues(status_match=STATUS_MATCH_ANY),
         sort_by=sort_by,
         direction=direction,

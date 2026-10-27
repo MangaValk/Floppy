@@ -406,11 +406,12 @@ def lists_modal(
 
     try:
         item = Item.objects.get(**lookup)
-        _maybe_backfill_episode_title(
-            item,
-            force=True,
-            language=list_metadata_language(request.user),
-        )
+        with services.interactive_request_scope():
+            _maybe_backfill_episode_title(
+                item,
+                force=True,
+                language=list_metadata_language(request.user),
+            )
     except Item.MultipleObjectsReturned:
         item = Item.objects.filter(**lookup).first()
     except Item.DoesNotExist:
@@ -428,14 +429,15 @@ def lists_modal(
                 "image": album.image or settings.IMG_NONE,
             }
         else:
-            metadata = services.get_media_metadata(
-                media_type,
-                media_id,
-                source,
-                [season_number],
-                episode_number,
-                language=list_metadata_language(request.user),
-            )
+            with services.interactive_request_scope():
+                metadata = services.get_media_metadata(
+                    media_type,
+                    media_id,
+                    source,
+                    [season_number],
+                    episode_number,
+                    language=list_metadata_language(request.user),
+                )
         item = Item.objects.create(
             media_id=media_id,
             source=source,

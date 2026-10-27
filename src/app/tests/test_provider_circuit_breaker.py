@@ -58,3 +58,24 @@ class InteractiveProviderBreakerTests(TestCase):
             with self.assertRaises(requests.exceptions.HTTPError):
                 self._call()
         self.assertIsNone(cache.get(services._provider_down_key("igdb")))
+
+
+class DirectRequestTimeoutTests(TestCase):
+    def test_request_timeout_is_capped_only_when_interactive(self):
+        self.assertGreater(services.request_timeout(), services.REQUEST_TIMEOUT_INTERACTIVE)
+        with services.interactive_request_scope():
+            self.assertEqual(
+                services.request_timeout(), services.REQUEST_TIMEOUT_INTERACTIVE
+            )
+
+
+class IgdbRetryTests(TestCase):
+    def test_second_unauthorized_is_a_provider_error_not_a_raw_http_error(self):
+        from app.providers import igdb
+
+        response = requests.Response()
+        response.status_code = 401
+        with patch.object(services, "api_request",
+                          side_effect=requests.exceptions.HTTPError(response=response)):
+            with self.assertRaises(services.ProviderAPIError):
+                igdb._retry_after_token_refresh("u", "q", {})

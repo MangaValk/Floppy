@@ -681,23 +681,25 @@ def paginate_list_items(
     direction,
     page,
     page_size=16,
+    media_types=None,
 ):
     """Order and paginate a list's items with the library-query engine.
 
     ``candidates`` are the items the list shows (its members, or a smart
     list's live matches) as an ``Item`` id queryset or ids. Tracking values -
     status, rating, progress - are read for ``media_user``. Only the requested
-    page is loaded and decorated. Returns ``(items_page, filtered_count)``.
+    page is loaded and decorated. ``media_types`` is the candidates' distinct
+    media types when the caller already read them, which saves re-evaluating
+    ``candidates``. Returns ``(items_page, filtered_count)``.
     """
     from app.library_query import LibraryQuery, LibraryQueryExecutor, SortSpec
     from app.library_query.spec import ROUTING_MODEL
 
-    media_types = tuple(
-        Item.objects.filter(pk__in=candidates)
-        .order_by()
-        .values_list("media_type", flat=True)
-        .distinct(),
-    )
+    if media_types is None:
+        media_types = Item.objects.filter(pk__in=candidates).order_by().values_list(
+            "media_type", flat=True
+        ).distinct()
+    media_types = tuple(media_types)
     if sort_by == ListDetailSortChoices.CUSTOM:
         direction = "asc"  # The list's own order has no direction.
     query = LibraryQuery(
