@@ -283,6 +283,25 @@ def get_cached_history_day(
     )
 
 
+def get_history_index_day_keys(user, logging_style_override=None):
+    """Return every indexed day key, building and caching the index on a miss."""
+    logging_style = _normalize_logging_style(logging_style_override, user)
+    era = _current_history_era(user.id, logging_style)
+    entry = cache.get(_cache_key(user.id, logging_style))
+    built_at = entry.get("built_at") if entry else None
+    if (
+        entry
+        and entry.get("era") == era
+        and built_at
+        and timezone.now() - built_at <= HISTORY_STALE_AFTER
+    ):
+        index_days = entry.get("days", [])
+    else:
+        index_days = build_history_index(user, logging_style_override=logging_style)
+        cache_history_index(user.id, logging_style, index_days, era=era)
+    return [key for key in (_day_key_from_value(v) for v in index_days) if key]
+
+
 def get_history_days(
     user,
     filters=None,

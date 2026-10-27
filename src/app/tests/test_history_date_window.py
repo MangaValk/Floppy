@@ -308,3 +308,24 @@ class HistoryPageDateWindowTests(HistoryWindowFixture):
         """An out-of-range page number clamps like Paginator."""
         context = self._page(**{"start-date": "2000-01-01", "page": 99})
         self.assertEqual(context["current_page"], context["total_pages"])
+
+
+class HistoryAnniversaryTests(HistoryWindowFixture):
+    """The anniversary view reads the cached index and days, not the tables."""
+
+    def test_second_anniversary_read_touches_no_tables(self):
+        from app.history_views import _build_anniversary_history_days
+
+        target = self.today - timedelta(days=2)
+        first = _build_anniversary_history_days(
+            self.user, target.month, target.day,
+        )
+        self.assertTrue(first)
+        with CaptureQueriesContext(connection) as queries:
+            second = _build_anniversary_history_days(
+                self.user, target.month, target.day,
+            )
+        self.assertEqual(
+            [day["date"] for day in second], [day["date"] for day in first],
+        )
+        self.assertEqual(len(queries), 0)

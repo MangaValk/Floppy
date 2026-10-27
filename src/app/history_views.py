@@ -208,21 +208,20 @@ def delete_history_record(request, media_type, history_id):
 
 
 def _build_anniversary_history_days(user, month, day, logging_style=None):
-    day_keys = history_cache.build_history_index(
-        user, logging_style_override=logging_style
-    )
     history_days = []
-    for day_key in day_keys:
+    for day_key in history_cache_reader.get_history_index_day_keys(
+        user, logging_style
+    ):
         try:
             day_date = date.fromisoformat(day_key)
         except ValueError:
             continue
         if day_date.month != month or day_date.day != day:
             continue
-        day_payload = history_cache.build_history_day(
+        day_payload = history_cache_reader.get_cached_history_day(
             user,
-            day_date,
-            logging_style_override=logging_style,
+            day_key,
+            logging_style,
         )
         if day_payload and day_payload.get("entries"):
             history_days.append(day_payload)
