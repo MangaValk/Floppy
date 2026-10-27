@@ -92,6 +92,19 @@ COMICVINE_REQUEST_TIMEOUT = 20
 _interactive_request = contextvars.ContextVar("_interactive_request", default=False)
 
 
+def request_timeout(default=None):
+    """Return the provider read timeout for direct (non-api_request) callers.
+
+    Capped inside interactive_request_scope() like api_request() does, so an
+    aiohttp or requests call outside api_request cannot hold a web thread for
+    the 120 s background budget.
+    """
+    default = settings.REQUEST_TIMEOUT if default is None else default
+    if _interactive_request.get():
+        return min(default, REQUEST_TIMEOUT_INTERACTIVE)
+    return default
+
+
 @contextmanager
 def interactive_request_scope():
     """Cap rate-limit retry waits for a synchronous, request-serving call.
