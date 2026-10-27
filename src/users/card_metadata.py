@@ -5,6 +5,8 @@ Missing or partial saves fall back to ``default_profile``, which matches the
 shared card's current year line.
 """
 
+from functools import cache
+
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
@@ -71,6 +73,7 @@ CARD_FIELDS = {
 }
 
 
+@cache
 def field_types(field_id):
     """Return the media types that can show ``field_id``.
 
