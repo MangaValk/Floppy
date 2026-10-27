@@ -179,7 +179,7 @@ Match validation depth to risk. Always run targeted tests before opening a PR:
 | **Python View / Business Logic** | `uv run --no-sync ruff check src` + targeted test (`scripts/test.sh <dotted.label>`) |
 | **API Endpoints / Serialization** | Targeted test + Spectacular OpenAPI regeneration + Contract tests |
 | **Database Models / Migrations** | `uv run --no-sync python src/manage.py check_migration_hygiene --strict` + full test suite |
-| **Upstream outcome port** | Classify in [UPSTREAM_PORTS.md](UPSTREAM_PORTS.md), adapt against the current graph, and run the migration sync gate + `scripts/replay_upgrade_matrix.sh` |
+| **Upstream outcome port** | Classify in the local `UPSTREAM_PORTS.md` ledger, adapt against the current graph, and run the migration sync gate + `scripts/replay_upgrade_matrix.sh` |
 
 `upstream` is an exact upstream mirror. Do not merge or rebase it into `latest`;
 port the accepted behavior through Floppy's existing boundaries. Keep targeted

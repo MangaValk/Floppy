@@ -120,7 +120,9 @@ RUN ln -s /opt/venv /floppy/.venv
 
 # Django app
 COPY src ./
-RUN SECRET=build-time-placeholder python manage.py collectstatic --noinput
+RUN SECRET=build-time-placeholder python manage.py collectstatic --noinput \
+    && chown -R 1000:1000 /floppy/staticfiles \
+    && SECRET=build-time-placeholder python config/static_collection.py --record
 
 # MCP server (mcp/floppy_mcp) — bundled so `docker exec` always runs the
 # version shipped with this image, instead of a user's local checkout that

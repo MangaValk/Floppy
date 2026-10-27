@@ -133,7 +133,13 @@ def generate_rows(user, media_types=None, include_lists=True, include_collection
         # episode load for large libraries and causing exports to time out
         # partway through (issue #618).
         manager = model.all_objects if media_type == MediaTypes.EPISODE.value else model.objects
-        queryset = manager.filter(**filter_kwargs).select_related("item")
+        # watch_providers is ~146 KiB a title and never exported (excluded from
+        # the item fields above), so keep it out of the streamed rows.
+        queryset = (
+            manager.filter(**filter_kwargs)
+            .select_related("item", "item__episode_order__show")
+            .defer("item__watch_providers")
+        )
 
         logger.debug("Streaming %ss to CSV", media_type)
 

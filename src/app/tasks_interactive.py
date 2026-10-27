@@ -70,8 +70,8 @@ def mark_credits_statistics_refresh(user_id: int):
 def reconcile_statistics_sync_task():
     """Queue a sync for every user whose Statistics trail their changes.
 
-    Lives on the interactive worker so a long import on the background worker
-    cannot hold up recovery.
+    Periodic recovery runs on the default worker. Viewer-requested syncs
+    select the interactive lane independently.
     """
     from app import statistics_sync
 

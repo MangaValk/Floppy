@@ -317,7 +317,12 @@ class AppConfig(AppConfig):
             if status in {"done", "pending"}:
                 return
 
-            cache.set(version_key, "pending", timeout=300)
+            if not cache.add(
+                version_key,
+                "pending",
+                timeout=STARTUP_SWEEP_COUNTDOWNS["igdb_ratings"] + 300,
+            ):
+                return
 
             try:
                 reconcile_igdb_rating_backfill.apply_async(
@@ -495,7 +500,12 @@ class AppConfig(AppConfig):
             if status in {"done", "pending"}:
                 return
 
-            cache.set(version_key, "pending", timeout=300)
+            if not cache.add(
+                version_key,
+                "pending",
+                timeout=STARTUP_SWEEP_COUNTDOWNS["game_groups"] + 300,
+            ):
+                return
 
             try:
                 reconcile_game_groups_backfill.apply_async(

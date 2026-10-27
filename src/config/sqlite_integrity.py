@@ -932,8 +932,38 @@ class _SnapshotVerificationError(sqlite3.DatabaseError):
     """The copy failed quick_check: the source's pages were copied verbatim."""
 
 
-def _backup_to_staging(source, directory_descriptor, staging_name, *, timeout=5.0):
+def _sweep_copy(staging_path) -> bool | None:
+    """Page-sweep the finished copy: True ok, False damaged, None unavailable."""
+    from config import sqlite_page_sweep
+
+    try:
+        result = sqlite_page_sweep.sweep(str(staging_path))
+    except (
+        sqlite_page_sweep.SweepUnavailableError,
+        sqlite_page_sweep.SweepExpiredError,
+    ):
+        return None
+    if result["problems"]:
+        _log(f"[db-snapshot] page sweep of the copy failed: {result['problems'][:3]}")
+        return False
+    return True
+
+
+def _backup_to_staging(
+    source,
+    directory_descriptor,
+    staging_name,
+    *,
+    timeout=5.0,
+    verify="quick_check",
+    outcome=None,
+):
     """Verify a copy before handing it to the descriptor-based publisher.
+
+    ``verify="page_sweep"`` checks the copy with the sequential page sweep
+    instead of ``PRAGMA quick_check`` (random b-tree reads: hours on slow
+    storage). If the sweep cannot run it falls back to ``quick_check``. What
+    was actually used is stored in ``outcome["verified"]``.
 
     Linux opens the reserved file through its pinned directory descriptor.
     Other POSIX hosts use a private system-temporary workspace: SQLite needs
@@ -956,10 +986,23 @@ def _backup_to_staging(source, directory_descriptor, staging_name, *, timeout=5.
             # Release the source read lock between small backup steps. The
             # pause caps copy pressure while live web/worker traffic runs.
             source.backup(destination, pages=256, progress=lambda *_: time.sleep(0.002))
-            result = destination.execute("PRAGMA quick_check").fetchall()
-            if result != [("ok",)]:
-                message = "backup quick_check did not return 'ok'"
-                raise _SnapshotVerificationError(message)
+            swept = None
+            if verify == "page_sweep":
+                # The sweep opens its own connection: close this one first so
+                # the copy is checkpointed and a plain file.
+                destination.close()
+                swept = _sweep_copy(staging_path)
+                if swept is False:
+                    message = "backup page sweep found structural damage"
+                    raise _SnapshotVerificationError(message)
+            if swept is None:
+                with closing(sqlite3.connect(staging_path, timeout=timeout)) as check:
+                    result = check.execute("PRAGMA quick_check").fetchall()
+                if result != [("ok",)]:
+                    message = "backup quick_check did not return 'ok'"
+                    raise _SnapshotVerificationError(message)
+            if outcome is not None:
+                outcome["verified"] = "page_sweep" if swept else "quick_check"
         if not sys.platform.startswith("linux"):
             descriptor = os.open(
                 staging_name,
@@ -1078,8 +1121,12 @@ def create_live_database_snapshot(
     *,
     max_keep: int | None,
     timeout_seconds: float,
+    verify: str = "quick_check",
+    outcome: dict | None = None,
 ) -> Path | None:
     """Write a verified SQLite snapshot from a live, concurrently-written database.
+
+    ``verify`` and ``outcome`` are passed to ``_backup_to_staging``.
 
     Unlike _create_verified_backup, the caller holds no write lock here: other
     processes (gunicorn, other Celery workers) may be writing to db_path at the
@@ -1097,6 +1144,8 @@ def create_live_database_snapshot(
             dest_dir,
             max_keep=max_keep,
             timeout_seconds=timeout_seconds,
+            verify=verify,
+            outcome=outcome,
         )
     except sqlite3.DatabaseError as error:
         _log(f"[db-snapshot] Could not write a database snapshot: {error}")
@@ -1159,6 +1208,8 @@ def _write_live_snapshot(
     *,
     max_keep: int | None,
     timeout_seconds: float,
+    verify: str = "quick_check",
+    outcome: dict | None = None,
 ) -> Path:
     with suppress(FileExistsError):
         dest_dir.mkdir(mode=0o700, parents=True)
@@ -1199,7 +1250,12 @@ def _write_live_snapshot(
                 timeout=timeout_seconds,
             )
             _backup_to_staging(
-                source, dest_descriptor, staging_name, timeout=timeout_seconds
+                source,
+                dest_descriptor,
+                staging_name,
+                timeout=timeout_seconds,
+                verify=verify,
+                outcome=outcome,
             )
             source.close()
             source = None

@@ -1667,6 +1667,60 @@ class MetadataBackfillTaskTests(TestCase):
         self.assertIn(episode_missing_strategy.id, candidate_ids)
         self.assertNotIn(complete_movie.id, candidate_ids)
 
+    def _completed_credits_items(self, count):
+        items = Item.objects.bulk_create(
+            [
+                Item(
+                    media_id=f"done-{i}",
+                    source=Sources.TMDB.value,
+                    media_type=MediaTypes.MOVIE.value,
+                    title=f"Done {i}",
+                    image="https://example.com/done.jpg",
+                )
+                for i in range(count)
+            ]
+        )
+        MetadataBackfillState.objects.bulk_create(
+            [
+                MetadataBackfillState(
+                    item=item,
+                    field=MetadataBackfillField.CREDITS,
+                    strategy_version=CREDITS_BACKFILL_VERSION,
+                    last_success_at=timezone.now(),
+                )
+                for item in items
+            ]
+        )
+        return items
+
+    def test_next_credits_backfill_item_ids_reaches_past_completed_window(self):
+        self._completed_credits_items(12)
+        missing = Item.objects.create(
+            media_id="late-missing",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.MOVIE.value,
+            title="Late Missing",
+            image="https://example.com/late.jpg",
+        )
+
+        # Window is batch_size * multiplier = 4, far smaller than the 12
+        # completed rows ahead of the missing one.
+        candidate_ids = tasks._next_credits_backfill_item_ids(
+            batch_size=2, scan_multiplier=2
+        )
+
+        self.assertEqual(candidate_ids, [missing.id])
+
+    def test_next_credits_backfill_item_ids_query_count_is_bounded(self):
+        self._completed_credits_items(40)
+
+        with self.assertNumQueries(1):
+            candidate_ids = tasks._next_credits_backfill_item_ids(
+                batch_size=2, scan_multiplier=2
+            )
+
+        self.assertEqual(candidate_ids, [])
+
     @patch("app.tasks.enqueue_credits_backfill_items", return_value=4)
     @patch("app.tasks.enqueue_episode_runtime_backfill", return_value=3)
     @patch("app.tasks.enqueue_runtime_backfill_items", return_value=2)

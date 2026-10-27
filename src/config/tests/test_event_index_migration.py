@@ -101,8 +101,11 @@ class EventIndexMigrationTests(SimpleTestCase):
             ("events", self.migration.name), self.executor.recorder.applied_migrations()
         )
         # The next schema editor retains its ordinary integrity check.
-        with CaptureQueriesContext(self.db) as queries, self.db.schema_editor():
-            pass
+        with (
+            CaptureQueriesContext(self.db) as queries,
+            self.db.schema_editor() as editor,
+        ):
+            editor.execute("CREATE TABLE scratch (id integer PRIMARY KEY)")
         self.assertIn("PRAGMA foreign_key_check", [q["sql"] for q in queries])
 
     def test_postgresql_still_generates_normal_index_ddl(self):

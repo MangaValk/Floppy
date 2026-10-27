@@ -12,26 +12,15 @@ from django.test import TransactionTestCase
 class RatingSyncMigrationTests(TransactionTestCase):
     """Exercise real schema operations on the configured database backend."""
 
-    @staticmethod
-    def _applied_apps(executor):
-        """Return models for exactly the migrations the database has applied.
-
-        Models built from the newest migrations would have columns that an
-        older schema does not have yet.
-        """
-        loader = executor.loader
-        applied = [key for key in loader.applied_migrations if key in loader.graph.nodes]
-        return loader.project_state(applied).apps
-
     def test_watched_delivery_and_local_score_survive_upgrade_and_rollback(self):
         before = ("integrations", "0058_psn_playtime_snapshots")
         after = ("integrations", "0059_rating_sync")
         executor = MigrationExecutor(connection)
         latest = executor.loader.graph.leaf_nodes()
         try:
-            executor.migrate([before])
-            executor = MigrationExecutor(connection)
-            apps = self._applied_apps(executor)
+            # Use the state of the migrations actually left applied. Other
+            # apps' latest leaves can depend on later integration migrations.
+            apps = executor.migrate([before]).apps
             user = apps.get_model("users", "User").objects.create(
                 username="migration-rating"
             )
@@ -59,9 +48,7 @@ class RatingSyncMigrationTests(TransactionTestCase):
                 status="pending",
                 intent=False,
             )
-            MigrationExecutor(connection).migrate([after])
-            executor = MigrationExecutor(connection)
-            apps = self._applied_apps(executor)
+            apps = MigrationExecutor(connection).migrate([after]).apps
             deliveries = apps.get_model("integrations", "OutboundStateDelivery").objects
             self.assertEqual(deliveries.get(pk=watched.pk).operation, "watched")
             self.assertFalse(deliveries.get(pk=watched.pk).intent)
@@ -73,9 +60,7 @@ class RatingSyncMigrationTests(TransactionTestCase):
                 operation="rating",
                 rating=7,
             )
-            executor.migrate([before])
-            executor = MigrationExecutor(connection)
-            apps = self._applied_apps(executor)
+            apps = MigrationExecutor(connection).migrate([before]).apps
             surviving = apps.get_model(
                 "integrations", "OutboundStateDelivery"
             ).objects.get()

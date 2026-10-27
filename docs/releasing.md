@@ -9,7 +9,7 @@ a ready PR and trigger publication.
 
 Use `latest` for integration; `release` and `v*` tags are publication paths.
 `upstream` remains an exact mirror, never an integration merge source. Accepted
-upstream outcomes and schema adaptations belong in [UPSTREAM_PORTS.md](../UPSTREAM_PORTS.md).
+upstream outcomes and schema adaptations belong in the local `UPSTREAM_PORTS.md` ledger (not committed).
 Do not rewrite published migrations or historical release tags.
 
 Freeze a specific source commit with all intended implementation, tests and

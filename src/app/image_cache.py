@@ -79,16 +79,32 @@ def cache_root():
     return Path(settings.FLOPPY_DATA_DIR) / "image-cache"
 
 
+# A page asks once per image card; a few seconds of per-process memo spares the
+# shared cache a round trip each time, and a toggle reaches every worker within it.
+_LOCAL_SETTING_SECONDS = 5
+_local_setting = (0.0, False)
+
+
 def _setting_value():
     """Read the toggle, creating the singleton lazily for old installs."""
-    enabled = cache.get(SETTING_CACHE_KEY)
-    if isinstance(enabled, bool):
-        return enabled
+    global _local_setting  # noqa: PLW0603
+    expires_at, local = _local_setting
+    now = time.monotonic()
+    if now < expires_at:
+        return local
 
-    setting, _ = ApplicationSettings.objects.get_or_create(pk=1)
-    enabled = bool(setting.image_caching_enabled)
-    cache.set(SETTING_CACHE_KEY, enabled, SETTING_CACHE_SECONDS)
+    enabled = cache.get(SETTING_CACHE_KEY)
+    if not isinstance(enabled, bool):
+        setting, _ = ApplicationSettings.objects.get_or_create(pk=1)
+        enabled = bool(setting.image_caching_enabled)
+        cache.set(SETTING_CACHE_KEY, enabled, SETTING_CACHE_SECONDS)
+    _local_setting = (now + _LOCAL_SETTING_SECONDS, enabled)
     return enabled
+
+
+def _forget_local_setting():
+    global _local_setting  # noqa: PLW0603
+    _local_setting = (0.0, False)
 
 
 def is_enabled():
@@ -102,12 +118,14 @@ def set_enabled(enabled):
     setting.image_caching_enabled = bool(enabled)
     setting.save(update_fields=["image_caching_enabled"])
     cache.set(SETTING_CACHE_KEY, bool(enabled), SETTING_CACHE_SECONDS)
+    _forget_local_setting()
     return bool(enabled)
 
 
 def invalidate_setting_cache():
     """Invalidate the cached toggle after external/database changes."""
     cache.delete(SETTING_CACHE_KEY)
+    _forget_local_setting()
 
 
 def _is_private_or_local_hostname(hostname):

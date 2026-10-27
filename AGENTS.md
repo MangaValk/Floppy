@@ -264,7 +264,7 @@ Floppy is a Django 5.2 app for self-hosted media tracking with Celery workers an
 
 ## Upstream Resolution Workflow
 
-[`UPSTREAM_PORTS.md`](UPSTREAM_PORTS.md) is the durable source of truth. “Up to date” means zero unclassified upstream outcomes, not matching Git histories.
+The upstream-port ledger (`UPSTREAM_PORTS.md`, kept locally and never committed) is the durable source of truth. “Up to date” means zero unclassified upstream outcomes, not matching Git histories.
 
 For each new outcome in `last-reviewed..upstream/dev`:
 
@@ -295,6 +295,9 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
 - Do not add `wiki/` to the main repo index; it should remain untracked here.
 - Primary local development is source-run Django with Redis, Celery worker/beat, and Tailwind watcher.
 - Secondary Docker usage is for deployment or quick smoke runs; the compose files use the prebuilt `ghcr.io/dannyvfilms/floppy` image.
+
+## Documentation Policy
+`docs/` holds only permanent, public-facing, non-situational documentation: install and deployment guides, architecture contracts, integration guides, and playbooks that stay true as the code changes. Everything else is temporary agent storage during development and must not be committed: plans, handoffs, investigations, analyses, requirement checklists, benchmark and PR screenshots, upstream-port ledgers, and per-task reports. Keep those under `docs/plans/` (ignored by git) and delete them when the work lands. When unsure whether a document belongs, apply this rule: if it describes a moment, a task or a person's working context rather than how the project works today, it does not belong in the repo. Never commit absolute local paths, usernames or machine details.
 
 ## Agent Docs
 - `docs/agents/domain_model.md`: generated vocabulary guide; regenerate and check it with the commands under Local Commands.
