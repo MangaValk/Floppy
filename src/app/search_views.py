@@ -334,10 +334,19 @@ def _local_music_results(user, query, limit):
     }
 
 
-def _local_media_results(user, media_type, query, limit, *, annotate_progress=True):
+def _local_media_results(
+    user,
+    media_type,
+    query,
+    limit,
+    *,
+    annotate_progress=True,
+    count_total=True,
+):
     """Return ``(results, total)`` for tracked, collected or tagged ``media_type`` items.
 
-    Only the first ``limit`` items are loaded; the total is counted in SQL.
+    Only the first ``limit`` items are loaded; the total is counted in SQL
+    unless ``count_total`` is false (typeahead, which never shows it).
     """
     # Every status plus "no status", so an imported rating with no status and
     # a collected-only item both count (the media list's "everything" view).
@@ -356,13 +365,13 @@ def _local_media_results(user, media_type, query, limit, *, annotate_progress=Tr
         user,
         from_media_list_filters(filters, (media_type,)),
     )
-    library_total = executor.count()
+    library_total = executor.count() if count_total else 0
     entries = media_list_entries_for_items(
         user,
         executor.page(0, limit, total=library_total).items,
     )
     tagged_only = _tagged_untracked_items(user, media_type, query, executor.matches())
-    total = library_total + tagged_only.count()
+    total = library_total + tagged_only.count() if count_total else 0
     merged = _merge_by_title(entries, tagged_only, limit)
 
     if media_type == MediaTypes.ANIME.value:
@@ -743,6 +752,7 @@ def get_saved_suggestions(user, media_type, query, limit=8):
         query,
         limit,
         annotate_progress=False,
+        count_total=False,
     )
     local_items = [result["item"] for result in results]
 
