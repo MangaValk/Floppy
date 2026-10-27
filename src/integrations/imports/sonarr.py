@@ -172,7 +172,7 @@ class SonarrImporter:
                 complete = False
                 continue
             owned_item_ids.update(synced_item_ids)
-            imported_counts[item.media_type] += 1
+            imported_counts["collection"] += 1
             imported_counts["updated"] += 1
 
         if complete:

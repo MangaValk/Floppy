@@ -319,7 +319,7 @@ class ArrImporterTests(TestCase):
 
         imported_counts, warnings = radarr.importer(None, self.user, "new")
 
-        self.assertEqual(imported_counts[MediaTypes.MOVIE.value], 1)
+        self.assertEqual(imported_counts["collection"], 1)
         self.assertEqual(warnings, "")
         mock_get_media_metadata.assert_called_once_with(
             MediaTypes.MOVIE.value,
@@ -352,7 +352,7 @@ class ArrImporterTests(TestCase):
 
         imported_counts, warnings = sonarr.importer(None, self.user, "new")
 
-        self.assertEqual(imported_counts[MediaTypes.TV.value], 1)
+        self.assertEqual(imported_counts["collection"], 1)
         self.assertEqual(warnings, "")
         mock_get_media_metadata.assert_called_once_with(
             MediaTypes.TV.value,
@@ -425,7 +425,7 @@ class ArrImporterTests(TestCase):
 
         imported_counts, warnings = sonarr.importer(None, self.user, "new")
 
-        self.assertEqual(imported_counts[MediaTypes.TV.value], 1)
+        self.assertEqual(imported_counts["collection"], 1)
         self.assertEqual(warnings, "")
         self.assertFalse(
             CollectionSourceState.objects.filter(
