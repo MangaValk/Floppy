@@ -32,5 +32,5 @@ def install_cached_celery_ping() -> None:
             CACHE_SECONDS,
         )
 
-    check_status._floppy_cached = True  # noqa: SLF001
+    check_status._floppy_cached = True
     CeleryPingHealthCheck.check_status = check_status
