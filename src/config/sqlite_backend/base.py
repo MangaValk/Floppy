@@ -40,6 +40,12 @@ _INDEX_DDL = re.compile(
 )
 
 
+_ROW_WRITE = re.compile(r"\s*(INSERT|UPDATE|DELETE|REPLACE)\b", re.IGNORECASE)
+# Django 5.2 records the migration in django_migrations inside the editor's
+# ``with``; that one insert is expected and changes no relational data.
+_MIGRATION_RECORD = "django_migrations"
+
+
 class DatabaseSchemaEditor(SQLiteDatabaseSchemaEditor):
     """Skip the whole-database foreign-key scan after an index-only migration.
 
@@ -49,31 +55,42 @@ class DatabaseSchemaEditor(SQLiteDatabaseSchemaEditor):
     far more on spinning storage). Creating or dropping an index changes no
     row and no foreign key, so the scan can find nothing new. It is skipped
     only when every statement the editor ran was CREATE/DROP [UNIQUE] INDEX
-    and SQLite reports no row changed (a RunPython in the same migration
-    would show up there). Anything else, including table rebuilds, still gets
+    and no row was written other than the migration's own record (a RunPython
+    in the same migration would show up there). Anything else, including table rebuilds, still gets
     Django's full check.
     """
 
     def __enter__(self):
         """Start tracking whether this migration only touches indexes."""
         self._index_only = True
+        self._index_statements = 0
         editor = super().__enter__()
-        self._changes_at_enter = self.connection.connection.total_changes
+        self.connection.connection.set_trace_callback(self._watch_statement)
         return editor
+
+    def _watch_statement(self, statement):
+        """Note any row write other than the migration's own record."""
+        if _ROW_WRITE.match(statement) and _MIGRATION_RECORD not in statement:
+            self._index_only = False
 
     def execute(self, sql, params=()):
         """Record any statement that is not index DDL."""
         if not _INDEX_DDL.match(str(sql)):
             self._index_only = False
+        else:
+            self._index_statements += 1
         return super().execute(sql, params)
 
     def __exit__(self, exc_type, exc_value, traceback):
         """Run Django's foreign-key scan unless the migration was index-only."""
-        if (
-            exc_type is None
-            and self._index_only
-            and self.connection.connection.total_changes == self._changes_at_enter
-        ):
+        self.connection.connection.set_trace_callback(None)
+        if exc_type is None and self._index_only and self._index_statements:
+            # A migration may have swapped in its own check_constraints (events
+            # 0017 does); the scan it would have consumed is skipped here, so
+            # drop the override or it outlives the migration.
+            override = self.connection.__dict__.get("check_constraints")
+            if getattr(override, "__name__", "") == "skip_check":
+                del self.connection.check_constraints
             BaseDatabaseSchemaEditor.__exit__(self, exc_type, exc_value, traceback)
             self.connection.enable_constraint_checking()
             return
