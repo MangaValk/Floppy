@@ -63,6 +63,10 @@ client_id=flp_oauth_...
 scope=scrobble:write progress:read progress:write watchlist:read watchlist:write catalog:read sync:read
 ```
 
+Omitting `scope` requests exactly this tracking preset. A client that also
+manages the user's custom lists adds `lists:read` and `lists:write`; the
+approval page names both before the user consents.
+
 Show the returned `verification_uri_complete` (or `verification_uri` plus
 `user_code`) to the user. Poll the token endpoint no faster than the returned
 `interval`:
