@@ -28,6 +28,7 @@ from django.db.models import (
 )
 from django.db.models.fields.json import KeyTransform
 from django.db.models.functions import RowNumber
+from django.db.models.query import ModelIterable, ValuesIterable
 from django.utils import timezone
 
 import events
@@ -207,6 +208,76 @@ def item_ids_with_json_array_value_ci(item_json_field: str, normalized_target: s
     ).values("id")
 
 
+class _LightRow(SimpleNamespace):
+    """A values() row that answers the few things prefetch reads off a model.
+
+    Read-only ranking graphs hold tens of thousands of Episode and Event rows
+    per scan. A model instance costs ~30 us on a NAS CPU (init, signals, the
+    field tracker); this costs a fraction. Module-level classes keep the rows
+    picklable, since Home caches the graphs it builds.
+    """
+
+    model_label = ""
+    _state = SimpleNamespace(db=None, adding=False, fields_cache={})
+
+    @property
+    def _meta(self):
+        return apps.get_model(self.model_label)._meta
+
+    @property
+    def pk(self):
+        return self.id
+
+
+class LightEpisode(_LightRow):
+    """An Episode values() row."""
+
+    model_label = "app.Episode"
+
+
+class LightEvent(_LightRow):
+    """An Event values() row."""
+
+    model_label = "events.Event"
+
+
+class LightItem(_LightRow):
+    """An Item values() row."""
+
+    model_label = "app.Item"
+
+
+class _LightRows(ModelIterable):
+    """Read a values() query as ``row_class`` rows (a prefetch-safe iterable).
+
+    Prefetch only accepts a ModelIterable; the query already selects just the
+    values() columns, so it is read with the dict iterable. Module-level so a
+    cached queryset holding it still pickles.
+    """
+
+    row_class = _LightRow
+
+    def __iter__(self):
+        for row in ValuesIterable(
+            self.queryset,
+            chunked_fetch=self.chunked_fetch,
+            chunk_size=self.chunk_size,
+        ):
+            yield self.row_class(**row)
+
+
+class LightEpisodeRows(_LightRows):
+    """Episode rows for a values() prefetch."""
+
+    row_class = LightEpisode
+
+
+class LightEventRows(_LightRows):
+    """Event rows for a values() prefetch."""
+
+    row_class = LightEvent
+
+
 class _EpisodeItemsAfterSelection(ImportScopedQuerySet):
     """Episodes that load their catalogue Items once the rows are selected.
 
@@ -228,7 +299,19 @@ class _EpisodeItemsAfterSelection(ImportScopedQuerySet):
     def _fetch_all(self):
         loading = self._result_cache is None
         super()._fetch_all()
-        if loading:
+        if loading and hasattr(self._iterable_class, "row_class"):
+            # Light rows (see _light_rows): attach each one's compact Item row.
+            ids = {row.item_id for row in self._result_cache if row.item_id}
+            item_row = LightItem
+            items = {}
+            for start in range(0, len(ids), 500):
+                for values in Item.objects.filter(
+                    pk__in=list(ids)[start : start + 500],
+                ).values(*dict.fromkeys(("id", *self.compact_item_fields))):
+                    items[values["id"]] = item_row(**values)
+            for row in self._result_cache:
+                row.item = items.get(row.item_id)
+        elif loading:
             # Episode.item is nullable; leave those rows without an item.
             item_ids = {
                 episode.item_id for episode in self._result_cache if episode.item_id
@@ -976,6 +1059,20 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     default=models.Value(False), output_field=models.BooleanField(),
                 ),
             ).filter(Q(_card_is_summary=False) | Q(_card_position=1))
+            # The ranking graph reads columns, not models (see _light_rows).
+            episode_qs = episode_qs.values(
+                "id", "end_date", "status", "created_at", "related_season_id", "item_id",
+                "_card_is_summary", "_card_position", *aggregates,
+            )
+            episode_qs._iterable_class = LightEpisodeRows
+            episode_qs.compact_item_fields = ("episode_number", "release_datetime")
+        event_qs = events.models.Event.objects.all()
+        if compact_episodes:
+            # Ranking reads a few scalar columns of each event, never a model.
+            event_qs = event_qs.values(
+                "id", "item_id", "content_number", "datetime", "release_type", "region",
+            )
+            event_qs._iterable_class = LightEventRows
         # Apply media-specific prefetches
         if media_type == MediaTypes.TV.value or (
             media_type == MediaTypes.ANIME.value and queryset.model == TV
@@ -987,16 +1084,17 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 # ep.status. Deferring the remaining ~30 Item columns cuts
                 # Django object instantiation time proportionally for large
                 # libraries.
-                episode_qs = episode_qs.only(
-                    "id",
-                    "end_date",
-                    "status",
-                    "created_at",
-                    "related_season_id",
-                    "item__id",
-                    "item__episode_number",
-                    "item__release_datetime",
-                )
+                if not hasattr(episode_qs._iterable_class, "row_class"):
+                    episode_qs = episode_qs.only(
+                        "id",
+                        "end_date",
+                        "status",
+                        "created_at",
+                        "related_season_id",
+                        "item__id",
+                        "item__episode_number",
+                        "item__release_datetime",
+                    )
                 if isinstance(episode_qs, _EpisodeItemsAfterSelection):
                     # `.only` narrows the episode columns; this narrows the
                     # catalogue rows `_fetch_all` loads for them as well.
@@ -1012,7 +1110,7 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 ),
                 Prefetch(
                     "seasons__item__event_set",
-                    queryset=events.models.Event.objects.all(),
+                    queryset=event_qs,
                     to_attr="prefetched_events",
                 ),
                 Prefetch(
@@ -1028,7 +1126,7 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
         base_queryset = queryset.prefetch_related(
             Prefetch(
                 "item__event_set",
-                queryset=events.models.Event.objects.all(),
+                queryset=event_qs,
                 to_attr="prefetched_events",
             ),
             Prefetch(
