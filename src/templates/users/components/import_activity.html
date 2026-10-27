@@ -114,7 +114,7 @@
             </div>
           {% endif %}
 
-          <div class="mt-2" x-data="{ showDetails: false, copied: false }" x-cloak>
+          <div class="mt-2" x-data="{ showDetails: false, copied: false }" :data-keep-open="showDetails" x-cloak>
             {% if result.errors %}
               {% if result.status == "SUCCESS" %}
                 <button @click="showDetails = !showDetails"
