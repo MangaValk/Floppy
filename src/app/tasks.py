@@ -176,6 +176,7 @@ from app.tasks_credits import (  # noqa: E402
 )
 from app.tasks_db_backup import write_database_snapshot  # noqa: E402
 from app.tasks_db_optimize import optimize_database_statistics  # noqa: E402
+from app.tasks_db_warm import warm_database_page_cache  # noqa: E402
 from app.tasks_discover import (  # noqa: E402
     purge_expired_discover_caches,
     refresh_discover_profiles,
@@ -1474,6 +1475,7 @@ __all__ = [
     "refresh_discover_rows",
     "repair_duplicated_anime_libraries_task",
     "sync_mal_ratings_from_api",
+    "warm_database_page_cache",
     "warm_discover_api_cache",
     "warm_discover_startup_tabs",
     "warm_history_day_cache_coverage",
