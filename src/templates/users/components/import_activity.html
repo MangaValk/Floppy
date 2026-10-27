@@ -119,7 +119,7 @@
               {% if result.status == "SUCCESS" %}
                 <button @click="showDetails = !showDetails"
                         class="text-xs text-[var(--color-link)] hover:text-[var(--color-link-hover)] transition-colors cursor-pointer"
-                        x-text="showDetails ? gettext('Hide failed items') : gettext('Show failed items')">{% translate "Show failed items" %}</button>
+                        x-text="showDetails ? gettext('Hide details') : gettext('Show details')">{% translate "Show details" %}</button>
 
                 <div class="mt-2 space-y-1 text-sm bg-[var(--color-surface)] p-3 rounded overflow-x-auto break-words"
                      x-show="showDetails">
