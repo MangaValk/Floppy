@@ -10,6 +10,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 from django.apps import apps
+from django.conf import settings
 from django.db import connection, models
 from django.db.models import (
     Case,
@@ -27,9 +28,10 @@ from django.db.models import (
     Window,
 )
 from django.db.models.fields.json import KeyTransform
-from django.db.models.functions import RowNumber
+from django.db.models.functions import Cast, RowNumber
 from django.db.models.query import ModelIterable, ValuesIterable
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 import events
 import users
@@ -222,11 +224,81 @@ class _LightRow(SimpleNamespace):
 
     @property
     def _meta(self):
-        return apps.get_model(self.model_label)._meta
+        # Prefetch asks every row; resolve the model once per class.
+        cls = type(self)
+        meta = cls.__dict__.get("_resolved_meta")
+        if meta is None:
+            meta = cls._resolved_meta = apps.get_model(cls.model_label)._meta
+        return meta
 
     @property
     def pk(self):
         return self.id
+
+
+def _RawDatetime(field):  # noqa: N802
+    """Select a datetime column as text so rows that are only compared skip parsing."""
+    return Cast(field, output_field=models.CharField())
+
+
+def _parse_raw_datetime(raw):
+    """Turn a ``_RawDatetime`` value into what the column's converter returns."""
+    if raw is None:
+        return None
+    parsed = parse_datetime(raw)
+    if parsed is not None and settings.USE_TZ and timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, datetime.UTC)
+    return parsed
+
+
+class _LazyEvent:
+    """A season event whose datetime is parsed only if something reads it."""
+
+    __slots__ = ("_datetime", "content_number", "item", "raw_datetime")
+
+    def __init__(self, *, content_number, raw_datetime, item):
+        self.content_number = content_number
+        self.raw_datetime = raw_datetime
+        self.item = item
+        self._datetime = _UNPARSED
+
+    @property
+    def datetime(self):
+        if self._datetime is _UNPARSED:
+            self._datetime = _parse_raw_datetime(self.raw_datetime)
+        return self._datetime
+
+
+class _LazyItem:
+    """A season item shared by its events; release_datetime parses on read."""
+
+    __slots__ = ("_release_datetime", "media_id", "raw_release_datetime", "season_number", "source")
+
+    def __init__(self, *, media_id, source, season_number, raw_release_datetime):
+        self.media_id = media_id
+        self.source = source
+        self.season_number = season_number
+        self.raw_release_datetime = raw_release_datetime
+        self._release_datetime = _UNPARSED
+
+    @property
+    def release_datetime(self):
+        if self._release_datetime is _UNPARSED:
+            self._release_datetime = _parse_raw_datetime(self.raw_release_datetime)
+        return self._release_datetime
+
+
+_UNPARSED = object()
+
+
+class _ShowEventsProbe(list):
+    """Stands in for a show's season events and records whether they were read."""
+
+    used = False
+
+    def __iter__(self):
+        self.used = True
+        return iter(())
 
 
 class LightEpisode(_LightRow):
@@ -1203,13 +1275,14 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 .order_by("item__season_number", "content_number")
                 .values_list(
                     "content_number",
-                    "datetime",
+                    _RawDatetime("datetime"),
                     "item__media_id",
                     "item__source",
                     "item__season_number",
-                    "item__release_datetime",
+                    _RawDatetime("item__release_datetime"),
                 )
             )
+            season_items = {}
             # A large library has tens of thousands of these rows. Plain
             # namespaces carry the few attributes the next-episode date reads
             # without paying for a model instance (and its signals) per row.
@@ -1223,19 +1296,42 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             ) in season_events:
                 key = (media_id, source)
                 if key in shows:
+                    season_item = season_items.get((key, season_number))
+                    if season_item is None:
+                        season_item = season_items[(key, season_number)] = _LazyItem(
+                            media_id=media_id,
+                            source=source,
+                            season_number=season_number,
+                            raw_release_datetime=release_datetime,
+                        )
                     events_by_show[key].append(
-                        SimpleNamespace(
+                        _LazyEvent(
                             content_number=content_number,
-                            datetime=event_datetime,
-                            item=SimpleNamespace(
-                                media_id=media_id,
-                                source=source,
-                                season_number=season_number,
-                                release_datetime=release_datetime,
-                            ),
+                            raw_datetime=event_datetime,
+                            item=season_item,
                         ),
                     )
         return events_by_show
+
+    def next_episode_air_date_values(self, medias):
+        """Return ``_next_episode_air_date_value`` for each media, in order.
+
+        A show's calendar events are only read when one of its seasons has no
+        events of its own or its watch position runs past them. A first pass
+        finds those shows without loading anything; the bulk events query then
+        covers just them and only they are valued again.
+        """
+        probes = {}
+        for media in medias:
+            if getattr(getattr(media, "item", None), "media_type", None) == MediaTypes.TV.value:
+                probes[id(media)] = media.prefetched_show_season_events = _ShowEventsProbe()
+        values = [self._next_episode_air_date_value(media) for media in medias]
+        needy = [media for media in medias if getattr(probes.get(id(media)), "used", False)]
+        if needy:
+            self.attach_show_season_events(needy)
+            redo = {id(media): self._next_episode_air_date_value(media) for media in needy}
+            values = [redo.get(id(media), value) for media, value in zip(medias, values, strict=True)]
+        return values
 
     def attach_show_season_events(self, medias):
         """Load the season events `_next_episode_air_date_value` may need, in bulk.
