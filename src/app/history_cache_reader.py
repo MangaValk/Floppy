@@ -283,6 +283,26 @@ def get_cached_history_day(
     )
 
 
+PREFETCH_MAX_SPAN_DAYS = 62
+
+
+def _span_prefetch(user, day_keys, logging_style):
+    """One span-wide load for several missing days, unless they are far apart.
+
+    The prefetch reads every row between the first and last day, so days spread
+    over years (an anniversary, a sparse history) cost more together than apart.
+    """
+    dates = sorted(
+        d for d in (_date_from_day_key(key) for key in day_keys) if d
+    )
+    if len(dates) < 2 or (dates[-1] - dates[0]).days > PREFETCH_MAX_SPAN_DAYS:
+        return {}, None
+    day_media_types = history_media_types_by_day(user, day_keys, logging_style)
+    return day_media_types, HistoryRangePrefetch(
+        user, day_keys, logging_style, day_media_types
+    )
+
+
 def get_history_index_day_keys(user, logging_style_override=None):
     """Return every indexed day key, building and caching the index on a miss."""
     logging_style = _normalize_logging_style(logging_style_override, user)
@@ -300,6 +320,30 @@ def get_history_index_day_keys(user, logging_style_override=None):
         index_days = build_history_index(user, logging_style_override=logging_style)
         cache_history_index(user.id, logging_style, index_days, era=era)
     return [key for key in (_day_key_from_value(v) for v in index_days) if key]
+
+
+def get_cached_history_days(user, day_keys, logging_style_override=None):
+    """Return full day payloads for ``day_keys`` (in order), repairing misses together."""
+    logging_style = _normalize_logging_style(logging_style_override, user)
+    keys = [key for key in (_day_key_from_value(v) for v in day_keys) if key]
+    payloads = cache.get_many([_day_cache_key(user.id, logging_style, k) for k in keys])
+    days, missing = {}, []
+    for key in keys:
+        payload = payloads.get(_day_cache_key(user.id, logging_style, key))
+        if payload is None:
+            missing.append(key)
+        else:
+            days[key] = _deserialize_history_day(payload, max_entries=None)
+    day_media_types, prefetch = _span_prefetch(user, missing, logging_style)
+    for key in missing:
+        days[key] = _build_and_cache_history_day(
+            user,
+            key,
+            logging_style,
+            media_types=day_media_types.get(key),
+            prefetch=prefetch,
+        )
+    return [days[key] for key in keys if days.get(key)]
 
 
 def get_history_days(
@@ -555,14 +599,11 @@ def get_cached_history_window(
         requested_media_types if filters.get("media_type") else None
     )
     day_media_types, prefetch = {}, None
-    if build_media_types is None and len(missing_day_keys) > 1:
+    if build_media_types is None:
         # Same span-wide load the month repair uses: one query per media
         # family instead of a query bundle per missing day.
-        day_media_types = history_media_types_by_day(
+        day_media_types, prefetch = _span_prefetch(
             user, missing_day_keys, logging_style
-        )
-        prefetch = HistoryRangePrefetch(
-            user, missing_day_keys, logging_style, day_media_types
         )
     for day_key in missing_day_keys:
         # Filter cold builds at the query boundary; only complete days may
