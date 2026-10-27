@@ -577,7 +577,11 @@ def paginate_list_items(request, user, user_list):
 
     total = None
     if sort is None:
-        total = items.count()
+        # No search/filter narrows ``items`` here, so count memberships without
+        # joining app_item.
+        total = (
+            items.count() if search_query else user_list.customlistitem_set.count()
+        )
         items = items[offset : offset + limit]
 
     media_objects = []
