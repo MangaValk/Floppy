@@ -1011,7 +1011,15 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
         # Store the number of repeats for display
         display_media.repeats = len(all_media_entries)
 
-    def _apply_prefetch_related(self, queryset, media_type, list_mode=False, *, compact_episodes=False):
+    def _apply_prefetch_related(
+        self,
+        queryset,
+        media_type,
+        list_mode=False,
+        *,
+        compact_episodes=False,
+        light_rows=False,
+    ):
         """Apply appropriate prefetch_related based on media type.
 
         list_mode=True narrows the episode queryset to only the fields required
@@ -1060,14 +1068,23 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 ),
             ).filter(Q(_card_is_summary=False) | Q(_card_position=1))
             # The ranking graph reads columns, not models (see _light_rows).
-            episode_qs = episode_qs.values(
-                "id", "end_date", "status", "created_at", "related_season_id", "item_id",
-                "_card_is_summary", "_card_position", *aggregates,
-            )
-            episode_qs._iterable_class = LightEpisodeRows
-            episode_qs.compact_item_fields = ("episode_number", "release_datetime")
+            # Home reads more of each episode (title, artwork), so it opts out.
+            if light_rows:
+                episode_qs = episode_qs.values(
+                    "id",
+                    "end_date",
+                    "status",
+                    "created_at",
+                    "related_season_id",
+                    "item_id",
+                    "_card_is_summary",
+                    "_card_position",
+                    *aggregates,
+                )
+                episode_qs._iterable_class = LightEpisodeRows
+                episode_qs.compact_item_fields = ("episode_number", "release_datetime")
         event_qs = events.models.Event.objects.all()
-        if compact_episodes:
+        if light_rows:
             # Ranking reads a few scalar columns of each event, never a model.
             event_qs = event_qs.values(
                 "id", "item_id", "content_number", "datetime", "release_type", "region",

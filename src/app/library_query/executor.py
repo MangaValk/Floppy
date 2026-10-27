@@ -566,6 +566,7 @@ def _attach_media(user, batch: list[Candidate], needs: set[str]) -> None:
             media_type,
             list_mode=True,
             compact_episodes=True,
+            light_rows=True,
         )
         aggregated = BasicMedia.objects._aggregate_duplicate_data(rows, user, media_type)
         latest = {}
