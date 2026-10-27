@@ -1523,7 +1523,7 @@ class TraktImporter(TraktMetadataResolverMixin):
         watched_at_dt,
     ):
         """Update completion status for season and TV show if applicable."""
-        if episode_number == season_metadata["max_progress"]:
+        if episode_number == helpers.season_last_episode_number(season_metadata):
             season_obj.status = Status.COMPLETED.value
             if season_obj.pk:
                 self.completed_seasons.append(season_obj)
