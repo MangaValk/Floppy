@@ -11,7 +11,27 @@
 
 {% block settings_content %}
   <div class="space-y-6"
-       x-data="{ activeIntegration: 'all' }"
+       x-data="{
+         activeIntegration: 'all',
+         activeMediaTag: 'all',
+         integrationTags: {
+           jellyfin: ['screen'],
+           plex: ['screen', 'music'],
+           emby: ['screen'],
+           kodi: ['screen'],
+           stremio: ['screen'],
+           seerr: ['screen'],
+           nuvio: ['screen'],
+           navidrome: ['music']
+         },
+         tagMatches(key) {
+           return this.activeMediaTag === 'all' || this.integrationTags[key].includes(this.activeMediaTag);
+         },
+         showIntegration(key) {
+           return (this.activeIntegration === 'all' || this.activeIntegration === key) && this.tagMatches(key);
+         }
+       }"
+       x-effect="if (activeMediaTag !== 'all' && activeIntegration !== 'all' && !tagMatches(activeIntegration)) { activeIntegration = 'all'; }"
        x-init="const deepLinkTag = new URLSearchParams(window.location.search).get('open'); if (deepLinkTag) { activeIntegration = deepLinkTag; }">
     {% if match_review_references %}
       <section class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-5">
@@ -117,6 +137,8 @@
     {% include "users/components/integration_tokens.html" %}
 
     {# Filter bar #}
+    {% media_tag_choices "screen music" as media_tags %}
+    {% include "users/components/media_tag_filter.html" with tags=media_tags %}
     <div class="bg-[var(--color-surface-strong)] rounded-lg p-4 mb-5">
       <p class="text-sm text-[var(--color-text-secondary)] mb-3">{% translate "Jump to integration:" %}</p>
       <div class="flex flex-wrap gap-2">
@@ -129,6 +151,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'jellyfin'"
+                x-show="tagMatches('jellyfin')"
                 :aria-pressed="activeIntegration === 'jellyfin'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'jellyfin' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -136,6 +159,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'plex'"
+                x-show="tagMatches('plex')"
                 :aria-pressed="activeIntegration === 'plex'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'plex' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -143,6 +167,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'emby'"
+                x-show="tagMatches('emby')"
                 :aria-pressed="activeIntegration === 'emby'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'emby' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -150,6 +175,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'kodi'"
+                x-show="tagMatches('kodi')"
                 :aria-pressed="activeIntegration === 'kodi'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'kodi' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -157,6 +183,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'stremio'"
+                x-show="tagMatches('stremio')"
                 :aria-pressed="activeIntegration === 'stremio'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'stremio' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -164,6 +191,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'seerr'"
+                x-show="tagMatches('seerr')"
                 :aria-pressed="activeIntegration === 'seerr'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'seerr' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -171,6 +199,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'nuvio'"
+                x-show="tagMatches('nuvio')"
                 :aria-pressed="activeIntegration === 'nuvio'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'nuvio' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -178,6 +207,7 @@
         </button>
         <button type="button"
                 @click="activeIntegration = 'navidrome'"
+                x-show="tagMatches('navidrome')"
                 :aria-pressed="activeIntegration === 'navidrome'"
                 class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
                 :class="activeIntegration === 'navidrome' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
@@ -188,7 +218,7 @@
 
     {# Jellyfin Official #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'jellyfin'"
+         x-show="showIntegration('jellyfin')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -277,7 +307,7 @@
 
     {# Jellyfin Unofficial #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'jellyfin'"
+         x-show="showIntegration('jellyfin')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -329,7 +359,7 @@
 
     {# Jellyfin webhook events (both plugins) #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'jellyfin'"
+         x-show="showIntegration('jellyfin')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -393,7 +423,7 @@
 
     {# Jellyfin push (Floppy -> Jellyfin) #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'jellyfin'"
+         x-show="showIntegration('jellyfin')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center">
@@ -600,7 +630,7 @@
 
     {# Plex #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'plex'"
+         x-show="showIntegration('plex')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -1107,7 +1137,7 @@
 
     {# Emby #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'emby'"
+         x-show="showIntegration('emby')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -1151,7 +1181,7 @@
 
     {# Kodi #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'kodi'"
+         x-show="showIntegration('kodi')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -1192,7 +1222,7 @@
 
     {# Stremio #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'stremio'"
+         x-show="showIntegration('stremio')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -1233,7 +1263,7 @@
 
     {# Seerr #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'seerr'"
+         x-show="showIntegration('seerr')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -1555,7 +1585,7 @@
 
     {# Nuvio #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'nuvio'"
+         x-show="showIntegration('nuvio')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}
@@ -1589,7 +1619,7 @@
 
     {# Navidrome: uses the ListenBrainz-compatible endpoint (api/listenbrainz_views.py) #}
     <div class="bg-[var(--color-surface-strong)] p-5 rounded-lg mb-6"
-         x-show="activeIntegration === 'all' || activeIntegration === 'navidrome'"
+         x-show="showIntegration('navidrome')"
          x-transition.opacity.duration.150ms>
       <div class="flex items-center mb-3">
         {% include "app/icons/server.svg" with classes="w-5 h-5 text-[var(--color-link)] mr-2" %}

@@ -84,6 +84,7 @@ class ProviderCredentialSpec:
     user_scope: bool = False
     user_storage: str = USER_STORAGE_GENERIC
     logo_slug: str = ""
+    media_tags: tuple[str, ...] = ()
     validator: object = None
     user_fields: tuple[str, ...] = dataclass_field(default_factory=tuple)
 
@@ -265,6 +266,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
     for spec in (
         ProviderCredentialSpec(
             slug="tvdb",
+            media_tags=("screen", "anime_manga"),
             user_scope=True,
             validator=_validate_tvdb,
             label="TheTVDB",
@@ -277,6 +279,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="hardcover",
+            media_tags=("reading",),
             user_scope=True,
             validator=_validate_hardcover,
             label="Hardcover",
@@ -286,6 +289,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="googlebooks",
+            media_tags=("reading",),
             user_scope=True,
             validator=_validate_googlebooks,
             label="Google Books",
@@ -295,6 +299,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="steam",
+            media_tags=("games",),
             group=GROUP_ACCOUNTS,
             user_scope=True,
             validator=_validate_steam,
@@ -305,6 +310,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="lastfm",
+            media_tags=("music",),
             group=GROUP_ACCOUNTS,
             user_scope=True,
             label="Last.fm",
@@ -314,6 +320,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="tmdb",
+            media_tags=("screen",),
             user_scope=True,
             validator=_validate_tmdb,
             label="TMDB",
@@ -323,6 +330,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="mal",
+            media_tags=("anime_manga",),
             user_scope=True,
             label="MyAnimeList",
             logo_slug="myanimelist",
@@ -341,6 +349,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="wetrakr",
+            media_tags=("screen",),
             group=GROUP_ACCOUNTS,
             user_scope=True,
             label="WeTrakr",
@@ -350,6 +359,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="igdb",
+            media_tags=("games",),
             user_scope=True,
             label="IGDB",
             description="Game metadata, authenticated through Twitch.",
@@ -361,6 +371,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="steamgriddb",
+            media_tags=("games",),
             user_scope=True,
             validator=_validate_steamgriddb,
             label="SteamGridDB",
@@ -370,6 +381,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="thegamesdb",
+            media_tags=("games",),
             user_scope=True,
             validator=_validate_thegamesdb,
             label="TheGamesDB",
@@ -379,6 +391,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="screenscraper",
+            media_tags=("games",),
             user_scope=True,
             label="ScreenScraper",
             description="Retro artwork. An account raises your limits.",
@@ -391,6 +404,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="opencritic",
+            media_tags=("games",),
             user_scope=True,
             label="OpenCritic",
             description="Critic scores for games. The free RapidAPI plan is enough.",
@@ -399,6 +413,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="bgg",
+            media_tags=("games",),
             user_scope=True,
             label="BoardGameGeek",
             description="Board game metadata.",
@@ -407,6 +422,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="comicvine",
+            media_tags=("reading",),
             user_scope=True,
             label="Comic Vine",
             description="Comic and graphic novel metadata.",
@@ -415,6 +431,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="gcd",
+            media_tags=("reading",),
             user_scope=True,
             validator=_validate_gcd,
             label="Grand Comics Database",
@@ -430,6 +447,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="trakt",
+            media_tags=("screen",),
             group=GROUP_ACCOUNTS,
             user_scope=True,
             validator=_validate_trakt,
@@ -449,6 +467,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="anilist",
+            media_tags=("anime_manga",),
             group=GROUP_ACCOUNTS,
             user_scope=True,
             label="AniList",
@@ -461,6 +480,7 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
         ),
         ProviderCredentialSpec(
             slug="simkl",
+            media_tags=("screen", "anime_manga"),
             group=GROUP_ACCOUNTS,
             user_scope=True,
             label="SIMKL",
