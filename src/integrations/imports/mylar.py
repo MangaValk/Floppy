@@ -183,7 +183,7 @@ class MylarImporter:
                     source=self.source,
                     source_instance_id=self.instance.pk,
                 )
-                imported_counts[item.media_type] += 1
+                imported_counts["collection"] += 1
                 imported_counts["updated"] += 1
         except MediaImportError as error:
             connection_health.record_failure(
