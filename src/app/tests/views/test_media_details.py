@@ -1,4 +1,5 @@
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 from html import unescape
 from pathlib import Path
@@ -65,6 +66,19 @@ from events.calendar.helpers import date_parser
 from integrations.models import PlexAccount
 from lists.models import CustomList, CustomListItem
 from users.models import DateFormatChoices, RatingScaleChoices, TimeFormatChoices
+
+
+def _record_sleep_threads(mock_sleep):
+    """Record which threads call the patched ``time.sleep``.
+
+    ``time.sleep`` is process-wide, so a background thread can trip a plain
+    ``assert_not_called``. Tests check only their own thread instead.
+    """
+    threads = []
+    mock_sleep.side_effect = lambda *args, **kwargs: threads.append(
+        threading.get_ident()
+    )
+    return threads
 
 
 class MediaDetailsViewTests(TestCase):
@@ -7073,6 +7087,7 @@ class MediaDetailsViewTests(TestCase):
         mock_get_or_create,
         _mock_sleep,
     ):
+        sleeping_threads = _record_sleep_threads(_mock_sleep)
         mock_get_or_create.side_effect = OperationalError("database is locked")
         mock_get_metadata.return_value = {
             "media_id": "325609",
@@ -7115,7 +7130,7 @@ class MediaDetailsViewTests(TestCase):
             "Some metadata updates were deferred because the database is busy.",
         )
         self.assertTrue(response.context["detail_persistence_deferred"])
-        _mock_sleep.assert_not_called()
+        self.assertNotIn(threading.get_ident(), sleeping_threads)
         self.assertFalse(
             Item.objects.filter(
                 media_id="325609",
@@ -7133,6 +7148,7 @@ class MediaDetailsViewTests(TestCase):
         mock_update_or_create,
         _mock_sleep,
     ):
+        sleeping_threads = _record_sleep_threads(_mock_sleep)
         item = Item.objects.create(
             media_id="52991",
             source=Sources.MAL.value,
@@ -7179,7 +7195,7 @@ class MediaDetailsViewTests(TestCase):
         )
         self.assertFalse(response.context["detail_persistence_deferred"])
         mock_update_or_create.assert_not_called()
-        _mock_sleep.assert_not_called()
+        self.assertNotIn(threading.get_ident(), sleeping_threads)
 
     def test_game_media_details_renders_when_metadata_save_hits_retryable_lock(self):
         # Deterministic starting point: whether the view reaches the metadata
@@ -7257,6 +7273,7 @@ class MediaDetailsViewTests(TestCase):
         mock_sync_credits,
         _mock_sleep,
     ):
+        sleeping_threads = _record_sleep_threads(_mock_sleep)
         item = Item.objects.create(
             media_id="1396",
             source=Sources.TMDB.value,
@@ -7308,7 +7325,7 @@ class MediaDetailsViewTests(TestCase):
             "Some metadata updates were deferred because the database is busy.",
         )
         self.assertTrue(response.context["detail_persistence_deferred"])
-        _mock_sleep.assert_not_called()
+        self.assertNotIn(threading.get_ident(), sleeping_threads)
 
     @patch("integrations.tasks.fetch_collection_metadata_for_item.delay")
     @patch("app.views.credits.sync_item_credits_from_metadata")
