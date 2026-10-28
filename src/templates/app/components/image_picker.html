@@ -63,8 +63,8 @@
            x-ref="file"
            @change="onFile()">
 
-    <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border px-4 py-6 text-sm transition-colors"
-         :class="dragging ? 'border-dashed border-[var(--color-accent)] bg-black/50' : 'border-[var(--color-border)] bg-black/30'">
+    <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border px-4 py-6 text-sm transition-colors bg-[var(--color-surface-strong)]"
+         :class="dragging ? 'border-dashed border-[var(--color-accent)]' : 'border-transparent'">
       <button type="button"
               class="text-[var(--color-accent)] hover:underline cursor-pointer"
               @click="$refs.file.click()">{% translate "choose an image" %}</button>
