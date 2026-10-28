@@ -201,7 +201,9 @@ class VideoPlayApiTests(FloppyApiTestCase):
     def test_the_first_description_is_kept(self):
         """The item is shared, so a later report never rewrites the description."""
         self._post(description="  What this video is about.  ")
-        self._post(description="A different text.", externalId="youtube:vid1:2026-10-03")
+        self._post(
+            description="A different text.", externalId="youtube:vid1:2026-10-03"
+        )
         self.assertEqual(
             Item.objects.get(media_id="vid1").synopsis,
             "What this video is about.",
@@ -289,3 +291,116 @@ class VideoPlayApiTests(FloppyApiTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"], [])
+
+
+class VideoPlayManageApiTests(FloppyApiTestCase):
+    """List and delete the plays of a video."""
+
+    def _post(self, day, media_id="vid1"):
+        """Post one play on the given day."""
+        url = reverse(
+            "api_video_play",
+            kwargs={"source": "youtube", "media_id": media_id},
+        )
+        return self.client.post(
+            url,
+            {
+                "title": "A Video",
+                "lengthSeconds": 1000,
+                "progressSeconds": 100,
+                "externalId": f"youtube:{media_id}:{day}",
+            },
+            format="json",
+            **self.auth_headers,
+        )
+
+    def _plays_url(self, media_id="vid1"):
+        return reverse(
+            "api_video_play",
+            kwargs={"source": "youtube", "media_id": media_id},
+        )
+
+    def _delete(self, external_id, media_id="vid1"):
+        return self.client.delete(
+            reverse(
+                "api_video_play_detail",
+                kwargs={
+                    "source": "youtube",
+                    "media_id": media_id,
+                    "external_id": external_id,
+                },
+            ),
+            **self.auth_headers,
+        )
+
+    def test_plays_are_listed_newest_first(self):
+        """The list carries the external id, progress and date of each play."""
+        self._post("2026-10-02")
+        self._post("2026-10-04")
+        response = self.client.get(self._plays_url(), **self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+        self.assertEqual(
+            [play["external_id"] for play in response.data["results"]],
+            ["youtube:vid1:2026-10-04", "youtube:vid1:2026-10-02"],
+        )
+        self.assertEqual(response.data["results"][0]["progress_seconds"], 100)
+
+    def test_listing_an_unknown_video_is_not_found(self):
+        """No video, no list."""
+        response = self.client.get(self._plays_url("nope"), **self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+    def test_deleting_a_play_moves_the_last_watched_date_back(self):
+        """The video keeps its status and its other plays."""
+        self._post("2026-10-02")
+        self._post("2026-10-04")
+        response = self._delete("youtube:vid1:2026-10-04")
+        self.assertEqual(response.status_code, 204)
+        video = Video.objects.get()
+        self.assertEqual(VideoPlay.objects.count(), 1)
+        self.assertEqual(video.end_date.date().isoformat(), "2026-10-02")
+        self.assertEqual(video.status, Status.IN_PROGRESS.value)
+
+    def test_deleting_the_last_play_keeps_the_video(self):
+        """The video stays tracked, with no watched date."""
+        self._post("2026-10-02")
+        self.assertEqual(self._delete("youtube:vid1:2026-10-02").status_code, 204)
+        video = Video.objects.get()
+        self.assertIsNone(video.end_date)
+        self.assertEqual(VideoPlay.objects.count(), 0)
+
+    def test_deleting_removes_the_day_from_history(self):
+        """History no longer shows the deleted play."""
+        self._post("2026-10-02")
+        day = history_cache.history_day_key(VideoPlay.objects.get().end_date)
+        self._delete("youtube:vid1:2026-10-02")
+        self.assertIsNone(build_history_day(self.user1, day))
+
+    def test_deleting_an_unknown_play_or_video_is_not_found(self):
+        """Neither is an error beyond 404."""
+        self._post("2026-10-02")
+        self.assertEqual(self._delete("youtube:vid1:2020-01-01").status_code, 404)
+        self.assertEqual(
+            self._delete("youtube:nope:2026-10-02", media_id="nope").status_code,
+            404,
+        )
+        self.assertEqual(VideoPlay.objects.count(), 1)
+
+    def test_another_users_play_cannot_be_deleted(self):
+        """Plays belong to the caller's own video."""
+        item = Item.objects.create(
+            media_id="vid1",
+            source="youtube",
+            media_type=MediaTypes.VIDEO.value,
+            library_media_type=MediaTypes.VIDEO.value,
+            title="A Video",
+        )
+        other = Video.objects.create(item=item, user=self.user2)
+        other.upsert_play("youtube:vid1:2026-10-02", 100, end_date=timezone.now())
+        self.assertEqual(self._delete("youtube:vid1:2026-10-02").status_code, 404)
+        self.assertEqual(VideoPlay.objects.count(), 1)
+        self.assertEqual(
+            self.client.get(self._plays_url(), **self.auth_headers).status_code,
+            404,
+        )

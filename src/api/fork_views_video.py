@@ -4,8 +4,10 @@ import datetime
 from http import HTTPStatus as HTTP  # noqa: N814
 from urllib.parse import urlparse
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
+from drf_spectacular.utils import OpenApiTypes, extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -83,9 +85,45 @@ def _invalidate_history_for_other_viewers(item, user):
         )
 
 
-class VideoPlayView(APIView):
-    """POST /api/v1/videos/<source>/<media_id>/plays/."""
+def _tracked_video(request, source, media_id):
+    """Return the caller's video for this source and id, or None."""
+    return (
+        Video.objects.filter(
+            user=request.user,
+            item__media_type=MediaTypes.VIDEO.value,
+            item__source=source,
+            item__media_id=media_id,
+        )
+        .select_related("item")
+        .first()
+    )
 
+
+class VideoPlayView(APIView):
+    """GET and POST /api/v1/videos/<source>/<media_id>/plays/."""
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request, source, media_id):
+        """List the caller's plays of this video, newest first."""
+        video = _tracked_video(request, source, media_id)
+        if video is None:
+            return Response({"detail": "Video not found"}, status=HTTP.NOT_FOUND)
+        plays = video.plays.order_by("-end_date", "-id")
+        return Response(
+            {
+                "count": len(plays),
+                "results": [
+                    {
+                        "external_id": play.external_id,
+                        "progress_seconds": play.progress,
+                        "end_date": play.end_date,
+                    }
+                    for play in plays
+                ],
+            },
+        )
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
     def post(self, request, source, media_id):
         """Create the video if needed and upsert the play by external id."""
         if not check_source_type(MediaTypes.VIDEO.value, source):
@@ -94,7 +132,9 @@ class VideoPlayView(APIView):
                 status=HTTP.BAD_REQUEST,
             )
 
-        external_id = str(request.data.get("externalId") or request.data.get("external_id") or "").strip()
+        external_id = str(
+            request.data.get("externalId") or request.data.get("external_id") or ""
+        ).strip()
         title = str(request.data.get("title") or "").strip()
         if not external_id or not title:
             return Response(
@@ -107,10 +147,20 @@ class VideoPlayView(APIView):
                 status=HTTP.BAD_REQUEST,
             )
         try:
-            progress_seconds = int(request.data.get("progressSeconds") or request.data.get("progress_seconds") or 0)
-            length_seconds = int(request.data.get("lengthSeconds") or request.data.get("length_seconds") or 0)
+            progress_seconds = int(
+                request.data.get("progressSeconds")
+                or request.data.get("progress_seconds")
+                or 0
+            )
+            length_seconds = int(
+                request.data.get("lengthSeconds")
+                or request.data.get("length_seconds")
+                or 0
+            )
         except (TypeError, ValueError):
-            return Response({"detail": "seconds must be integers"}, status=HTTP.BAD_REQUEST)
+            return Response(
+                {"detail": "seconds must be integers"}, status=HTTP.BAD_REQUEST
+            )
         # Negative seconds count as zero and huge ones as the column maximum,
         # so a bad value never reaches the database.
         progress_seconds = min(max(progress_seconds, 0), MAX_SECONDS)
@@ -148,7 +198,11 @@ class VideoPlayView(APIView):
         # The upload date puts the video on the Calendar. It is set once, so a
         # later report never moves the event.
         published_at = parse_datetime(
-            str(request.data.get("publishedAt") or request.data.get("published_at") or ""),
+            str(
+                request.data.get("publishedAt")
+                or request.data.get("published_at")
+                or ""
+            ),
         )
         if published_at and not item.release_datetime:
             if timezone.is_naive(published_at):
@@ -184,3 +238,33 @@ class VideoPlayView(APIView):
             {"status": video.status, "external_id": play.external_id},
             status=HTTP.CREATED if created else HTTP.OK,
         )
+
+
+class VideoPlayDetailView(APIView):
+    """DELETE /api/v1/videos/<source>/<media_id>/plays/<external_id>/."""
+
+    @extend_schema(request=None, responses={204: None})
+    def delete(self, request, source, media_id, external_id):
+        """Remove one play. The video stays tracked with its status and score.
+
+        The video's last watched date follows the plays that remain, and clears
+        when none are left.
+        """
+        video = _tracked_video(request, source, media_id)
+        if video is None:
+            return Response({"detail": "Video not found"}, status=HTTP.NOT_FOUND)
+        with transaction.atomic():
+            Video.objects.select_for_update().filter(pk=video.pk).first()
+            deleted, _ = VideoPlay.objects.filter(
+                video=video, external_id=external_id
+            ).delete()
+            if not deleted:
+                return Response({"detail": "Play not found"}, status=HTTP.NOT_FOUND)
+            latest = (
+                video.plays.order_by("-end_date")
+                .values_list("end_date", flat=True)
+                .first()
+            )
+            video.end_date = latest
+            video.save(update_fields=["end_date"])
+        return Response(status=HTTP.NO_CONTENT)
