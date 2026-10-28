@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from app import history_cache
 from app.helpers import has_real_image
 from app.models import Item, MediaTypes, Status, Video, VideoPlay
-from app.video_helpers import approved_thumbnail_url
+from app.video_helpers import approved_thumbnail_url, set_channel_as_author
 
 from .helpers import check_source_type
 
@@ -163,6 +163,9 @@ class VideoPlayView(APIView):
             item.image = thumbnail_url
             item.save(update_fields=["image"])
             _invalidate_history_for_other_viewers(item, request.user)
+
+        # The channel is the video's author for filters, sorts and lists.
+        set_channel_as_author(item, channel)
 
         # The description shows on the details page. It is set once, like the
         # poster, because the item is shared.

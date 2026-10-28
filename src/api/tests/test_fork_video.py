@@ -1,7 +1,9 @@
 """Video play upsert."""
 
+import json
 from unittest.mock import patch
 
+from django.apps import apps as django_apps
 from django.urls import reverse
 from django.utils import timezone
 
@@ -422,3 +424,131 @@ class VideoPlayManageApiTests(FloppyApiTestCase):
             self.client.get(self._plays_url(), **self.auth_headers).status_code,
             404,
         )
+
+
+class VideoChannelTests(FloppyApiTestCase):
+    """A video's channel is its author: filter, sort, lists and saved views."""
+
+    def _post(self, media_id, channel, title=None):
+        url = reverse(
+            "api_video_play",
+            kwargs={"source": "youtube", "media_id": media_id},
+        )
+        return self.client.post(
+            url,
+            {
+                "title": title or f"Video {media_id}",
+                "channel": channel,
+                "lengthSeconds": 1000,
+                "progressSeconds": 900,
+                "externalId": f"youtube:{media_id}:2026-10-02",
+            },
+            format="json",
+            **self.auth_headers,
+        )
+
+    def setUp(self):
+        """Two channels, signed in for the web pages."""
+        super().setUp()
+        self._post("vidA", "Beyond Babish")
+        self._post("vidB", "Beyond Babish")
+        self._post("vidC", "Home Gadgets")
+        self.client.force_login(self.user1)
+
+    def test_the_first_channel_becomes_the_author_once(self):
+        """The item is shared, so a later post never renames the channel."""
+        self._post("vidA", "Someone Else")
+        self.assertEqual(Item.objects.get(media_id="vidA").authors, ["Beyond Babish"])
+
+    def test_the_list_filters_by_channel(self):
+        """Choosing a channel narrows the Videos list."""
+        response = self.client.get("/medialist/video", {"author": "Beyond Babish"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["media_list"].paginator.count, 2)
+        response = self.client.get("/medialist/video", {"author": "Home Gadgets"})
+        self.assertEqual(response.context["media_list"].paginator.count, 1)
+
+    def test_the_filter_menu_offers_channels_not_formats(self):
+        """Channels are listed and named as such. Formats stay a reading filter."""
+        response = self.client.get("/medialist/video")
+        filter_data = response.context["filter_data"]
+        self.assertTrue(filter_data["show_authors"])
+        self.assertTrue(filter_data["author_is_channel"])
+        self.assertFalse(filter_data["show_formats"])
+        self.assertEqual(
+            [author["value"] for author in filter_data["authors"]],
+            ["Beyond Babish", "Home Gadgets"],
+        )
+        self.assertContains(response, "All Channels")
+
+    def test_the_sort_menu_calls_it_channel_and_sorts_by_it(self):
+        """The author sort reads Channel on videos and orders by channel."""
+        response = self.client.get(
+            "/medialist/video", {"sort": "author", "direction": "desc"}
+        )
+        self.assertIn(("author", "Channel"), response.context["sort_choices"])
+        titles = [
+            entry.item.title for entry in response.context["media_list"].object_list
+        ]
+        self.assertEqual(titles[0], "Video vidC")
+
+    def test_the_table_has_a_channel_column(self):
+        """The table layout shows each video's channel."""
+        response = self.client.get("/medialist/video", {"layout": "table"})
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(response.content.decode(), r"<th[^>]*>\s*Channel")
+        self.assertRegex(
+            response.content.decode(), r"<td[^>]*>\s*<span[^>]*>\s*Beyond Babish"
+        )
+
+    def test_other_media_types_keep_the_author_wording(self):
+        """Books still say Author and still offer Format."""
+        response = self.client.get("/medialist/book")
+        filter_data = response.context["filter_data"]
+        self.assertFalse(filter_data["author_is_channel"])
+        self.assertTrue(filter_data["show_formats"])
+        self.assertIn(("author", "Author"), response.context["sort_choices"])
+
+    def test_a_saved_view_keeps_the_channel(self):
+        """The saved query carries the author parameter."""
+        response = self.client.post(
+            reverse("saved_view_create"),
+            {"media_type": "video", "name": "Babish", "author": "Beyond Babish"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("author=Beyond+Babish", response.json()["url"])
+
+    def test_a_smart_list_can_match_a_channel(self):
+        """A smart list of videos from one channel."""
+        from lists.models import CustomList
+
+        smart = CustomList.objects.create(
+            name="Babish", owner=self.user1, is_smart=True
+        )
+        response = self.client.post(
+            reverse("list_smart_rules_update", args=[smart.id]),
+            json.dumps({"media_types": ["video"], "author": "Beyond Babish"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            sorted(smart.items.values_list("media_id", flat=True)),
+            ["vidA", "vidB"],
+        )
+        page = self.client.get(f"/list/{smart.id}")
+        self.assertContains(page, "Channel:")
+        self.assertContains(page, "Beyond Babish")
+
+    def test_the_migration_copies_existing_channels(self):
+        """Videos stored before this change get their channel as author."""
+        import importlib
+
+        migration = importlib.import_module(
+            "app.migrations.0214_video_channel_as_author"
+        )
+        item = Item.objects.get(media_id="vidA")
+        item.authors = []
+        item.save(update_fields=["authors"])
+        migration.copy_channel_to_authors(django_apps, None)
+        item.refresh_from_db()
+        self.assertEqual(item.authors, ["Beyond Babish"])

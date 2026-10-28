@@ -24,7 +24,7 @@ from django.utils import timezone
 
 from app.helpers import has_real_image
 from app.models import Item, MediaTypes, Sources, Status, Video, VideoPlay
-from app.video_helpers import approved_thumbnail_url
+from app.video_helpers import approved_thumbnail_url, set_channel_as_author
 from integrations import import_progress
 from integrations.imports.helpers import MediaImportError
 
@@ -221,6 +221,8 @@ class YouTubeTakeoutImporter:
             if thumbnail and not has_real_image(item.image):
                 item.image = thumbnail
                 item.save(update_fields=["image"])
+
+            set_channel_as_author(item, entry["channel"])
 
             watch_url = f"https://www.youtube.com/watch?v={video_id}"
             video, video_created = Video.objects.get_or_create(

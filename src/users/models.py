@@ -142,6 +142,16 @@ def relabel_end_date_sort_choice(media_type, choices):
     ]
 
 
+def relabel_author_sort_choice(media_type, choices):
+    """Call a video's author sort Channel, since its channel is stored as the author."""
+    if media_type != MediaTypes.VIDEO.value:
+        return choices
+    return [
+        (value, _("Channel")) if value == MediaSortChoices.AUTHOR else (value, label)
+        for value, label in choices
+    ]
+
+
 class MediaStatusChoices(models.TextChoices):
     """Choices for media list status options."""
 
