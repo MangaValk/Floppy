@@ -4,6 +4,7 @@ import datetime
 from http import HTTPStatus as HTTP  # noqa: N814
 from urllib.parse import urlparse
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework.response import Response
@@ -13,6 +14,8 @@ from app import history_cache
 from app.helpers import has_real_image
 from app.image_cache import is_approved_url
 from app.models import Item, MediaTypes, Status, Video, VideoPlay
+from app.services import youtube_game
+from app.tasks_youtube_game import lookup_youtube_game_tag
 
 from .helpers import check_source_type
 
@@ -157,6 +160,13 @@ class VideoPlayView(APIView):
             # Due again on the next Calendar reload, so the event appears.
             item.calendar_checked_at = None
             item.save(update_fields=["release_datetime", "calendar_checked_at"])
+
+        # Which game YouTube tags on the video is read from its public page, in
+        # the background and once per shared item, so a post never waits on it.
+        if youtube_game.lookup_due(item):
+            transaction.on_commit(
+                lambda: lookup_youtube_game_tag.delay(item.pk),
+            )
 
         video, _video_created = Video.objects.get_or_create(
             item=item,

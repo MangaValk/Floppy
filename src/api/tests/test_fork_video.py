@@ -289,3 +289,25 @@ class VideoPlayApiTests(FloppyApiTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"], [])
+
+
+class VideoGameTagTriggerTests(FloppyApiTestCase):
+    """A first post queues one game-tag lookup, later posts do not."""
+
+    def test_first_post_queues_one_lookup(self):
+        url = reverse(
+            "api_video_play",
+            kwargs={"source": "youtube", "media_id": "HQp_b8VHtgI"},
+        )
+        payload = {
+            "title": "A Minecraft video",
+            "lengthSeconds": 1000,
+            "progressSeconds": 100,
+            "externalId": "youtube:HQp_b8VHtgI:2026-10-02",
+        }
+        with (
+            patch("api.fork_views_video.lookup_youtube_game_tag.delay") as delay,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            self.client.post(url, payload, format="json", **self.auth_headers)
+        delay.assert_called_once_with(Item.objects.get(media_id="HQp_b8VHtgI").pk)

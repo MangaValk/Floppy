@@ -105,6 +105,7 @@ from app.models.tv import (
     Season,
 )
 from app.models.video import Video, VideoPlay
+from app.models.video_game_tag import VideoGameTag
 from app.models.watch_state import (
     WatchState,
     WatchStateChange,
@@ -115,6 +116,7 @@ from app.models.watch_state import (
 )
 
 __all__ = [
+    "VideoGameTag",
     "CREDITS_BACKFILL_VERSION",
     "DISCOVER_MOVIE_METADATA_BACKFILL_VERSION",
     "PERSON_PROFILE_BACKFILL_VERSION",
