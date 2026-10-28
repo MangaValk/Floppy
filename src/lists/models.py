@@ -4,7 +4,8 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 from django.db import models, transaction
-from django.db.models import Count, F, Max, OuterRef, Prefetch, Q, Subquery
+from django.db.models import Count, F, Max, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.urls import reverse
 
 from app.models import Item, MediaTypes, Sources
@@ -41,24 +42,23 @@ class CustomListManager(models.Manager):
 
         return (
             queryset.select_related("owner")
-            .prefetch_related(
-                "collaborators",
-                Prefetch(
-                    "items",
-                    queryset=Item.objects.order_by("-customlistitem__date_added"),
-                ),
-                Prefetch(
-                    "customlistitem_set",
-                    queryset=CustomListItem.objects.order_by("-date_added"),
-                ),
-            )
+            .prefetch_related("collaborators")
             .distinct()
         )
 
     def get_user_lists_with_stats(self, user, search=""):
         """Return user lists annotated with items_count and latest_update."""
         return self.get_user_lists(user, search=search).annotate(
-            items_count=Count("items", distinct=True),
+            items_count=Coalesce(
+                Subquery(
+                    CustomListItem.objects.filter(custom_list_id=OuterRef("pk"))
+                    .order_by()
+                    .values("custom_list_id")
+                    .annotate(total=Count("pk"))
+                    .values("total"),
+                ),
+                0,
+            ),
             latest_update=Subquery(
                 CustomListItem.objects.filter(
                     custom_list=OuterRef("pk"),

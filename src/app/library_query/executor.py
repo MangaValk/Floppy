@@ -35,6 +35,13 @@ from app.library_query.trackers import tracker_sources
 from app.models.choices import MediaTypes, Sources
 from app.models.item import Item
 
+# Only grouped shows (anime/seasons stored on TV rows) set library_media_type
+# to another type; every other library matches on media_type alone, which a
+# covering index answers without reading wide item rows.
+_LIBRARY_BUCKET_TYPES = frozenset(
+    (MediaTypes.TV.value, MediaTypes.ANIME.value, MediaTypes.SEASON.value),
+)
+
 if TYPE_CHECKING:
     from app.library_query.spec import LibraryQuery
 
@@ -113,7 +120,10 @@ class LibraryQueryExecutor:
 
     def _type_q(self, ctx) -> Q:
         """Return: the item itself belongs to this type's library."""
-        if self.query.routing == ROUTING_MODEL:
+        if (
+            self.query.routing == ROUTING_MODEL
+            or ctx.media_type not in _LIBRARY_BUCKET_TYPES
+        ):
             return Q(media_type=ctx.media_type)
         return Q(media_type=ctx.media_type) | Q(library_media_type=ctx.media_type)
 
@@ -166,8 +176,10 @@ class LibraryQueryExecutor:
         """Return collected or tagged items of this type that have no tracker row."""
         from app.models.discovery import CollectionEntry, ItemTag
 
-        collected = Q(
-            pk__in=CollectionEntry.objects.filter(user=self.user).values("item_id"),
+        # Exists keeps the plan item-driven: a user can hold 100k+ collection
+        # rows, and walking them into wide item rows costs seconds cold.
+        collected = Exists(
+            CollectionEntry.objects.filter(user=self.user, item_id=OuterRef("pk")),
         ) & ~Q(media_type=MediaTypes.EPISODE.value)
         if ctx.media_type in (MediaTypes.TV.value, MediaTypes.ANIME.value):
             collected |= Q(
@@ -390,8 +402,11 @@ class LibraryQueryExecutor:
             ordered = self._ordered(self.filtered)
             if total is None:
                 total = ordered.count()
-            items = list(ordered.defer(*defer)[offset : offset + limit])
-            return Page(items, total, used_sql=True)
+            # Sort on ids alone, then load the window: ordering a library
+            # would otherwise drag every candidate's wide row through the sort.
+            window = list(ordered.values_list("pk", flat=True)[offset : offset + limit])
+            by_id = Item.objects.defer(*defer).in_bulk(window)
+            return Page([by_id[i] for i in window if i in by_id], total, used_sql=True)
 
         ranked = self._scan_ranked
         selected_ids = [pk for *_rest, pk in ranked[offset : offset + limit]]
@@ -551,6 +566,7 @@ def _attach_media(user, batch: list[Candidate], needs: set[str]) -> None:
             media_type,
             list_mode=True,
             compact_episodes=True,
+            light_rows=True,
         )
         aggregated = BasicMedia.objects._aggregate_duplicate_data(rows, user, media_type)
         latest = {}

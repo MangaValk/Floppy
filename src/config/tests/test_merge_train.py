@@ -298,7 +298,7 @@ class MainTests(TestCase):
         env = {"GH_REPO": "o/r"}
         with (
             patch.object(train, "_gh", fake),
-            patch.object(train.time, "sleep"),
+            patch.object(train, "time"),
             patch.object(train, "datetime", _Clock),
             patch.dict("os.environ", env),
         ):
@@ -399,14 +399,14 @@ class MainTests(TestCase):
 
         with (
             patch.object(train, "_gh", counting),
-            patch.object(train.time, "sleep") as sleep,
+            patch.object(train, "time") as fake_time,
             patch.object(train, "datetime", _Clock),
             patch.dict("os.environ", {"GH_REPO": "o/r"}),
         ):
             code = train.main(["merge_train.py"])
         graphql = [c for c in calls if c[:2] == ("api", "graphql")]
         self.assertEqual(len(graphql), 1 + train.UNKNOWN_RETRIES)
-        self.assertEqual(sleep.call_count, train.UNKNOWN_RETRIES)
+        self.assertEqual(fake_time.sleep.call_count, train.UNKNOWN_RETRIES)
         self.assertEqual((code, fake.updated), (0, [1]))
 
     def test_compare_failure_does_not_block_the_next_pr(self):

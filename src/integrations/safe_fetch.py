@@ -437,6 +437,9 @@ def safe_fetch(
                 current = requests.compat.urljoin(current, location)
                 continue
 
+            # The response URL is the pinned address; keep the real
+            # destination for callers that resolve relative links against it.
+            response.logical_url = current
             try:
                 return response, _read_bounded(response, deadline, max_bytes)
             finally:

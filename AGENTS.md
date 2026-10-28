@@ -264,7 +264,7 @@ Floppy is a Django 5.2 app for self-hosted media tracking with Celery workers an
 
 ## Upstream Resolution Workflow
 
-[`UPSTREAM_PORTS.md`](UPSTREAM_PORTS.md) is the durable source of truth. “Up to date” means zero unclassified upstream outcomes, not matching Git histories.
+The upstream-port ledger (`UPSTREAM_PORTS.md`, kept locally and never committed) is the durable source of truth. “Up to date” means zero unclassified upstream outcomes, not matching Git histories.
 
 For each new outcome in `last-reviewed..upstream/dev`:
 
@@ -296,6 +296,9 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
 - Primary local development is source-run Django with Redis, Celery worker/beat, and Tailwind watcher.
 - Secondary Docker usage is for deployment or quick smoke runs; the compose files use the prebuilt `ghcr.io/dannyvfilms/floppy` image.
 
+## Documentation Policy
+`docs/` holds only permanent, public-facing, non-situational documentation: install and deployment guides, architecture contracts, integration guides, and playbooks that stay true as the code changes. Everything else is temporary agent storage during development and must not be committed: plans, handoffs, investigations, analyses, requirement checklists, benchmark and PR screenshots, upstream-port ledgers, and per-task reports. Keep those under `docs/plans/` (ignored by git) and delete them when the work lands. When unsure whether a document belongs, apply this rule: if it describes a moment, a task or a person's working context rather than how the project works today, it does not belong in the repo. Never commit absolute local paths, usernames or machine details.
+
 ## Agent Docs
 - `docs/agents/domain_model.md`: generated vocabulary guide; regenerate and check it with the commands under Local Commands.
 - `docs/agents/media_type_integration.md`: playbook for adding new media types safely.
@@ -316,6 +319,7 @@ Models/migrations and divergent UI normally require manual adaptation. Provider 
 - `docs/architecture/library-query.md`: the shared engine for list-shaped surfaces (media list, API, smart lists, Home shelves) — how a page stays bounded, and how to add a filter or sort.
 - `docs/architecture/statistics-sync.md`: how Statistics stay warm — dirty days and snapshots in the database, one budgeted per-user sync, the reconciler that makes a lost Celery message harmless, and which write paths must mark changes.
 - `docs/architecture/game-artwork.md`: where a game's logo and backdrop come from — the provider order, the stored provenance, and how ScreenScraper credentials are kept out of URLs.
+- `docs/architecture/local-covers.md`: covers a person uploads, links or picks — where the files live, what is accepted, how they are fetched, who may change and see them.
 - `docs/architecture/media-card.md`: the one media card and its surfaces — what may differ between pages and why, how a page loads the viewer's rating and status, and the test that catches a grid that drifts.
 - `docs/architecture/history-memory.md`: what a History request costs a web worker — the item columns history must not load, which paths are bounded by the response and which are still bounded by the history.
 - `docs/integrations/nuvio-client-guide.md`: what a third-party tracking client implements, with `api.tests.test_nuvio_conformance` as its runnable half.

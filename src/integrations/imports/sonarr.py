@@ -8,7 +8,7 @@ import requests
 from django.conf import settings
 from django.utils import timezone
 
-from app.models import CollectionEntry, Item, MediaTypes, Sources
+from app.models import Item, MediaTypes, Sources
 from app.providers import services
 from integrations import connection_health, import_progress
 from integrations.imports.helpers import (
@@ -172,7 +172,7 @@ class SonarrImporter:
                 complete = False
                 continue
             owned_item_ids.update(synced_item_ids)
-            imported_counts[item.media_type] += 1
+            imported_counts["collection"] += 1
             imported_counts["updated"] += 1
 
         if complete:
@@ -318,7 +318,19 @@ class SonarrImporter:
             show_item,
             keep_episode_item_ids=collected_episode_item_ids,
         )
-        return collected_episode_item_ids
+        if not collected_episode_item_ids:
+            return collected_episode_item_ids
+
+        # The show gets its own entry so it lists under TV Shows, as Plex does.
+        upsert_collection_source_state(
+            user=self.user,
+            item=show_item,
+            source="sonarr",
+            source_instance_id=self.instance.pk,
+            quality_label="",
+            source_updated_at=self._parse_source_timestamp(row),
+        )
+        return collected_episode_item_ids | {show_item.id}
 
     def _child_bucket(self, show_item, default_bucket):
         """Return the library bucket a show's season/episode rows belong in.
@@ -523,37 +535,13 @@ class SonarrImporter:
             )
 
         if keep_episode_item_ids:
-            self._retire_legacy_series_collection_entry(show_item)
+            return
 
         remove_collection_source_state(
             user=self.user,
             item=show_item,
             source="sonarr",
             source_instance_id=self.instance.pk,
-        )
-
-    def _retire_legacy_series_collection_entry(self, show_item):
-        """Delete the legacy show-level Sonarr row once episode rows exist."""
-        if not show_item.source_states.filter(
-            user=self.user,
-            source="sonarr",
-            source_instance_id=self.instance.pk,
-        ).exists():
-            return
-
-        legacy_entry_ids = list(
-            CollectionEntry.objects.filter(
-                user=self.user,
-                item=show_item,
-            )
-            .order_by("-updated_at", "-collected_at", "-id")
-            .values_list("id", flat=True)
-        )
-        if len(legacy_entry_ids) != 1:
-            return
-
-        retry_on_lock(
-            lambda: CollectionEntry.objects.filter(id=legacy_entry_ids[0]).delete(),
         )
 
     def _parse_episode_release_datetime(self, row):

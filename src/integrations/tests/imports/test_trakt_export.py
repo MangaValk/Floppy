@@ -1,5 +1,6 @@
 import json
 import zipfile
+from datetime import UTC, datetime
 from io import BytesIO
 from unittest.mock import Mock, patch
 
@@ -596,6 +597,90 @@ class ImportTraktExport(TestCase):
                 item__media_type=MediaTypes.EPISODE.value,
             ).count(),
             1,
+        )
+
+    def _collection_shows_export(self, show_last_collected_at=None):
+        show_entry = {
+            "type": "show",
+            "show": _show(),
+            "seasons": [
+                {
+                    "number": 1,
+                    "episodes": [
+                        {"number": 1, "collected_at": "2024-07-17T14:25:07.000Z"},
+                        {"number": 2, "collected_at": "2024-07-18T10:00:00.000Z"},
+                    ],
+                },
+            ],
+        }
+        if show_last_collected_at:
+            show_entry["last_collected_at"] = show_last_collected_at
+        return _zip_bytes({"collection-shows.json": [show_entry]})
+
+    def _rollup_dates(self):
+        return {
+            entry.item.media_type: entry.collected_at
+            for entry in CollectionEntry.objects.filter(user=self.user).exclude(
+                item__media_type=MediaTypes.EPISODE.value,
+            )
+        }
+
+    @patch("integrations.imports.trakt.TraktImporter._get_metadata")
+    def test_collection_rollups_keep_historical_dates(self, mock_get_metadata):
+        """Season and show entries use Trakt dates, not the import time."""
+        mock_get_metadata.side_effect = _metadata_side_effect
+
+        importer(
+            self._collection_shows_export("2024-07-19T00:00:00.000Z"),
+            self.user,
+            "new",
+        )
+
+        dates = self._rollup_dates()
+        self.assertEqual(
+            dates[MediaTypes.SEASON.value],
+            datetime(2024, 7, 18, 10, 0, tzinfo=UTC),
+        )
+        self.assertEqual(
+            dates[MediaTypes.TV.value],
+            datetime(2024, 7, 19, 0, 0, tzinfo=UTC),
+        )
+
+    @patch("integrations.imports.trakt.TraktImporter._get_metadata")
+    def test_collection_show_date_falls_back_to_newest_episode(
+        self,
+        mock_get_metadata,
+    ):
+        """Without last_collected_at the show uses its newest episode date."""
+        mock_get_metadata.side_effect = _metadata_side_effect
+
+        importer(self._collection_shows_export(), self.user, "new")
+
+        self.assertEqual(
+            self._rollup_dates()[MediaTypes.TV.value],
+            datetime(2024, 7, 18, 10, 0, tzinfo=UTC),
+        )
+
+    @patch("integrations.imports.trakt.TraktImporter._get_metadata")
+    def test_overwrite_corrects_existing_rollup_dates(self, mock_get_metadata):
+        """Re-importing in overwrite mode fixes dates set to the import time."""
+        mock_get_metadata.side_effect = _metadata_side_effect
+        export = self._collection_shows_export("2024-07-19T00:00:00.000Z")
+
+        importer(export, self.user, "new")
+        CollectionEntry.objects.filter(user=self.user).update(
+            collected_at=datetime(2026, 10, 3, tzinfo=UTC),
+        )
+        importer(export, self.user, "overwrite")
+
+        dates = self._rollup_dates()
+        self.assertEqual(
+            dates[MediaTypes.TV.value],
+            datetime(2024, 7, 19, 0, 0, tzinfo=UTC),
+        )
+        self.assertEqual(
+            dates[MediaTypes.SEASON.value],
+            datetime(2024, 7, 18, 10, 0, tzinfo=UTC),
         )
 
     @patch("integrations.imports.trakt.TraktImporter._get_metadata")

@@ -1197,10 +1197,50 @@ def run_sync(
         # Repairs scores written without signals (legacy data). It scans every
         # reading row, so it runs once a day and on explicit rebuilds, not on
         # every change.
-        if full or only_ranges or state.synced_day != today:
+        stale_scan_key = f"statistics_stale_scan:{user_id}:{today.isoformat()}"
+        scan_stale = full or only_ranges or state.synced_day != today
+        if scan_stale and not (full or only_ranges) and cache.get(stale_scan_key):
+            # An earlier pass today already scanned and recorded what it
+            # found; its dirty rows carry the progress. Rescanning would
+            # rediscover days it just rebuilt.
+            scan_stale = False
+        if scan_stale:
             from app.statistics_cache import _collect_stale_reading_score_days
 
-            work.update(_collect_stale_reading_score_days(user))
+            stale_days = set(_collect_stale_reading_score_days(user))
+            work.update(stale_days)
+            new_dirty = stale_days - set(dirty_tokens)
+            if deadline is not None and not only_ranges:
+                # Found by a scan, not by a write, so nothing records that
+                # they are unfinished. On a host slower than the budget allows
+                # for them, every continuation would rescan, rebuild the same
+                # days from the start and never reach the ranges or settle
+                # ``synced_day``. Make them durable so each slice's progress
+                # sticks, and scan once a day per user.
+                if new_dirty:
+                    with transaction.atomic():
+                        _check_lease(user_id, lease_token)
+                        StatisticsDirtyDay.objects.bulk_create(
+                            [
+                                StatisticsDirtyDay(
+                                    user_id=user_id,
+                                    day=day,
+                                    token=uuid.uuid4(),
+                                    marked_at=now,
+                                )
+                                for day in new_dirty
+                            ],
+                            update_conflicts=True,
+                            unique_fields=["user", "day"],
+                            update_fields=["token", "marked_at"],
+                            batch_size=500,
+                        )
+                    dirty_tokens = dict(
+                        StatisticsDirtyDay.objects.filter(
+                            user_id=user_id
+                        ).values_list("day", "token")
+                    )
+                cache.set(stale_scan_key, 1, timeout=86400)
         # Dirty days first, newest first: repeatedly warming Today must not
         # consume every continuation's budget before older dirty days progress.
         work_days = sorted(set(dirty_tokens), reverse=True) + sorted(

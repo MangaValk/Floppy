@@ -1,12 +1,13 @@
 import calendar
 import re
 from datetime import date, datetime, time, timedelta
+from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
 from django import template
 from django.conf import settings
-from django.urls import reverse
+from django.urls import reverse as _django_reverse
 from django.utils import formats, timezone
 from django.utils.dateparse import parse_date
 from django.utils.html import format_html
@@ -28,6 +29,22 @@ from app.stats_music import COUNTRY_NAME_MAP
 from users.media_type_chips import media_type_chip_preferences
 from users.models import ALL_SEARCH_TYPE, HISTORY_VIEW_TYPE, TimeFormatChoices
 from users.templatetags.user_tags import user_date_format, user_time_format
+
+
+@lru_cache(maxsize=8192)
+def _reverse_cached(viewname, kwargs_items):
+    return _django_reverse(viewname, kwargs=dict(kwargs_items))
+
+
+def reverse(viewname, kwargs=None, **rest):
+    """Resolve URLs; a card grid repeats the same few thousand names."""
+    if kwargs and not rest:
+        try:
+            return _reverse_cached(viewname, tuple(sorted(kwargs.items())))
+        except TypeError:  # unhashable kwarg value
+            pass
+    return _django_reverse(viewname, kwargs=kwargs, **rest)
+
 
 register = template.Library()
 COUNTRY_CODE_LENGTH = 2

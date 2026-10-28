@@ -187,8 +187,14 @@ def _music_history_dates(user, win_start, win_end):
     ).values_list("end_date", flat=True)
 
 
-def build_history_day(user, day_key, logging_style_override=None, media_types=None):
-    """Build a single history day payload for a user."""
+def build_history_day(
+    user, day_key, logging_style_override=None, media_types=None, prefetch=None
+):
+    """Build a single history day payload for a user.
+
+    ``prefetch`` (a ``HistoryRangePrefetch``) supplies this day's rows from one
+    span-wide load instead of querying them here; the payload is identical.
+    """
     if not day_key:
         return None
     logging_style = _normalize_logging_style(logging_style_override, user)
@@ -248,9 +254,13 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
         if include_episode
         else Episode.all_objects.none()
     )
-    episodes = list(episodes)
-    episode_title_map = {}
-    if episodes:
+    if prefetch:
+        episodes = prefetch.episodes(day_date) if include_episode else []
+        episode_title_map = prefetch.episode_titles
+    else:
+        episodes = list(episodes)
+        episode_title_map = {}
+    if episodes and not prefetch:
         episode_keys = []
         for ep in episodes:
             ep_item = getattr(ep, "item", None)
@@ -320,19 +330,23 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
         else Movie.objects.none()
     )
 
-    movies = list(
-        movies_qs.filter(
-            models.Q(end_date__gte=day_start, end_date__lt=day_end)
-            | (
-                models.Q(end_date__isnull=True)
-                & models.Q(start_date__gte=day_start, start_date__lt=day_end)
-            ),
-        ).order_by("-end_date")
-    )
+    if prefetch:
+        movies = prefetch.movies(day_date) if include_movie else []
+        movie_play_map = prefetch.movie_play_map
+    else:
+        movies = list(
+            movies_qs.filter(
+                models.Q(end_date__gte=day_start, end_date__lt=day_end)
+                | (
+                    models.Q(end_date__isnull=True)
+                    & models.Q(start_date__gte=day_start, start_date__lt=day_end)
+                ),
+            ).order_by("-end_date")
+        )
+        movie_play_map = {}
 
     # Play counts only for this day's titles, not the user's whole library.
-    movie_play_map = {}
-    if movies:
+    if movies and not prefetch:
         movie_play_counts = (
             movies_qs.filter(
                 item__media_id__in={movie.item.media_id for movie in movies},
@@ -387,15 +401,23 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 )
                 .values("id"),
             )
-        records = list(
-            model.objects.filter(user=user)
-            .filter(day_filter)
-            .select_related("item")
-            .defer(*history_deferred_item_fields("item"))
-        )
-        episode_watches = (
-            flat_anime_episode_watches(records) if model is Anime else {}
-        )
+        if prefetch:
+            records = (
+                prefetch.anime(day_date)
+                if model is Anime
+                else prefetch.reading(media_type_value, day_date)
+            )
+            episode_watches = prefetch.anime_watches if model is Anime else {}
+        else:
+            records = list(
+                model.objects.filter(user=user)
+                .filter(day_filter)
+                .select_related("item")
+                .defer(*history_deferred_item_fields("item"))
+            )
+            episode_watches = (
+                flat_anime_episode_watches(records) if model is Anime else {}
+            )
         for record in records:
             item = getattr(record, "item", None)
             if not item:
@@ -446,7 +468,9 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
 
     # Music (HistoricalMusic for the day)
     music_history = []
-    if include_music:
+    if include_music and prefetch:
+        music_history = prefetch.music(day_date)
+    elif include_music:
         HistoricalMusic = apps.get_model("app", "HistoricalMusic")
         music_history = list(
             HistoricalMusic.objects.filter(
@@ -464,59 +488,67 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
         }
         music_ids = {record["id"] for record in music_history if record["id"]}
 
-        album_map = (
-            {
-                album.id: album
-                for album in Album.objects.filter(id__in=album_ids).select_related(
-                    "artist"
-                )
-            }
-            if album_ids
-            else {}
-        )
-        track_map = (
-            {track.id: track for track in Track.objects.filter(id__in=track_ids)}
-            if track_ids
-            else {}
-        )
-        music_map = (
-            {
-                music.id: music
-                for music in Music.objects.filter(
-                    id__in=music_ids, user=user
-                )
-                .select_related("item", "album", "track")
-                .defer(*history_deferred_item_fields("item"))
-            }
-            if music_ids
-            else {}
-        )
-
-        track_duration_cache = {}
-        if album_ids:
-            tracks_qs = Track.objects.filter(
-                album_id__in=album_ids,
-                duration_ms__isnull=False,
-            ).values("album_id", "title", "duration_ms", "musicbrainz_recording_id")
-            for track_data in tracks_qs.iterator(chunk_size=500):
-                title_key = (track_data["album_id"], track_data["title"])
-                track_duration_cache[title_key] = track_data["duration_ms"]
-                if track_data["musicbrainz_recording_id"]:
-                    recording_key = (
-                        "recording",
-                        track_data["musicbrainz_recording_id"],
+        if prefetch:
+            album_map = prefetch.album_map
+            track_map = prefetch.track_map
+            music_map = prefetch.music_map
+            track_duration_cache = prefetch.track_durations
+            album_scores = prefetch.album_scores
+        else:
+            album_map = (
+                {
+                    album.id: album
+                    for album in Album.objects.filter(id__in=album_ids).select_related(
+                        "artist"
                     )
-                    track_duration_cache[recording_key] = track_data["duration_ms"]
+                }
+                if album_ids
+                else {}
+            )
+            track_map = (
+                {track.id: track for track in Track.objects.filter(id__in=track_ids)}
+                if track_ids
+                else {}
+            )
+            music_map = (
+                {
+                    music.id: music
+                    for music in Music.objects.filter(
+                        id__in=music_ids, user=user
+                    )
+                    .select_related("item", "album", "track")
+                    .defer(*history_deferred_item_fields("item"))
+                }
+                if music_ids
+                else {}
+            )
 
-        album_scores = {}
-        if album_ids:
-            album_trackers = AlbumTracker.objects.filter(
-                user=user,
-                album_id__in=album_ids,
-            ).values("album_id", "score")
-            for tracker in album_trackers.iterator(chunk_size=500):
-                if tracker["score"] is not None:
-                    album_scores[tracker["album_id"]] = tracker["score"]
+            track_duration_cache = {}
+            if album_ids:
+                tracks_qs = Track.objects.filter(
+                    album_id__in=album_ids,
+                    duration_ms__isnull=False,
+                ).values("album_id", "title", "duration_ms", "musicbrainz_recording_id")
+                for track_data in tracks_qs.iterator(chunk_size=500):
+                    title_key = (track_data["album_id"], track_data["title"])
+                    track_duration_cache[title_key] = track_data["duration_ms"]
+                    if track_data["musicbrainz_recording_id"]:
+                        recording_key = (
+                            "recording",
+                            track_data["musicbrainz_recording_id"],
+                        )
+                        track_duration_cache[recording_key] = track_data["duration_ms"]
+
+            album_scores = {}
+            if album_ids:
+                album_trackers = AlbumTracker.objects.filter(
+                    user=user,
+                    album_id__in=album_ids,
+                ).values("album_id", "score")
+                for tracker in album_trackers.iterator(chunk_size=500):
+                    if tracker["score"] is not None:
+                        album_scores[tracker["album_id"]] = tracker["score"]
+
 
         album_groups = {}
         for record in music_history:
@@ -616,7 +648,9 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
 
     # Podcasts (HistoricalPodcast for the day)
     podcast_history_records = []
-    if include_podcast:
+    if include_podcast and prefetch:
+        podcast_history_records = prefetch.podcasts(day_date)
+    elif include_podcast:
         HistoricalPodcast = apps.get_model("app", "HistoricalPodcast")
         podcast_history_records = list(
             HistoricalPodcast.objects.filter(
@@ -629,18 +663,24 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
         )
     if podcast_history_records:
         podcast_ids = list({record.id for record in podcast_history_records})
-        podcasts_lookup = {
-            p.id: p
-            for p in Podcast.objects.filter(
-                id__in=podcast_ids,
-                user=user,
-            )
-            .select_related("item", "episode", "episode__show", "show")
-            .defer(*history_deferred_item_fields("item"))
-        }
-
-        podcast_play_counts = {}
-        if podcast_ids:
+        if prefetch:
+            podcasts_lookup = prefetch.podcast_lookup
+            counts_by_id = {
+                podcast_id: prefetch.podcast_counts[podcast_id]
+                for podcast_id in podcast_ids
+                if podcast_id in prefetch.podcast_counts
+            }
+        else:
+            HistoricalPodcast = apps.get_model("app", "HistoricalPodcast")
+            podcasts_lookup = {
+                p.id: p
+                for p in Podcast.objects.filter(
+                    id__in=podcast_ids,
+                    user=user,
+                )
+                .select_related("item", "episode", "episode__show", "show")
+                .defer(*history_deferred_item_fields("item"))
+            }
             counts_by_id = {
                 row["id"]: row["play_count"]
                 for row in HistoricalPodcast.objects.filter(
@@ -653,6 +693,9 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
                 .values("id")
                 .annotate(play_count=models.Count("id"))
             }
+
+        podcast_play_counts = {}
+        if podcast_ids:
             for podcast_id, play_count in counts_by_id.items():
                 podcast = podcasts_lookup.get(podcast_id)
                 if not podcast or not podcast.item:
@@ -743,7 +786,11 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
             if include_game
             else Game.objects.none()
         )
-        for game in games.iterator(chunk_size=500):
+        if prefetch:
+            games = prefetch.games(day_date) if include_game else []
+        else:
+            games = games.iterator(chunk_size=500)
+        for game in games:
             activity_dt = game.end_date or game.start_date or game.created_at
             played_at_local = _localize_datetime(activity_dt)
             if not played_at_local:
@@ -806,7 +853,11 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
             if include_boardgame
             else BoardGame.objects.none()
         )
-        for boardgame in boardgames.iterator(chunk_size=500):
+        if prefetch:
+            boardgames = prefetch.boardgames(day_date) if include_boardgame else []
+        else:
+            boardgames = boardgames.iterator(chunk_size=500)
+        for boardgame in boardgames:
             activity_dt = (
                 boardgame.end_date or boardgame.start_date or boardgame.created_at
             )
@@ -858,7 +909,11 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
             if include_game
             else Game.objects.none()
         )
-        for game in games.iterator(chunk_size=500):
+        if prefetch:
+            games = prefetch.games(day_date) if include_game else []
+        else:
+            games = games.iterator(chunk_size=500)
+        for game in games:
             total_minutes = game.progress or 0
             if total_minutes <= 0:
                 continue
@@ -921,7 +976,11 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
             if include_boardgame
             else BoardGame.objects.none()
         )
-        for boardgame in boardgames.iterator(chunk_size=500):
+        if prefetch:
+            boardgames = prefetch.boardgames(day_date) if include_boardgame else []
+        else:
+            boardgames = boardgames.iterator(chunk_size=500)
+        for boardgame in boardgames:
             total_plays = boardgame.progress or 0
             if total_plays <= 0:
                 continue
@@ -979,12 +1038,16 @@ def build_history_day(user, day_key, logging_style_override=None, media_types=No
 
     # Videos (one row per play ending on this day)
     if include_video:
-        plays = VideoPlay.objects.filter(
-            video__user=user,
-            end_date__gte=day_start,
-            end_date__lt=day_end,
-        ).select_related("video__item").defer(
-            *history_deferred_item_fields("video__item"),
+        plays = (
+            prefetch.videos(day_date)
+            if prefetch
+            else VideoPlay.objects.filter(
+                video__user=user,
+                end_date__gte=day_start,
+                end_date__lt=day_end,
+            )
+            .select_related("video__item")
+            .defer(*history_deferred_item_fields("video__item"))
         )
         for play in plays:
             entry = _build_video_play_entry(play)
@@ -1033,7 +1096,7 @@ def _cache_history_day_payload(
 
 
 def _build_and_cache_history_day(
-    user, day_key, logging_style_override=None, media_types=None
+    user, day_key, logging_style_override=None, media_types=None, prefetch=None
 ):
     logging_style = _normalize_logging_style(logging_style_override, user)
     normalized_day_key = _day_key_from_value(day_key)
@@ -1044,6 +1107,7 @@ def _build_and_cache_history_day(
         normalized_day_key,
         logging_style_override=logging_style,
         media_types=media_types,
+        prefetch=prefetch,
     )
     if day_payload is None:
         day_payload = _empty_history_day(_date_from_day_key(normalized_day_key))

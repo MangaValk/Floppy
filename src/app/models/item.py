@@ -445,6 +445,21 @@ class Item(CalendarTriggerMixin, models.Model):
                 fields=["media_id", "media_type", "source"],
                 name="app_item_media_lookup_idx",
             ),
+            # Library, search and released-episode queries filter by
+            # media_type first. Without a media_type-leading index they scan
+            # the whole (~2 KB/row) table; the trailing columns also cover the
+            # per-show released-episode aggregate without reading item rows.
+            models.Index(
+                fields=[
+                    "media_type",
+                    "media_id",
+                    "source",
+                    "season_number",
+                    "episode_number",
+                    "release_datetime",
+                ],
+                name="app_item_type_lookup_idx",
+            ),
         ]
         ordering = ["media_id"]
 

@@ -47,6 +47,11 @@ def optimize_database_statistics():
     with connection.cursor() as cursor:
         before = _stat_rows(cursor)
         cursor.execute(f"PRAGMA analysis_limit={int(settings.DB_OPTIMIZE_ANALYSIS_LIMIT)}")
+        if before == 0:
+            # Plain ANALYZE does not depend on the SQLite version honouring
+            # the "check every table" bit of OPTIMIZE_MASK (older builds, as in
+            # a local Python, optimise nothing and leave the planner blind).
+            cursor.execute("ANALYZE")
         cursor.execute(f"PRAGMA optimize={OPTIMIZE_MASK}")
         after = _stat_rows(cursor)
     duration_ms = round((time.perf_counter() - started) * 1000, 1)

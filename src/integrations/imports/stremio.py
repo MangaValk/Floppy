@@ -151,8 +151,16 @@ def get_user(auth_key):
     return _api_call("getUser", auth_key=auth_key)
 
 
-def get_library_items(auth_key):
-    """Return every library item with watch state."""
+def get_library_items(auth_key, ids=None):
+    """Return library items with watch state: only `ids` when given, else all."""
+    if ids is not None:
+        return _api_call(
+            "datastoreGet",
+            auth_key=auth_key,
+            collection="libraryItem",
+            ids=list(ids),
+            all=False,
+        )
     return _api_call(
         "datastoreGet",
         auth_key=auth_key,

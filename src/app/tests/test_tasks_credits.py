@@ -245,7 +245,7 @@ class CreditsBackfillTaskTests(TestCase):
         self.assertEqual(result["errors"], 0)
         self.assertEqual(mock_sync.call_count, 2)
 
-    @patch("app.tasks_credits._clear_item_metadata_cache")
+    @patch("app.tasks_credits._clear_items_metadata_cache")
     @patch("app.providers.services.get_media_metadata")
     def test_credits_404_is_terminal_and_clears_stale_metadata_cache(
         self,
@@ -277,7 +277,7 @@ class CreditsBackfillTaskTests(TestCase):
 
         self.assertEqual(result["updated"], 0)
         self.assertEqual(result["errors"], 1)
-        mock_clear_cache.assert_called_once_with(item)
+        mock_clear_cache.assert_called_once_with([item])
         state = MetadataBackfillState.objects.get(
             item=item,
             field=MetadataBackfillField.CREDITS,

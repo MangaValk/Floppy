@@ -1,4 +1,5 @@
 import gc
+import importlib
 import logging.handlers
 import os
 import time
@@ -116,7 +117,20 @@ def _load_url_conf(server):
     try:
         from django.urls import get_resolver
 
-        get_resolver().url_patterns  # noqa: B018  # the property imports the URLconf
+        resolver = get_resolver()
+        resolver.url_patterns  # noqa: B018  # the property imports the URLconf
+        # Building the reverse table and importing what the save views import
+        # inside the function are the rest of a first write's cold cost (the
+        # first save after each recycle took seconds on a slow disk).
+        resolver._populate()
+        for module in (
+            "app.tasks",
+            "lists.tasks",
+            "app.services.metadata_resolution",
+            "app.services.bulk_episode_tracking",
+            "app.statistics_sync",
+        ):
+            importlib.import_module(module)
     except Exception:
         server.log.exception("[gunicorn] could not preload the URLconf")
 

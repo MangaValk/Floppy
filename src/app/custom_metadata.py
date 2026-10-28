@@ -9,7 +9,7 @@ from datetime import date, datetime
 from django import forms
 from django.conf import settings
 
-from app import helpers
+from app import helpers, local_covers
 from app.models import MediaTypes
 from app.statistics import parse_runtime_to_minutes
 
@@ -683,8 +683,12 @@ def _build_field(spec: CustomMetadataFieldSpec) -> forms.Field:
             **common_kwargs,
         )
     if spec.widget == "url":
-        return forms.URLField(
-            widget=forms.URLInput(attrs={"placeholder": spec.placeholder}),
+        return _CoverAwareURLField(
+            # Plain text input: a type="url" box would make the browser refuse
+            # the /covers/... path of an uploaded cover. The field validates.
+            widget=forms.TextInput(
+                attrs={"placeholder": spec.placeholder, "inputmode": "url"}
+            ),
             **common_kwargs,
         )
     if spec.widget == "date":
@@ -703,6 +707,15 @@ def _build_field(spec: CustomMetadataFieldSpec) -> forms.Field:
         widget=forms.TextInput(attrs={"placeholder": spec.placeholder}),
         **common_kwargs,
     )
+
+
+class _CoverAwareURLField(forms.URLField):
+    """A URL field that also keeps a cover the person uploaded to Floppy."""
+
+    def clean(self, value):
+        if local_covers.is_local(value):
+            return value
+        return super().clean(value)
 
 
 def _manual_metadata_map(item) -> dict:
