@@ -72,6 +72,21 @@ class MediaCardSurfaceContractTest(TestCase):
             **context,
         )
 
+    def test_home_grid_preserves_mapping_entry_subtitles(self):
+        """Detail carousels reuse Home cards with mapping-shaped entries."""
+        content = self.render(
+            '{% include "app/components/home_grid.html" %}',
+            media_list={
+                "items": [{
+                    "item": self.item,
+                    "media": self.movie,
+                    "subtitle_override": "Existing Home subtitle",
+                }],
+            },
+        )
+        self.assertIn("Existing Home subtitle", content)
+        self.assertIn("Contract Movie", content)
+
     def test_rating_shows_on_every_surface(self):
         """A rating is never a per-surface choice: a tracked card always shows it."""
         for surface in SURFACES:

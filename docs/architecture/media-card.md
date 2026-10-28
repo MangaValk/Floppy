@@ -50,6 +50,7 @@ and untracked items keep the plain read-only rating. `update_media_score` return
 |---|---|---|
 | `library`, `collection`, `related`, `seasons`, `list_recommendations` | Nothing | |
 | `home` | Next-event chip and subtitle | Upcoming shelves lead with the next release |
+| `up_next` | Queue chip and always-visible subtitle | Next episode and backlog/countdown must be readable without hover, including on touch screens |
 | `list` | S01E02 subtitle on episodes | A list can hold single episodes |
 | `credit` | Role line and watched-runtime chip from the `credit` value | A person's or studio's titles show what that person did on each one |
 | `tier` | No status chip, no hover actions, no release-year placeholder | A tile on a list's tier board: the board owns clicks and drags |

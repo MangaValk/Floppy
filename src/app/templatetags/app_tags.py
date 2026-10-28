@@ -14,6 +14,7 @@ from django.utils.html import format_html
 from django.utils.translation import (
     get_language,
     get_language_info,
+    ngettext,
     npgettext,
     pgettext,
 )
@@ -361,6 +362,39 @@ def no_underscore(arg1):
 def image_url(value):
     """Return a safe Floppy image proxy URL when external caching is enabled."""
     return image_cache.rewrite_image_url(value)
+
+
+@register.simple_tag
+def episode_queue_url(item, media):
+    """Return the episode page the Up Next chip opens."""
+    queue = media.next_episode_queue
+    if queue.get("season_number") is None:
+        return ""
+    is_anime = item.media_type == MediaTypes.ANIME.value
+    return reverse(
+        "anime_episode_details" if is_anime else "episode_details",
+        kwargs={
+            "source": queue["source"],
+            "media_id": queue["media_id"],
+            "title": slug(item.title) or slug(str(queue["media_id"])) or "item",
+            "season_number": queue["season_number"],
+            "episode_number": queue["episode_number"],
+        },
+    )
+
+
+@register.simple_tag
+def episode_queue_label(media):
+    """Localize the Up Next chip when rendering, after the Home row cache."""
+    queue = media.next_episode_queue
+    if queue["released"]:
+        return f"{media.episodes_left} {_('Behind')}"
+    days = queue.get("days_until")
+    if days is None:
+        return _("Upcoming")
+    if days == 0:
+        return _("Today")
+    return f"{days} {ngettext('day', 'days', days)}"
 
 
 @register.filter
