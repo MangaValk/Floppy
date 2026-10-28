@@ -12392,3 +12392,64 @@ class EpisodePickerTemplateContractTests(SimpleTestCase):
             'class="block min-w-0 flex-1 truncate text-sm font-medium"',
             template,
         )
+
+
+class ManualComicIssueDetailsTests(TestCase):
+    """What the Metadata editor saves on a comic issue shows on its page."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="issue-details", password="x"
+        )
+        self.client.login(username="issue-details", password="x")
+        self.item = Item.objects.create(
+            media_id="manual-issue-details",
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.COMIC_ISSUE.value,
+            title="Manual Issue",
+            publishers="Nova Press",
+            format="Trade Paperback",
+            country="US",
+            languages=["English", "French"],
+            authors=["Ada Writer", "Ben Artist"],
+            genres=["Sci-Fi"],
+            manual_metadata={
+                "synopsis": "Lost signal.",
+                "genres": ["Sci-Fi"],
+                "details": {
+                    "release_date": "2024-03-06",
+                    "publisher": "Nova Press",
+                    "format": "Trade Paperback",
+                    "country": "US",
+                    "languages": ["English", "French"],
+                    "author": ["Ada Writer", "Ben Artist"],
+                },
+            },
+        )
+        CollectionEntry.objects.create(user=self.user, item=self.item)
+        MetadataProviderPreference.objects.create(
+            user=self.user,
+            item=self.item,
+            provider=Sources.MANUAL.value,
+        )
+
+    def test_saved_metadata_is_visible_on_the_page(self):
+        response = self.client.get(
+            reverse(
+                "media_details",
+                kwargs={
+                    "source": Sources.MANUAL.value,
+                    "media_type": MediaTypes.COMIC_ISSUE.value,
+                    "media_id": "manual-issue-details",
+                    "title": "manual-issue",
+                },
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Nova Press")
+        self.assertContains(response, "Trade Paperback")
+        self.assertContains(response, "English, French")
+        self.assertContains(response, "Ada Writer, Ben Artist")
+        self.assertContains(response, "Sci-Fi")
+        self.assertContains(response, "2024-03-06")
