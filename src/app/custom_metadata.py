@@ -684,7 +684,11 @@ def _build_field(spec: CustomMetadataFieldSpec) -> forms.Field:
         )
     if spec.widget == "url":
         return _CoverAwareURLField(
-            widget=forms.URLInput(attrs={"placeholder": spec.placeholder}),
+            # Plain text input: a type="url" box would make the browser refuse
+            # the /covers/... path of an uploaded cover. The field validates.
+            widget=forms.TextInput(
+                attrs={"placeholder": spec.placeholder, "inputmode": "url"}
+            ),
             **common_kwargs,
         )
     if spec.widget == "date":

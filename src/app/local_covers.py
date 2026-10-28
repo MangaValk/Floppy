@@ -179,7 +179,8 @@ def fetch_cover(url):
     encoding = response.encoding or "utf-8"
     image_url = page_image_url(
         body[:MAX_PAGE_BYTES].decode(encoding, errors="replace"),
-        url,
+        # A redirect can move the page, and relative links follow the page.
+        getattr(response, "logical_url", url),
     )
     if not image_url:
         raise CoverError(gettext("That page does not name a cover image."))

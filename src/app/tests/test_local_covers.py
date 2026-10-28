@@ -35,9 +35,10 @@ def image_bytes(image_format="PNG", size=(40, 60), color="red", **save_options):
     return output.getvalue()
 
 
-def fetched(body, content_type, status_code=200):
+def fetched(body, content_type, status_code=200, logical_url=None):
     """Return what ``safe_fetch`` returns: (response, body)."""
     response = Mock()
+    response.logical_url = logical_url or PAGE_URL
     response.status_code = status_code
     response.headers = {"Content-Type": content_type}
     response.encoding = "utf-8"
@@ -204,6 +205,26 @@ class UpdateItemCoverTests(CoverTestCase):
             fetch.call_args_list[1].args[0], "https://books.example.com/img/front.png"
         )
 
+    def test_a_relative_cover_follows_the_page_a_redirect_led_to(self):
+        page = '<html><head><meta property="og:image" content="cover.jpg"></head></html>'
+        responses = [
+            fetched(
+                page.encode(),
+                "text/html",
+                logical_url="https://books.example.com/books/123/",
+            ),
+            fetched(image_bytes("JPEG"), "image/jpeg"),
+        ]
+        with patch(
+            "app.local_covers.safe_fetch.safe_fetch", side_effect=responses
+        ) as fetch:
+            self.post_cover(cover_url="https://books.example.com/book")
+
+        self.assertEqual(
+            fetch.call_args_list[1].args[0],
+            "https://books.example.com/books/123/cover.jpg",
+        )
+
     def test_a_page_without_a_cover_says_so_and_changes_nothing(self):
         with patch(
             "app.local_covers.safe_fetch.safe_fetch",
@@ -321,6 +342,14 @@ class MetadataFormTests(CoverTestCase):
         form.save()
         self.item.refresh_from_db()
         self.assertEqual(self.item.image, value)
+
+    def test_the_image_box_accepts_a_local_path_in_the_browser(self):
+        form = custom_metadata.ManualMetadataForm(
+            item=self.item, prefix="metadata"
+        )
+
+        # type="url" would make the browser refuse /covers/... on save.
+        self.assertNotIn('type="url"', str(form["image_url"]))
 
     def test_other_values_are_still_checked_as_urls(self):
         form = custom_metadata.ManualMetadataForm(
