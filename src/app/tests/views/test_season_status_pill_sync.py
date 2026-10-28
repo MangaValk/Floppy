@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from app.models import TV, Episode, Item, MediaTypes, Season, Sources, Status
-from app.templatetags.app_tags import component_id
+from app.templatetags.app_tags import item_slot_id
 
 METADATA_PATH = "app.providers.services.get_media_metadata"
 
@@ -132,7 +132,9 @@ class SeasonStatusPillSyncTests(TestCase):
         self.season.refresh_from_db()
         self.assertEqual(self.season.status, Status.COMPLETED.value)
         content = response.content.decode()
-        self.assertIn(f'id="{component_id("media-status-chip", self.season.item)}"', content)
+        self.assertIn(
+            f'id="{item_slot_id("media-status-chip", self.season.item)}"', content
+        )
         self.assertIn('hx-swap-oob="outerHTML"', content)
         self.assertIn("M21.801 10A10 10 0 1 1 17 3.335", content)
 
@@ -223,7 +225,9 @@ class SeasonStatusPillSyncTests(TestCase):
             request=request,
         )
 
-        self.assertIn(f'id="{component_id("media-status-chip", self.season.item)}"', content)
+        self.assertIn(
+            f'id="{item_slot_id("media-status-chip", self.season.item)}"', content
+        )
         self.assertIn("M21.801 10A10 10 0 1 1 17 3.335", content)
 
     def test_every_status_refreshes_the_card_chip_of_an_untracked_season(
@@ -243,7 +247,7 @@ class SeasonStatusPillSyncTests(TestCase):
 
         request = RequestFactory().get("/")
         request.user = self.user
-        slot = f'id="{component_id("media-status-chip", self.season.item)}"'
+        slot = f'id="{item_slot_id("media-status-chip", self.season.item)}"'
         before = render_to_string(
             "app/components/media_card.html",
             {"item": self.season.item, "media": None},
@@ -274,3 +278,47 @@ class SeasonStatusPillSyncTests(TestCase):
                     'class="media-status-chip ',
                     content[content.index(slot) :],
                 )
+
+
+class ItemSlotIdTests(TestCase):
+    """The card slot id is the same wherever the item is rendered from."""
+
+    def test_ignores_route_media_type_and_keeps_provider_apart(self):
+        """Grouped-anime routing must not rename the slot; two providers must not share one."""
+        mal = Item(
+            media_id="1",
+            source=Sources.MAL.value,
+            media_type=MediaTypes.MANGA.value,
+        )
+        baka = Item(
+            media_id="1",
+            source=Sources.MANGABAKA.value,
+            media_type=MediaTypes.MANGA.value,
+        )
+        self.assertNotEqual(
+            item_slot_id("media-card-rating", mal),
+            item_slot_id("media-card-rating", baka),
+        )
+
+        plain = Item(
+            media_id="123",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+        )
+        routed = Item(
+            media_id="123",
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.TV.value,
+        )
+        routed.route_media_type = MediaTypes.ANIME.value
+        self.assertEqual(
+            item_slot_id("media-card-rating", plain),
+            item_slot_id("media-card-rating", routed),
+        )
+        self.assertEqual(
+            item_slot_id(
+                "media-card-rating",
+                {"media_id": "123", "source": "tmdb", "media_type": "tv"},
+            ),
+            item_slot_id("media-card-rating", plain),
+        )
