@@ -125,6 +125,8 @@ _EXPORT_MODULES = {
             "import_xbox",
             "import_xbox_recurring",
             "import_yamtrack",
+    "import_youtube_takeout",
+            "import_youtube_takeout",
             "push_jellyfin_watched",
             "sync_plex_mark_watched",
             "sync_plex_watchlist",

@@ -50,6 +50,7 @@ from integrations.imports import (
     wetrakr,
     xbox,
     yamtrack,
+    youtube_takeout,
 )
 from integrations.jellyfin_client import JellyfinClientError
 from integrations.jellyfin_sync import (
@@ -553,6 +554,12 @@ def import_hardcover_account(user_id, mode="new", username=None):
     """Sync the user's Hardcover library through its official API."""
     del username
     return import_media(hardcover.sync_importer, None, user_id, mode)
+
+
+@shared_task(name="Import from YouTube Takeout")
+def import_youtube_takeout(file, user_id, mode):
+    """Celery task for importing YouTube watch history from Google Takeout."""
+    return _run_file_import(youtube_takeout.importer, file, user_id, mode)
 
 
 @shared_task(name="Import from StoryGraph")
