@@ -747,7 +747,7 @@ def cache_fallback_season_metadata(media_id, season_number, tv_data, season_data
         if episode.get("episode_number") is not None
     ]
     max_progress = season_data.get("max_progress") or (
-        max(episode_numbers) if episode_numbers else None
+        len(set(episode_numbers)) if episode_numbers else None
     )
 
     runtimes = [
@@ -1438,7 +1438,10 @@ def process_season(response, providers_response, credits_response=None):
         "source": Sources.TMDB.value,
         "media_type": MediaTypes.SEASON.value,
         "season_title": response["name"],
-        "max_progress": episodes[-1]["episode_number"] if episodes else 0,
+        # Count, not the last number: anime seasons continue the numbering
+        # (51-100), so the last number is not how many episodes the season has.
+        "max_progress": len(episodes),
+        "last_episode_number": episodes[-1]["episode_number"] if episodes else 0,
         "image": get_image_url(response["poster_path"]),
         "season_number": response["season_number"],
         "synopsis": get_synopsis(response["overview"]),

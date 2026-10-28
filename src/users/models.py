@@ -454,6 +454,7 @@ class PlannedHomeDisplayChoices(models.TextChoices):
 class HomeScreenRowTypeChoices(models.TextChoices):
     """Supported row sources for the configurable home screen."""
 
+    UP_NEXT = "up_next", _("Up Next")
     LIBRARY_QUERY = "library_query", _("Library Row")
     CUSTOM_LIST = "custom_list", _("List / Smart List")
     RECENTLY_UNRATED = "recently_unrated", _("Recently Played - Not Rated")
