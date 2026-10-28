@@ -167,7 +167,7 @@ class RadarrImporter:
                 quality_label=quality_label,
                 source_updated_at=updated_at,
             )
-            imported_counts[item.media_type] += 1
+            imported_counts["collection"] += 1
             imported_counts["updated"] += 1
 
         # The full movie list was read, so anything missing is no longer owned.

@@ -13,6 +13,7 @@ from app.models import CollectionEntry, Item, MediaTypes, Sources
 from integrations import tasks
 from integrations.imports import helpers, kapowarr
 from integrations.models import CollectionSourceState, KapowarrInstance
+from integrations.tasks._import_helpers import format_import_message
 
 # Shapes copied from Kapowarr's frontend/api.py (every answer is
 # {"error", "result"}), Library.get_public_volumes (volume rows with
@@ -101,6 +102,12 @@ class KapowarrImporterTests(TestCase):
 
         self.assertEqual(self._owned_issue_ids(), {"301", "302"})
         self.assertEqual(counts["updated"], 2)
+        # Owned issues land in Collection, not the Comics library, and the
+        # result message says so.
+        self.assertEqual(counts["collection"], 2)
+        self.assertNotIn(MediaTypes.COMIC_ISSUE.value, counts)
+        self.assertIn("2 collection entries", format_import_message(counts, warnings))
+        self.assertNotIn("Comic Issues", format_import_message(counts, warnings))
         self.assertEqual(warnings, "")
         self.assertEqual(CollectionEntry.objects.filter(user=self.user).count(), 2)
         issue = Item.objects.get(media_id="301")
