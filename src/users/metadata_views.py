@@ -294,6 +294,14 @@ def _spec_or_none(slug):
     return credentials.get_spec(slug)
 
 
+def _reopen_game_groups_if_igdb(slug, user=None):
+    """Retry franchise backfill that failed while IGDB had no key."""
+    if slug == "igdb":
+        from app.tasks_game_groups import reopen_unconfigured_game_groups
+
+        reopen_unconfigured_game_groups(user)
+
+
 @require_POST
 def save_provider_credential(request, slug):
     """Store instance-wide credentials for a provider."""
@@ -319,6 +327,7 @@ def save_provider_credential(request, slug):
             return redirect("metadata_settings")
 
     credentials.set_instance(slug, values, actor=request.user)
+    _reopen_game_groups_if_igdb(slug)
     messages.success(request, f"{spec.label} credentials saved.")
     return redirect("metadata_settings")
 
@@ -356,6 +365,7 @@ def save_personal_credential(request, slug):
             return redirect("metadata_settings")
 
     credentials.set_user(slug, request.user, values)
+    _reopen_game_groups_if_igdb(slug, request.user)
     if any(values.values()):
         messages.success(request, f"Your {spec.label} key was saved.")
     else:
