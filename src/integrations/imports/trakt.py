@@ -1721,7 +1721,11 @@ class TraktImporter(TraktMetadataResolverMixin):
         self._remember_trakt_reference(show, MediaTypes.TV.value, tv_item)
         show_reference = self._get_trakt_reference(show, MediaTypes.TV.value)
 
+        # Rolled-up season/show entries keep the newest historical date.
+        show_collected_at = _parse_watched_at(entry.get("last_collected_at", ""))
+
         for season_entry in entry.get("seasons", []):
+            season_collected_at = None
             season_number = season_entry["number"]
             mapped_season, _ = external_references.map_episode_coordinates(
                 show_reference,
@@ -1789,13 +1793,23 @@ class TraktImporter(TraktMetadataResolverMixin):
                     MediaTypes.EPISODE.value,
                     episode_item,
                 )
+                episode_collected_at = _parse_watched_at(
+                    episode_entry.get("collected_at", ""),
+                )
+                if episode_collected_at:
+                    if not season_collected_at or (
+                        episode_collected_at > season_collected_at
+                    ):
+                        season_collected_at = episode_collected_at
+                    if not show_collected_at or (
+                        episode_collected_at > show_collected_at
+                    ):
+                        show_collected_at = episode_collected_at
                 trakt_collection.upsert_collection_entry(
                     self.user,
                     episode_item,
                     mode=self.mode,
-                    collected_at=_parse_watched_at(
-                        episode_entry.get("collected_at", ""),
-                    ),
+                    collected_at=episode_collected_at,
                     metadata=episode_entry.get("metadata"),
                 )
 
@@ -1806,6 +1820,8 @@ class TraktImporter(TraktMetadataResolverMixin):
                 season_item,
                 tv_metadata,
                 season_metadata,
+                collected_at=season_collected_at,
+                show_collected_at=show_collected_at,
             )
 
     def _supports_hidden_sections(self):
