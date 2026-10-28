@@ -2,6 +2,7 @@ import io
 import json
 import zipfile
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -202,6 +203,41 @@ class YouTubeTakeoutImportTests(TestCase):
         buffer.seek(0)
         counts, _ = youtube_takeout.importer(buffer, self.user, "new")
         self.assertEqual(counts["created"], 1)
+
+    def test_zip_is_opened_in_place_not_read_whole(self):
+        """A big export is never loaded into memory just to find the history."""
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(
+                "Takeout/history/watch-history.json",
+                json.dumps([watch("vidAAAAAAAA", "2026-03-01T10:00:00Z")]),
+            )
+        buffer.seek(0)
+
+        class NoFullRead(io.BytesIO):
+            def read(self, size=-1):
+                if (size is None or size < 0) and self.tell() == 0:
+                    msg = "read the whole upload"
+                    raise AssertionError(msg)
+                return super().read(size)
+
+        upload = NoFullRead(buffer.getvalue())
+        counts, _ = youtube_takeout.importer(upload, self.user, "new")
+        self.assertEqual(counts["created"], 1)
+
+    def test_import_locks_the_video_before_adding_plays(self):
+        """The plays API takes the same row lock, so a day is never added twice."""
+        locked = []
+        original = youtube_takeout.Video.objects.select_for_update
+
+        def spy(*args, **kwargs):
+            locked.append(True)
+            return original(*args, **kwargs)
+
+        with patch.object(youtube_takeout.Video.objects, "select_for_update", spy):
+            self.run_import([watch("vidAAAAAAAA", "2026-03-01T10:00:00Z")])
+        self.assertTrue(locked)
+        self.assertEqual(VideoPlay.objects.count(), 1)
 
     def test_bad_files_get_plain_errors(self):
         """HTML, an unrelated JSON object and a zip without history fail clearly."""

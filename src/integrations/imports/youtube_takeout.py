@@ -10,7 +10,6 @@ Plays follow the same rule as the plays API: one per video and day, keyed
 doubles a play.
 """
 
-import io
 import json
 import logging
 import re
@@ -106,13 +105,14 @@ def entry_from_record(record):
 def load_records(file):
     """Read the history list from the uploaded JSON or Takeout zip."""
     try:
-        raw = file.read()
-    except AttributeError as error:
+        magic = file.read(2)
+        file.seek(0)
+    except (AttributeError, OSError) as error:
         msg = "Invalid file. Upload watch-history.json from Google Takeout."
         raise MediaImportError(msg) from error
 
-    if raw[:2] == b"PK":
-        raw = _history_from_zip(file, raw)
+    # A zip is opened from the file itself, so a large export is not held in memory.
+    raw = _history_from_zip(file) if magic == b"PK" else file.read()
     try:
         records = json.loads(raw.decode("utf-8-sig"))
     except (UnicodeDecodeError, ValueError) as error:
@@ -127,10 +127,10 @@ def load_records(file):
     return records
 
 
-def _history_from_zip(file, raw):
+def _history_from_zip(file):
     """Return the bytes of watch-history.json inside a Takeout zip."""
     try:
-        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        with zipfile.ZipFile(file) as archive:
             names = [
                 name
                 for name in archive.namelist()
@@ -246,6 +246,8 @@ class YouTubeTakeoutImporter:
                 if changed:
                     video.save(update_fields=changed)
 
+            # Lock the video so a plays API call cannot insert the same day meanwhile.
+            video = Video.objects.select_for_update().get(pk=video.pk)
             plays_created = self._add_plays(video, video_id, times)
             latest = max(times)
             if not video.end_date or latest > video.end_date:
