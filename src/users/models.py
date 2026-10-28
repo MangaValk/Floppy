@@ -2058,6 +2058,7 @@ class User(AbstractUser):
                 "Import from Hardcover Account",
             ],
             "storygraph": ["Import from StoryGraph"],
+            "youtube": ["Import from YouTube Takeout"],
             "koito": ["Import from Koito History"],
         }
         schedule_task_names = {

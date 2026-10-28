@@ -843,7 +843,7 @@ def _build_missing_season_metadata(
             },
         )
 
-    max_episode_number = max(episode_numbers) if episode_numbers else None
+    max_episode_number = len(set(episode_numbers)) if episode_numbers else None
     details = {}
     if max_episode_number:
         details["episodes"] = max_episode_number

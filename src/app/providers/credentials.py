@@ -86,6 +86,7 @@ class ProviderCredentialSpec:
     logo_slug: str = ""
     validator: object = None
     user_fields: tuple[str, ...] = dataclass_field(default_factory=tuple)
+    setup_hint: str = ""
 
     def personal_fields(self):
         """Return the fields a user may override personally."""
@@ -353,7 +354,14 @@ REGISTRY: dict[str, ProviderCredentialSpec] = {
             user_scope=True,
             label="IGDB",
             description="Game metadata, authenticated through Twitch.",
-            docs_url="https://api-docs.igdb.com/#account-creation",
+            docs_url="https://dev.twitch.tv/console/apps/create",
+            setup_hint=(
+                "Register an application with the Twitch Developer Console. "
+                "Set OAuth Redirect URL to https://localhost (Floppy only uses "
+                "client credentials, so it is never called), Category to "
+                "Application Integration, and Client Type to Confidential. "
+                "Then click Manage and New Secret."
+            ),
             fields=(
                 CredentialField("client_id", "Client ID", "IGDB_ID"),
                 CredentialField("client_secret", "Client secret", "IGDB_SECRET"),

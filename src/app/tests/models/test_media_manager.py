@@ -788,11 +788,12 @@ class MediaManagerTests(TestCase):
             content_number=9,
             datetime=datetime(1, 1, 1, tzinfo=UTC),
         )
-        Event.objects.create(
-            item=season_item,
-            content_number=2,
-            datetime=datetime(2026, 1, 1, tzinfo=UTC),
-        )
+        for number in (1, 2):
+            Event.objects.create(
+                item=season_item,
+                content_number=number,
+                datetime=datetime(2026, 1, 1, tzinfo=UTC),
+            )
 
         with timezone.override("America/Toronto"):
             manager._annotate_tv_released_episodes(
@@ -1051,6 +1052,55 @@ class MediaManagerTests(TestCase):
 
         self.assertEqual(anime.max_progress, 10)
 
+    def test_released_counts_use_episode_count_for_continued_numbering(self):
+        """A season numbered 51-100 has 50 episodes, not 100 (#1754)."""
+        past = timezone.now() - timedelta(days=30)
+        show_id = "anime-continued"
+        tv_item = Item.objects.create(
+            media_id=show_id,
+            source=Sources.MANUAL.value,
+            media_type=MediaTypes.TV.value,
+            title="Continued Numbering",
+            image="http://example.com/tv.jpg",
+        )
+        tv = TV.objects.create(item=tv_item, user=self.user, status=Status.IN_PROGRESS.value)
+        seasons = []
+        for season_number, first in ((1, 1), (2, 51)):
+            season_item = Item.objects.create(
+                media_id=show_id,
+                source=Sources.MANUAL.value,
+                media_type=MediaTypes.SEASON.value,
+                title="Continued Numbering",
+                image="http://example.com/tv.jpg",
+                season_number=season_number,
+            )
+            seasons.append(
+                Season.objects.create(
+                    item=season_item,
+                    user=self.user,
+                    related_tv=tv,
+                    status=Status.IN_PROGRESS.value,
+                ),
+            )
+            for number in range(first, first + 50):
+                Item.objects.create(
+                    media_id=show_id,
+                    source=Sources.MANUAL.value,
+                    media_type=MediaTypes.EPISODE.value,
+                    title="Continued Numbering",
+                    image="http://example.com/tv.jpg",
+                    season_number=season_number,
+                    episode_number=number,
+                    release_datetime=past,
+                )
+
+        manager = MediaManager()
+        manager._annotate_season_released_episodes(seasons, timezone.now())
+        manager._annotate_tv_released_episodes([tv], timezone.now())
+
+        self.assertEqual([season.max_progress for season in seasons], [50, 50])
+        self.assertEqual(tv.max_progress, 100)
+
     def test_annotate_max_progress(self):
         """Test the annotate_max_progress method."""
         manager = MediaManager()
@@ -1079,11 +1129,12 @@ class MediaManagerTests(TestCase):
 
         tv_list = TV.objects.filter(user=self.user.id)
 
-        Event.objects.create(
-            item=self.season1_item,
-            content_number=10,
-            datetime=timezone.now() - timedelta(days=10),
-        )
+        for number in range(1, 11):
+            Event.objects.create(
+                item=self.season1_item,
+                content_number=number,
+                datetime=timezone.now() - timedelta(days=10),
+            )
 
         # Prefetch events
         tv_list = tv_list.prefetch_related(

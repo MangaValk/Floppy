@@ -998,6 +998,7 @@ class StremioImporter:
                 )
 
             max_progress = int(season_metadata.get("max_progress") or 0)
+            season_episode_numbers = helpers.season_episode_numbers(season_metadata)
             watched_episode_numbers = {
                 int(number)
                 for number in episode_numbers
@@ -1005,7 +1006,7 @@ class StremioImporter:
             }
             season_complete = (
                 max_progress > 0
-                and set(range(1, max_progress + 1)).issubset(
+                and season_episode_numbers.issubset(
                     watched_episode_numbers,
                 )
             )
