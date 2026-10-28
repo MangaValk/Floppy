@@ -21,6 +21,7 @@ from pathlib import Path
 from django.apps import apps
 
 from config import sqlite_integrity as integrity
+from config import sqlite_sliced_check
 
 _PROGRESS_REPORT_SECONDS = 10
 
@@ -289,12 +290,18 @@ def verify_snapshot(
                             os.unlink(name, dir_fd=directory)
                 finally:
                     os.close(directory)
-            status("running", "snapshot_and_quick_check")
+            # fast: the copy is gated by the sequential page sweep, not
+            # quick_check (random reads, hours on slow storage).
+            gate = "page_sweep" if fast else "quick_check"
+            status("running", f"snapshot_and_{gate}")
+            outcome: dict = {}
             snapshot = integrity.create_live_database_snapshot(
                 db_path,
                 backup_dir,
                 max_keep=None,  # prune only after BOTH checks succeed
                 timeout_seconds=2,
+                verify=gate,
+                outcome=outcome,
             )
             if snapshot is None:
                 msg = "Snapshot/structural verification failed; inspect snapshot logs"
@@ -344,6 +351,8 @@ def verify_snapshot(
                     "backup": str(snapshot),
                     "backup_signature": _signature(snapshot),
                     "commit_sha": os.environ.get("COMMIT_SHA"),
+                    "snapshot_verified": outcome.get("verified", "quick_check"),
+                    "quick_check_deferred": outcome.get("verified") == "page_sweep",
                 }
                 integrity._publish_report(
                     _permit_path(db_path), json.dumps(permit) + "\n"
@@ -358,8 +367,20 @@ def verify_snapshot(
                     started_at=datetime.now(UTC).isoformat(),
                     elapsed_seconds=time.monotonic() - started,
                 )
+            verified = outcome.get("verified", "quick_check")
+            deferred = verified == "page_sweep"
+            if prepare and deferred:
+                sqlite_sliced_check.request_deferred_quick_check(
+                    db_path, reason="snapshot gated by page sweep"
+                )
             status(
-                "ok", "complete", backup=str(snapshot), structural="ok", relational="ok"
+                "ok",
+                "complete",
+                backup=str(snapshot),
+                structural="ok",
+                snapshot_verified=verified,
+                quick_check_deferred=deferred,
+                relational="skipped" if fast else "ok",
             )
             integrity._prune_recovery_backups(backup_dir, max_keep=7, newest=snapshot)
         except (OSError, sqlite3.DatabaseError, StartupBlockedError) as error:

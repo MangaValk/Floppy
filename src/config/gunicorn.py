@@ -1,4 +1,5 @@
 import gc
+import importlib
 import logging.handlers
 import os
 import time
@@ -26,6 +27,18 @@ worker_class = "gthread"
 # when set - see config/runtime_profile.py.
 workers = web_concurrency()
 threads = gunicorn_threads()
+
+# gthread accepts up to worker_connections sockets whatever the thread count,
+# and hands each to a private queue in front of that worker's pool (gunicorn
+# gthread.accept/enqueue_req). At the default of 1000 a connection accepted by
+# a worker whose threads are all busy waits there, invisible and unreachable,
+# even while the other worker idles -- so a trivial request such as
+# /serviceworker.js stalls behind slow ones until nginx gives up on it. Capping
+# accepted connections at the thread count leaves the surplus in the kernel
+# backlog, where whichever worker frees a thread first takes it. nginx speaks
+# HTTP/1.0 to this upstream, so no keepalive slots are lost; gunicorn's
+# "No keepalived connections can be handled" boot warning is expected.
+worker_connections = threads
 
 # Recycle workers more aggressively on small hosts: RSS only creeps upward
 # within a worker's life, so a lower ceiling caps the steady-state footprint.
@@ -104,7 +117,20 @@ def _load_url_conf(server):
     try:
         from django.urls import get_resolver
 
-        get_resolver().url_patterns  # noqa: B018  # the property imports the URLconf
+        resolver = get_resolver()
+        resolver.url_patterns  # noqa: B018  # the property imports the URLconf
+        # Building the reverse table and importing what the save views import
+        # inside the function are the rest of a first write's cold cost (the
+        # first save after each recycle took seconds on a slow disk).
+        resolver._populate()
+        for module in (
+            "app.tasks",
+            "lists.tasks",
+            "app.services.metadata_resolution",
+            "app.services.bulk_episode_tracking",
+            "app.statistics_sync",
+        ):
+            importlib.import_module(module)
     except Exception:
         server.log.exception("[gunicorn] could not preload the URLconf")
 

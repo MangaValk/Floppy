@@ -104,11 +104,32 @@ def duplicate_pairs(batch_size=None, *, user_id=None):
     the settings-page repair action uses. A global run still repairs every
     account.
     """
-    from app.models import Anime
+    from django.db.models import Exists, OuterRef
+
+    from app.models import TV, Anime, ItemProviderLink, MediaTypes, Sources
 
     found = 0
     seen_tv_rows = set()
-    queryset = Anime.objects.select_related("item", "user").order_by("id")
+    # Narrow to anime that have a plain TV twin in one set-based query, so a
+    # clean library costs one query instead of two per Anime row. The per-row
+    # lookup below still picks the pair, so results are unchanged.
+    plain_tv_twin = TV.objects.filter(
+        user_id=OuterRef(OuterRef("user_id")),
+        item__source=OuterRef("provider"),
+        item__media_id=OuterRef("provider_media_id"),
+        item__media_type=MediaTypes.TV.value,
+        item__library_media_type__in=NON_ANIME_TV_BUCKETS,
+    )
+    twin_link = ItemProviderLink.objects.filter(
+        item_id=OuterRef("item_id"),
+        provider__in=(Sources.TMDB.value, Sources.TVDB.value),
+        provider_media_type=MediaTypes.TV.value,
+    ).filter(Exists(plain_tv_twin))
+    queryset = (
+        Anime.objects.filter(Exists(twin_link))
+        .select_related("item", "user")
+        .order_by("id")
+    )
     if user_id is not None:
         queryset = queryset.filter(user_id=user_id)
     for anime in queryset.iterator(chunk_size=200):

@@ -384,7 +384,21 @@ def _add_user_day_key(user_day_keys, user_id, day_key):
     user_day_keys[user_id].add(day_key)
 
 
+_DAY_KEY_QUERY_CHUNK = 500
+
+
+def _chunked_ids(ids):
+    ids = list(ids)
+    for start in range(0, len(ids), _DAY_KEY_QUERY_CHUNK):
+        yield ids[start : start + _DAY_KEY_QUERY_CHUNK]
+
+
 def _collect_backfill_day_keys(items, field: str):
+    """Return ``{user_id: {day_key}}`` for the days a batch of items touches.
+
+    One query per model for the whole batch, not one per item: the keys are
+    unioned per user, so which item a row came from does not matter.
+    """
     from app.models import (
         Anime,
         Book,
@@ -399,31 +413,13 @@ def _collect_backfill_day_keys(items, field: str):
     if not items:
         return user_day_keys
 
+    item_ids_by_type = defaultdict(list)
     for item in items:
-        if item.media_type == MediaTypes.MOVIE.value:
-            rows = Movie.objects.filter(item_id=item.id).values(
-                "user_id",
-                "start_date",
-                "end_date",
-                "created_at",
-            )
-            for row in rows:
-                activity_dt = (
-                    row.get("end_date")
-                    or row.get("start_date")
-                    or row.get("created_at")
-                )
-                _add_user_day_key(
-                    user_day_keys,
-                    row.get("user_id"),
-                    history_cache.history_day_key(activity_dt),
-                )
-            continue
+        item_ids_by_type[item.media_type].append(item.id)
 
-        if item.media_type == MediaTypes.ANIME.value:
-            if field == MetadataBackfillField.GENRES:
-                continue
-            rows = Anime.objects.filter(item_id=item.id).values(
+    def add_activity_rows(model, item_ids, *, expand_runtime_range=False):
+        for chunk in _chunked_ids(item_ids):
+            rows = model.objects.filter(item_id__in=chunk).values(
                 "user_id",
                 "start_date",
                 "end_date",
@@ -431,7 +427,7 @@ def _collect_backfill_day_keys(items, field: str):
             )
             for row in rows:
                 if (
-                    field == MetadataBackfillField.RUNTIME
+                    expand_runtime_range
                     and row.get("start_date")
                     and row.get("end_date")
                 ):
@@ -452,95 +448,11 @@ def _collect_backfill_day_keys(items, field: str):
                     row.get("user_id"),
                     history_cache.history_day_key(activity_dt),
                 )
-            continue
 
-        if item.media_type == MediaTypes.GAME.value:
-            rows = Game.objects.filter(item_id=item.id).values(
-                "user_id",
-                "start_date",
-                "end_date",
-                "created_at",
-            )
-            for row in rows:
-                activity_dt = (
-                    row.get("end_date")
-                    or row.get("start_date")
-                    or row.get("created_at")
-                )
-                _add_user_day_key(
-                    user_day_keys,
-                    row.get("user_id"),
-                    history_cache.history_day_key(activity_dt),
-                )
-            continue
-
-        if item.media_type in (
-            MediaTypes.BOOK.value,
-            MediaTypes.COMIC.value,
-            MediaTypes.MANGA.value,
-        ):
-            reading_models = {
-                MediaTypes.BOOK.value: Book,
-                MediaTypes.COMIC.value: Comic,
-                MediaTypes.MANGA.value: Manga,
-            }
-            model = reading_models[item.media_type]
-            rows = model.objects.filter(item_id=item.id).values(
-                "user_id",
-                "start_date",
-                "end_date",
-                "created_at",
-            )
-            for row in rows:
-                activity_dt = (
-                    row.get("end_date")
-                    or row.get("start_date")
-                    or row.get("created_at")
-                )
-                _add_user_day_key(
-                    user_day_keys,
-                    row.get("user_id"),
-                    history_cache.history_day_key(activity_dt),
-                )
-            continue
-
-        if item.media_type == MediaTypes.TV.value and field in (
-            MetadataBackfillField.GENRES,
-            MetadataBackfillField.CREDITS,
-        ):
-            rows = Episode.objects.filter(
-                related_season__related_tv__item_id=item.id,
-            ).values("related_season__user_id", "end_date")
-            for row in rows:
-                _add_user_day_key(
-                    user_day_keys,
-                    row.get("related_season__user_id"),
-                    history_cache.history_day_key(row.get("end_date")),
-                )
-            continue
-
-        if (
-            item.media_type == MediaTypes.SEASON.value
-            and field == MetadataBackfillField.CREDITS
-        ):
-            rows = Episode.objects.filter(
-                related_season__item_id=item.id,
-            ).values("related_season__user_id", "end_date")
-            for row in rows:
-                _add_user_day_key(
-                    user_day_keys,
-                    row.get("related_season__user_id"),
-                    history_cache.history_day_key(row.get("end_date")),
-                )
-            continue
-
-        if (
-            item.media_type == MediaTypes.EPISODE.value
-            and field == MetadataBackfillField.RUNTIME
-        ):
-            rows = Episode.objects.filter(item_id=item.id).values(
-                "related_season__user_id",
-                "end_date",
+    def add_episode_rows(lookup, item_ids):
+        for chunk in _chunked_ids(item_ids):
+            rows = Episode.objects.filter(**{f"{lookup}__in": chunk}).values(
+                "related_season__user_id", "end_date"
             )
             for row in rows:
                 _add_user_day_key(
@@ -548,6 +460,48 @@ def _collect_backfill_day_keys(items, field: str):
                     row.get("related_season__user_id"),
                     history_cache.history_day_key(row.get("end_date")),
                 )
+
+    for media_type, model in (
+        (MediaTypes.MOVIE.value, Movie),
+        (MediaTypes.GAME.value, Game),
+        (MediaTypes.BOOK.value, Book),
+        (MediaTypes.COMIC.value, Comic),
+        (MediaTypes.MANGA.value, Manga),
+    ):
+        if item_ids_by_type.get(media_type):
+            add_activity_rows(model, item_ids_by_type[media_type])
+
+    if item_ids_by_type.get(MediaTypes.ANIME.value) and (
+        field != MetadataBackfillField.GENRES
+    ):
+        add_activity_rows(
+            Anime,
+            item_ids_by_type[MediaTypes.ANIME.value],
+            expand_runtime_range=field == MetadataBackfillField.RUNTIME,
+        )
+
+    if item_ids_by_type.get(MediaTypes.TV.value) and field in (
+        MetadataBackfillField.GENRES,
+        MetadataBackfillField.CREDITS,
+    ):
+        add_episode_rows(
+            "related_season__related_tv__item_id",
+            item_ids_by_type[MediaTypes.TV.value],
+        )
+
+    if (
+        item_ids_by_type.get(MediaTypes.SEASON.value)
+        and field == MetadataBackfillField.CREDITS
+    ):
+        add_episode_rows(
+            "related_season__item_id", item_ids_by_type[MediaTypes.SEASON.value]
+        )
+
+    if (
+        item_ids_by_type.get(MediaTypes.EPISODE.value)
+        and field == MetadataBackfillField.RUNTIME
+    ):
+        add_episode_rows("item_id", item_ids_by_type[MediaTypes.EPISODE.value])
 
     return user_day_keys
 

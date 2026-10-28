@@ -61,6 +61,7 @@ def refresh_discover_rows(
 def _refresh_rows(user_id, media_type, row_keys, show_more):
     from app.discover import tab_cache as discover_tab_cache
     from app.discover.service import refresh_rows_for_user
+    from app.discover.service_helpers import credit_maps_scope
 
     user_model = get_user_model()
     user = user_model.objects.filter(id=user_id).first()
@@ -86,7 +87,7 @@ def _refresh_rows(user_id, media_type, row_keys, show_more):
         )
         return {"refreshed": 0, "reason": "disabled_media_type", "user_id": user_id}
 
-    with credentials.current_user_scope(user):
+    with credentials.current_user_scope(user), credit_maps_scope():
         refreshed = refresh_rows_for_user(
             user,
             requested_media_type,

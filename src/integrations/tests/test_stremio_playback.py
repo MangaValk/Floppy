@@ -79,7 +79,7 @@ class StremioPlaybackSessionTests(TestCase):
             playback.helpers, "decrypt_or_raise", return_value="auth"
         )
         self.library_patch = patch.object(
-            playback, "get_library_items", side_effect=lambda _auth: self.library
+            playback, "get_library_items", side_effect=lambda _auth, ids=None: self.library
         )
         self.client_patch.start()
         self.decrypt_patch.start()
@@ -263,6 +263,38 @@ class StremioPlaybackSessionTests(TestCase):
         decision = self.observe(session_id, 41 * 60)
         self.assertEqual(decision.status, "complete")
         self.assertTrue(decision.payload["_floppy_verified_completion"])
+
+    def test_each_poll_fetches_only_the_session_item_and_stops_on_completion(self):
+        calls = []
+
+        def fetch(_auth, ids=None):
+            calls.append(ids)
+            return self.library
+
+        session_id = self.establish_movie_progress()
+        with patch.object(playback, "get_library_items", side_effect=fetch):
+            self.library = self.state("tt100", 20)
+            self.assertEqual(self.observe(session_id, 600).status, "schedule")
+            self.library = self.state(
+                "tt100", 90, watched_at=self.now + timedelta(minutes=41), flagged=1
+            )
+            self.assertEqual(self.observe(session_id, 41 * 60).status, "complete")
+            self.assertEqual(calls, [["tt100"], ["tt100"]])
+            self.assertEqual(self.observe(session_id, 42 * 60).status, "duplicate")
+            self.assertEqual(len(calls), 2)
+
+    def test_empty_id_fetch_falls_back_to_the_whole_library_once(self):
+        calls = []
+
+        def fetch(_auth, ids=None):
+            calls.append(ids)
+            return [] if ids else self.library
+
+        session_id = self.establish_movie_progress()
+        self.library = self.state("tt100", 20)
+        with patch.object(playback, "get_library_items", side_effect=fetch):
+            self.assertEqual(self.observe(session_id, 600).status, "schedule")
+        self.assertEqual(calls, [["tt100"], None])
 
     def test_runtime_deadlines_allow_normal_playback_to_reach_ninety_percent(self):
         for runtime in (45, 90, 120, 180):

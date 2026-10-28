@@ -13,7 +13,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import OperationalError
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -647,6 +647,52 @@ class SyncTests(StatisticsSyncTestCase):
         enqueue.assert_called_once()
 
 
+class SlowHostContinuationTests(StatisticsSyncTestCase):
+    """Days found by the stale-score scan must not be rebuilt from scratch forever."""
+
+    def test_scan_found_days_make_progress_across_continuations(self):
+        self.full_sync()
+        StatisticsSyncState.objects.filter(user_id=self.user.id).update(
+            synced_day=self.day(5)
+        )
+        stale = {self.day(offset) for offset in (3, 4, 5, 6, 7, 8)}
+        built = []
+        from app.statistics_day_builder import build_stats_for_day as real_build
+
+        clock = {"now": 0.0}
+
+        def slow_build(user_id, day, **kwargs):
+            built.append(day)
+            clock["now"] += 4  # each day costs 4 s against a 10 s budget
+            return real_build(user_id, day, **kwargs)
+
+        with (
+            patch(
+                "app.statistics_cache._collect_stale_reading_score_days",
+                # Rebuilding does not always clear the flag (a score the day
+                # payload cannot show), so the scan keeps naming the same days.
+                return_value=stale,
+            ),
+            patch(
+                "app.statistics_day_builder.build_stats_for_day", side_effect=slow_build
+            ),
+            patch(
+                "app.statistics_sync.time.monotonic",
+                side_effect=lambda: clock["now"],
+            ),
+            patch("app.statistics_sync.ensure_sync"),
+        ):
+            statuses = [
+                statistics_sync.run_sync(self.user.id, budget_seconds=10)["status"]
+                for _ in range(6)
+            ]
+
+        self.assertEqual(statuses[0], "continued")
+        self.assertEqual(statuses[-1], "done")
+        stale_built = [day for day in built if day in stale]
+        self.assertEqual(len(stale_built), len(set(stale_built)))
+
+
 class SliceBoundTests(StatisticsSyncTestCase):
     """A sync gives way to webhooks and stops starting ranges it cannot finish."""
 
@@ -843,14 +889,71 @@ class ReconcilerTests(StatisticsSyncTestCase):
 
         self.assertIn(self.user.id, statistics_sync.users_needing_sync())
 
-    def test_reconcile_is_scheduled_every_minute_on_the_interactive_lane(self):
+    def test_reconcile_is_scheduled_every_minute_on_the_default_lane(self):
         from django.conf import settings
 
         entry = settings.CELERY_BEAT_SCHEDULE["reconcile_statistics_sync"]
         self.assertEqual(entry["task"], "Reconcile statistics sync")
         self.assertLessEqual(entry["schedule"], 60)
+        self.assertEqual(entry["options"]["expire_seconds"], entry["schedule"])
         route = settings.CELERY_TASK_ROUTES["Reconcile statistics sync"]
-        self.assertEqual(route["queue"], "interactive")
+        self.assertNotIn("queue", route)
+
+
+
+class ReconcilerSchedulePersistenceTests(TransactionTestCase):
+    """The real scheduler may close connections; exercise it in autocommit."""
+
+    def test_beat_updates_existing_reconciler_with_a_message_lifetime(self):
+        from celery import Celery
+        from django.conf import settings
+        from django_celery_beat.models import IntervalSchedule, PeriodicTask
+        from django_celery_beat.schedulers import DatabaseScheduler
+
+        self.assertEqual(
+            settings.CELERY_BEAT_SCHEDULER,
+            "django_celery_beat.schedulers:DatabaseScheduler",
+        )
+        interval, _ = IntervalSchedule.objects.get_or_create(
+            every=60, period=IntervalSchedule.SECONDS
+        )
+        periodic = PeriodicTask.objects.create(
+            name="reconcile_statistics_sync",
+            task="Reconcile statistics sync",
+            interval=interval,
+        )
+        tomorrow = timezone.now() + timedelta(days=1)
+        for absolute_expiry, enabled in ((None, True), (tomorrow, True), (tomorrow, False)):
+            with self.subTest(absolute_expiry=absolute_expiry, enabled=enabled):
+                periodic.expires = absolute_expiry
+                periodic.expire_seconds = None
+                periodic.enabled = enabled
+                periodic.save()
+                with Celery("reconciler_schedule_test", set_as_current=False) as app:
+                    app.conf.update(
+                        broker_url="memory://",
+                        result_expires=None,
+                        beat_schedule={
+                            periodic.name: settings.CELERY_BEAT_SCHEDULE[periodic.name],
+                        },
+                    )
+                    scheduler = DatabaseScheduler(app=app)
+                    try:
+                        periodic.refresh_from_db()
+                        self.assertIsNone(periodic.expires)
+                        self.assertEqual(periodic.expire_seconds, 60)
+                        self.assertEqual(periodic.enabled, enabled)
+                        self.assertEqual(
+                            PeriodicTask.objects.get(name=periodic.name).pk, periodic.pk
+                        )
+                        if enabled:
+                            self.assertEqual(
+                                scheduler.schedule[periodic.name].options["expires"], 60
+                            )
+                        else:
+                            self.assertNotIn(periodic.name, scheduler.schedule)
+                    finally:
+                        scheduler.close()
 
 
 class ReadPathTests(StatisticsSyncTestCase):

@@ -194,6 +194,44 @@ class SQLiteAvailabilityTests(SimpleTestCase):
         permit = json.loads(admission._permit_path(self.database).read_text())
         self.assertTrue(Path(permit["backup"]).is_file())
 
+    def test_fast_preparation_gates_on_page_sweep_and_defers_quick_check(self):
+        real = integrity._backup_to_staging
+        used = []
+
+        def spy(*args, **kwargs):
+            used.append(kwargs.get("verify"))
+            return real(*args, **kwargs)
+
+        with (
+            patch.object(integrity, "_backup_to_staging", side_effect=spy),
+            patch.object(
+                integrity, "_sweep_copy", wraps=integrity._sweep_copy
+            ) as swept,
+        ):
+            self.verify(prepare=True, fast=True)
+        self.assertEqual(used, ["page_sweep"])
+        swept.assert_called_once()
+        permit = json.loads(admission._permit_path(self.database).read_text())
+        self.assertEqual(permit["snapshot_verified"], "page_sweep")
+        self.assertTrue(permit["quick_check_deferred"])
+        progress = json.loads(
+            Path(f"{self.database}.verification.progress.json").read_text()
+        )
+        self.assertIn("deferred_quick_check", progress)
+
+    def test_non_fast_preparation_keeps_quick_check(self):
+        self.verify(prepare=True)
+        permit = json.loads(admission._permit_path(self.database).read_text())
+        self.assertEqual(permit["snapshot_verified"], "quick_check")
+        self.assertFalse(permit["quick_check_deferred"])
+        self.assertFalse(Path(f"{self.database}.verification.progress.json").exists())
+
+    def test_failed_page_sweep_on_the_copy_blocks_the_permit(self):
+        with patch.object(integrity, "_sweep_copy", return_value=False):
+            with self.assertRaises(admission.StartupBlockedError):
+                self.verify(prepare=True, fast=True)
+        self.assertFalse(admission._permit_path(self.database).exists())
+
     def test_missing_permit_is_distinguishable_for_the_entrypoint(self):
         self.pending()
         with self.assertRaises(admission.MigrationPermitRequiredError):

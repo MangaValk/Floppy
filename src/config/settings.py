@@ -345,6 +345,12 @@ if ENABLE_DEBUG_TOOLBAR:
 # Performance instrumentation: thresholded request and task summaries.
 PERF_LOG_ENABLED = config("PERF_LOG_ENABLED", default=True, cast=bool)
 PERF_LOG_SLOW_REQUEST_MS = config("PERF_LOG_SLOW_REQUEST_MS", default=500, cast=int)
+# A request still running after this long is logged once as stalled_request
+# with its stack, before it finishes. 0 disables the watchdog.
+PERF_STALL_WARN_MS = config("PERF_STALL_WARN_MS", default=10000, cast=int)
+PERF_STALL_MAX_REPORTS_PER_MINUTE = config(
+    "PERF_STALL_MAX_REPORTS_PER_MINUTE", default=10, cast=int
+)
 PERF_LOG_SLOW_TASK_MS = config("PERF_LOG_SLOW_TASK_MS", default=5000, cast=int)
 # A transaction open longer than this is logged with its request/task and
 # duration. SQLite has one writer, so a long transaction is the usual reason
@@ -556,6 +562,21 @@ else:
     )
     SQLITE_JOURNAL_MODE = config("SQLITE_JOURNAL_MODE", default="WAL")
     SQLITE_SYNCHRONOUS = config("SQLITE_SYNCHRONOUS", default="NORMAL")
+    # Read-side tuning. SQLite's own defaults (a 2 MiB page cache per connection,
+    # no memory map, spill files for sorts) make every big library query re-read
+    # the file from disk; on slow storage that is the cold-load cost. All three
+    # are upper bounds, not allocations: pages are cached only as they are read.
+    SQLITE_CACHE_SIZE_MIB = config(
+        "SQLITE_CACHE_SIZE_MIB",
+        default=by_tier(8, 24, 64),
+        cast=int,
+    )
+    SQLITE_MMAP_SIZE_MIB = config(
+        "SQLITE_MMAP_SIZE_MIB",
+        default=by_tier(0, 256, 1024),
+        cast=int,
+    )
+    SQLITE_TEMP_STORE = config("SQLITE_TEMP_STORE", default="MEMORY")
 
     DATABASES = {
         "default": {
@@ -599,6 +620,10 @@ else:
             cursor.execute(
                 f"PRAGMA busy_timeout={int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}",
             )
+            cursor.execute(f"PRAGMA cache_size={-1024 * int(SQLITE_CACHE_SIZE_MIB)}")
+            cursor.execute(f"PRAGMA mmap_size={(1 << 20) * int(SQLITE_MMAP_SIZE_MIB)}")
+            if SQLITE_TEMP_STORE.upper() in {"DEFAULT", "FILE", "MEMORY"}:
+                cursor.execute(f"PRAGMA temp_store={SQLITE_TEMP_STORE.upper()}")
             if actual_journal_mode.lower() != SQLITE_JOURNAL_MODE.lower():
                 # A connection stuck on a different journal mode than its
                 # siblings (e.g. WAL requested but filesystem doesn't support
@@ -1146,6 +1171,22 @@ BACKUP_DIR = config("BACKUP_DIR", default=str(BASE_DIR / "backups"))
 # exports above, which cannot replace a physically damaged db.sqlite3. Rides
 # the same BACKUP_DIR volume mount installs already have.
 DB_SNAPSHOT_ENABLED = config("DB_SNAPSHOT_ENABLED", default=True, cast=bool)
+# Daily PRAGMA optimize so SQLite always has planner statistics (SQLite only).
+# analysis_limit bounds each ANALYZE to a row sample, keeping the first run on a
+# multi-GB database short.
+DB_OPTIMIZE_ENABLED = config("DB_OPTIMIZE_ENABLED", default=True, cast=bool)
+# Sequential read of the SQLite file after start so cold page loads hit the OS
+# cache (app/tasks_db_warm.py). Budget is further capped at 25% of free memory.
+DB_WARM_ENABLED = config("DB_WARM_ENABLED", default=True, cast=bool)
+DB_WARM_MAX_MIB = config("DB_WARM_MAX_MIB", default=by_tier(0, 512, 2048), cast=int)
+DB_WARM_PAUSE_MS = config("DB_WARM_PAUSE_MS", default=20, cast=int)
+# Below this sequential read speed the warm logs a "slow_disk" warning.
+DB_SLOW_DISK_MIB_PER_SECOND = config("DB_SLOW_DISK_MIB_PER_SECOND", default=60, cast=int)
+DB_OPTIMIZE_ANALYSIS_LIMIT = config(
+    "DB_OPTIMIZE_ANALYSIS_LIMIT",
+    default=1000,
+    cast=int,
+)
 # How long an idempotency receipt stays replayable. A client that retries after
 # this window gets a fresh operation, not the prior result, so keep it longer
 # than the longest client backoff. Measure real retry intervals before lowering.
@@ -1754,6 +1795,9 @@ CELERY_TASK_ROUTES = {
     "Cleanup image cache": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Purge expired Discover caches": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Write database snapshot": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
+    "Optimize database planner statistics": {
+        "priority": CELERY_TASK_PRIORITY_BACKGROUND,
+    },
     "Backfill item metadata": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure genre backfill reconcile": {"priority": CELERY_TASK_PRIORITY_BACKGROUND},
     "Ensure watch provider backfill reconcile": {
@@ -1825,10 +1869,9 @@ CELERY_TASK_ROUTES = {
         "queue": "celery",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
-    # Cheap (one query, then enqueues). On the interactive worker so a long
-    # import on the background worker cannot delay recovery of lost syncs.
+    # Periodic recovery is not awaited by a page. Keep its sweeps off the
+    # interactive worker; viewer-requested syncs select that lane separately.
     "Reconcile statistics sync": {
-        "queue": "interactive",
         "priority": CELERY_TASK_PRIORITY_STATISTICS_SYNC,
     },
     # History cache rebuilds now bound their inline work (see
@@ -1997,6 +2040,11 @@ CELERY_BEAT_SCHEDULE = {
     "reconcile_statistics_sync": {
         "task": "Reconcile statistics sync",
         "schedule": 60,
+        # DatabaseScheduler owns this safety-net lifetime: replace any old
+        # absolute expiry with a rolling lifetime. The next fresh tick rechecks
+        # durable state, so stale ticks need not replay database work.
+        "expires": None,
+        "options": {"expire_seconds": 60},
     },
     # Outbound deliveries (watched state, ratings) retry through their own
     # next_attempt_at and recover from a lost broker message only if something
@@ -2027,6 +2075,16 @@ CELERY_BEAT_SCHEDULE = {
     "purge_expired_discover_caches": {
         "task": "Purge expired Discover caches",
         "schedule": crontab(hour=4, minute=15),
+    },
+    # Interval, not crontab: a never-run interval entry is due as soon as beat
+    # starts, so a database with no statistics is fixed on the first boot.
+    "optimize_database_statistics": {
+        "task": "Optimize database planner statistics",
+        "schedule": 60 * 60 * 24,
+    },
+    "warm_database_page_cache": {
+        "task": "Warm database page cache",
+        "schedule": 60 * 60 * 6,
     },
     "write_database_snapshot": {
         "task": "Write database snapshot",

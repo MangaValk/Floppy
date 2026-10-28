@@ -870,6 +870,10 @@ def import_stremio_recurring(user_id):
     )
 
 
+# Well under the two-hour schedule, well over one run's length.
+POCKETCASTS_RECURRING_COOLDOWN_SECONDS = 30 * 60
+
+
 @shared_task(name="Import from Pocket Casts")
 def import_pocketcasts(user_id, mode="new"):
     """Celery task for importing podcast history from Pocket Casts."""
@@ -897,6 +901,21 @@ def import_pocketcasts(user_id, mode="new"):
 def import_pocketcasts_history(user_id):
     """Recurring import task for Pocket Casts (called every 2 hours via Celery beat)."""
     lock_key = f"pocketcasts_import_lock_{user_id}"
+    # The lock only stops overlap. Copies of this task also queue up behind one
+    # another (broker redelivery after an unclean shutdown, plus beat catching
+    # up on a lost last_run_at), and each then runs a full ~8 minute poll in
+    # turn. A poll that started recently already saw everything a repeat would.
+    if not cache_safety.acquire_lock(
+        f"pocketcasts_recurring_cooldown_{user_id}",
+        timeout=POCKETCASTS_RECURRING_COOLDOWN_SECONDS,
+        on_error=cache_safety.ON_ERROR_SKIP,
+        value="1",
+    ):
+        logger.info(
+            "Pocket Casts recurring import ran recently for user %s, skipping",
+            user_id,
+        )
+        return "Skipped: recent import"
     # Recurring, so skipping a run when the cache is unavailable is cheap - the
     # next one is two hours away and the manual path above stays open.
     if not cache_safety.acquire_lock(

@@ -116,3 +116,33 @@ class SlicedCheckTests(TestCase):
             db.execute("CREATE TABLE t(id INTEGER)")
         state = sliced.run_slice(self.database)
         self.assertEqual(set(state["units"]), {sliced._PAGES, "t"})
+
+    def test_requested_deferred_quick_check_runs_then_clears(self):
+        sliced.run_slice(self.database)
+        sliced.request_deferred_quick_check(self.database, reason="test")
+        self.assertIn("deferred_quick_check", self.progress())
+        state = sliced.run_slice(self.database)
+        self.assertNotIn("deferred_quick_check", state)
+        tables = [n for n in state["units"] if n != sliced._PAGES]
+        self.assertTrue(all(state["units"][n].get("deep_at") for n in tables))
+
+    def test_deferred_quick_check_failure_publishes_an_incident(self):
+        sliced.run_slice(self.database)
+        sliced.request_deferred_quick_check(self.database, reason="test")
+        real_connect = sqlite3.connect
+
+        class Damaged(sqlite3.Connection):
+            def execute(self, sql, *args):
+                if sql.startswith("PRAGMA quick_check("):
+                    return real_connect(":memory:").execute("SELECT 'bad record'")
+                return super().execute(sql, *args)
+
+        def connect(*args, **kwargs):
+            return real_connect(*args, factory=Damaged, **kwargs)
+
+        with patch.object(sliced.sqlite3, "connect", connect):
+            state = sliced.run_slice(self.database)
+        self.assertEqual(state["status"], "failed")
+        self.assertEqual(
+            integrity._read_incident_report(self.database)["status"], "corrupt"
+        )

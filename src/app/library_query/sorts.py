@@ -284,13 +284,8 @@ def _next_episode_air_date_values(user, candidates, direction):
     from app.models import BasicMedia
 
     medias = [c.media for c in candidates if c.media is not None]
-    BasicMedia.objects.attach_show_season_events(medias)
-    return [
-        None
-        if candidate.media is None
-        else BasicMedia.objects._next_episode_air_date_value(candidate.media)
-        for candidate in candidates
-    ]
+    values = iter(BasicMedia.objects.next_episode_air_date_values(medias))
+    return [None if candidate.media is None else next(values) for candidate in candidates]
 
 
 def _media_list_value(sort_key: str):
