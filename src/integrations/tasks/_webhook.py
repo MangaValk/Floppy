@@ -385,7 +385,6 @@ def process_stremio_webhook(payload, user_id, queue_member=None):
         verify_stremio_playback.apply_async(
             args=[decision.session_id],
             countdown=decision.countdown,
-            queue="interactive",
         )
     else:
         logger.info(
@@ -455,7 +454,6 @@ def verify_stremio_playback(session_id):
         verify_stremio_playback.apply_async(
             args=[session_id],
             countdown=decision.countdown,
-            queue="interactive",
         )
     elif decision.status == "complete":
         _process_webhook("stremio", decision.payload, decision.user_id)

@@ -3,7 +3,9 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
 from app.models import (
     TV,
@@ -486,3 +488,50 @@ class AnimeShapeConversionPromptTests(TestCase):
 
         self.assertContains(response, "Duplicate anime libraries")
         self.assertContains(response, reverse("repair_duplicate_anime_libraries"))
+
+
+class DuplicateDetectionQueryCountTests(TestCase):
+    """Detection cost must not grow with the number of anime rows."""
+
+    def _anime(self, user, n, with_twin):
+        item = Item.objects.create(
+            media_id=str(n),
+            source=Sources.MAL.value,
+            media_type=MediaTypes.ANIME.value,
+            title=f"Show {n}",
+            image="",
+        )
+        ItemProviderLink.objects.create(
+            item=item,
+            provider=Sources.TMDB.value,
+            provider_media_type=MediaTypes.TV.value,
+            provider_media_id=str(1000 + n),
+        )
+        Anime.objects.create(item=item, user=user, status=Status.IN_PROGRESS.value)
+        if with_twin:
+            tv_item = Item.objects.create(
+                media_id=str(1000 + n),
+                source=Sources.TMDB.value,
+                media_type=MediaTypes.TV.value,
+                library_media_type="",
+                title=f"Show {n}",
+                image="",
+            )
+            TV.objects.create(item=tv_item, user=user, status=Status.IN_PROGRESS.value)
+
+    def test_clean_library_costs_one_query_and_duplicates_still_found(self):
+        """No-duplicate libraries are one query; real pairs are still yielded."""
+        user = get_user_model().objects.create_user(username="qc", password="x")
+        for n in range(30):
+            self._anime(user, n, with_twin=False)
+        with CaptureQueriesContext(connection) as clean:
+            self.assertEqual(list(duplicate_pairs()), [])
+        self.assertEqual(len(clean), 1)
+
+        for n in (100, 101):
+            self._anime(user, n, with_twin=True)
+        with CaptureQueriesContext(connection) as sparse:
+            pairs = list(duplicate_pairs())
+        self.assertEqual(len(pairs), 2)
+        self.assertLessEqual(len(sparse), 1 + 2 * 2)
+        self.assertEqual(len(list(duplicate_pairs(batch_size=1))), 1)

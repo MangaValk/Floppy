@@ -871,7 +871,7 @@ def _sort_value(entry, sort, next_episode):
         return (
             getattr(media, "aggregated_last_watched", None)
             or getattr(media, "end_date", None)
-            or getattr(media, "progressed_at", None)
+            or helpers.progress_activity(media)
         )
     if sort in {"updated", "progressed_at"}:
         return getattr(media, "progressed_at", None)
@@ -934,7 +934,7 @@ def media_list_entries_for_items(user, items) -> list[MediaListEntry]:
             owner = {"user": user}
             related = ("item",)
         rows = model.objects.filter(item_id__in=item_ids, **owner).select_related(*related)
-        rows = list(BasicMedia.objects._apply_prefetch_related(rows, media_type, list_mode=True, compact_episodes=True))
+        rows = list(BasicMedia.objects._apply_prefetch_related(rows, media_type, list_mode=True, compact_episodes=True, light_rows=True))
         if media_type != MediaTypes.EPISODE.value:
             BasicMedia.objects._aggregate_duplicate_data(rows, user, media_type)
         for media in sorted(rows, key=lambda row: (row.created_at, row.pk)):

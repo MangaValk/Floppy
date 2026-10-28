@@ -10,6 +10,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import views as drf_views
 from rest_framework.response import Response
 
+from app.services import metadata_resolution
 from lists import smart_rules
 from lists.models import (
     CustomList,
@@ -434,6 +435,9 @@ class ListRecommendationsView(drf_views.APIView):
                 season_number,
                 episode_number,
                 user=request.user,
+                language=metadata_resolution.metadata_language_default(
+                    request.user
+                ),
             )
         except Exception as e:
             return Response(

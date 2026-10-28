@@ -166,6 +166,53 @@ class HistoryDateWindowTests(HistoryWindowFixture):
         }
         self.assertEqual(media_types, {MediaTypes.EPISODE.value})
 
+    def test_filtered_cold_day_does_not_poison_the_shared_cache(self):
+        """A later unfiltered reader still sees every category on the day."""
+        day = (self.today - timedelta(days=2)).date().isoformat()
+        params = {"limit": 1, "offset": 0, "date_filters": {
+            "start_date": day, "end_date": day,
+        }}
+        cold, _ = history_cache_reader.get_cached_history_window(
+            self.user, filters={"media_type": MediaTypes.TV.value}, **params,
+        )
+        self.assertEqual(
+            {entry["media_type"] for entry in cold[0]["entries"]},
+            {MediaTypes.EPISODE.value},
+        )
+        complete, _ = history_cache_reader.get_cached_history_window(self.user, **params)
+        self.assertEqual(
+            {entry["media_type"] for entry in complete[0]["entries"]},
+            {MediaTypes.EPISODE.value, MediaTypes.MOVIE.value},
+        )
+        warm, _ = history_cache_reader.get_cached_history_window(
+            self.user, filters={"media_type": MediaTypes.MOVIE.value}, **params,
+        )
+        self.assertEqual(
+            {entry["media_type"] for entry in warm[0]["entries"]},
+            {MediaTypes.MOVIE.value},
+        )
+
+    def test_enabled_types_alone_read_and_fill_the_shared_day_cache(self):
+        """A viewer with disabled types must not rebuild days on every request."""
+        date_filters = self._range()
+        allowed = {MediaTypes.EPISODE.value, MediaTypes.SEASON.value}
+        params = {
+            "limit": 50, "offset": 0, "date_filters": date_filters,
+            "allowed_media_types": allowed,
+        }
+        cold, _ = history_cache_reader.get_cached_history_window(self.user, **params)
+        self.assertEqual(
+            {entry["media_type"] for day in cold for entry in day["entries"]},
+            {MediaTypes.EPISODE.value},
+        )
+        with CaptureQueriesContext(connection) as warm_queries:
+            warm, _ = history_cache_reader.get_cached_history_window(
+                self.user, **params,
+            )
+        self.assertEqual(self._comparable(warm), self._comparable(cold))
+        # The index is cached too, so only the cache is read.
+        self.assertEqual(len(warm_queries), 0)
+
     def test_the_api_page_does_not_scale_with_the_history(self):
         """Adding days outside the page must not add queries or entries."""
         date_filters = self._range()
@@ -261,3 +308,46 @@ class HistoryPageDateWindowTests(HistoryWindowFixture):
         """An out-of-range page number clamps like Paginator."""
         context = self._page(**{"start-date": "2000-01-01", "page": 99})
         self.assertEqual(context["current_page"], context["total_pages"])
+
+
+class HistoryAnniversaryTests(HistoryWindowFixture):
+    """The anniversary view reads the cached index and days, not the tables."""
+
+    def test_second_anniversary_read_touches_no_tables(self):
+        from app.history_views import _build_anniversary_history_days
+
+        target = self.today - timedelta(days=2)
+        first = _build_anniversary_history_days(
+            self.user, target.month, target.day,
+        )
+        self.assertTrue(first)
+        with CaptureQueriesContext(connection) as queries:
+            second = _build_anniversary_history_days(
+                self.user, target.month, target.day,
+            )
+        self.assertEqual(
+            [day["date"] for day in second], [day["date"] for day in first],
+        )
+        self.assertEqual(len(queries), 0)
+
+
+class HistoryLazyMonthTests(HistoryWindowFixture):
+    """Days below the fold of a month view are placeholders, not cards."""
+
+    def test_month_view_defers_days_past_the_first_few(self):
+        from app.history_views import HISTORY_EAGER_MONTH_DAYS
+
+        self.client.login(**self.credentials)
+        # Eight consecutive days may straddle a month boundary; ask for the month
+        # holding the most recent one and count what that month renders.
+        response = self.client.get(
+            reverse("history"),
+            {"year": self.today.year, "m": self.today.month},
+        )
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        content = response.content.decode()
+        days = content.count('class="history-day')
+        lazy = content.count('hx-trigger="intersect once"')
+        self.assertEqual(lazy, max(days - HISTORY_EAGER_MONTH_DAYS, 0))
+        if lazy:
+            self.assertIn("/history/day/", content)

@@ -18,10 +18,9 @@ class RatingSyncMigrationTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         latest = executor.loader.graph.leaf_nodes()
         try:
-            executor.migrate([before])
-            executor = MigrationExecutor(connection)
-            targets = [before, *(leaf for leaf in latest if leaf[0] != "integrations")]
-            apps = executor.loader.project_state(targets).apps
+            # Use the state of the migrations actually left applied. Other
+            # apps' latest leaves can depend on later integration migrations.
+            apps = executor.migrate([before]).apps
             user = apps.get_model("users", "User").objects.create(
                 username="migration-rating"
             )
@@ -49,13 +48,7 @@ class RatingSyncMigrationTests(TransactionTestCase):
                 status="pending",
                 intent=False,
             )
-            MigrationExecutor(connection).migrate([after])
-            executor = MigrationExecutor(connection)
-            # The database is at ``after``, so read it with models of that
-            # schema; a later migration may add columns it does not have yet.
-            apps = executor.loader.project_state(
-                [after, *(leaf for leaf in latest if leaf[0] != "integrations")]
-            ).apps
+            apps = MigrationExecutor(connection).migrate([after]).apps
             deliveries = apps.get_model("integrations", "OutboundStateDelivery").objects
             self.assertEqual(deliveries.get(pk=watched.pk).operation, "watched")
             self.assertFalse(deliveries.get(pk=watched.pk).intent)
@@ -67,9 +60,7 @@ class RatingSyncMigrationTests(TransactionTestCase):
                 operation="rating",
                 rating=7,
             )
-            executor.migrate([before])
-            executor = MigrationExecutor(connection)
-            apps = executor.loader.project_state(targets).apps
+            apps = MigrationExecutor(connection).migrate([before]).apps
             surviving = apps.get_model(
                 "integrations", "OutboundStateDelivery"
             ).objects.get()

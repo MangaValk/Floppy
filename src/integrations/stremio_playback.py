@@ -465,6 +465,11 @@ def _retryable_provider_error(error):
     return status is None or status in {408, 429} or status >= SERVER_ERROR_MINIMUM
 
 
+def _entry_id(session):
+    media_id = session["media_id"]
+    return media_id.split(":", 1)[0] if session["media_type"] == "series" else media_id
+
+
 def _load_library(session):
     """Return `(user, library_items)` for a session's Stremio account.
 
@@ -492,8 +497,13 @@ def _load_library(session):
     except MediaImportError as error:
         reason = "credential_configuration"
         raise TerminalPlaybackError(reason) from error
+    entry_id = _entry_id(session)
     try:
-        return user, get_library_items(auth_key)
+        # Fetch only this session's item; an empty answer falls back to the whole
+        # library once so an unsupported or surprising `ids` reply never hides it.
+        items = get_library_items(auth_key, ids=[entry_id])
+        if not any(str(item.get("_id") or "") == entry_id for item in items):
+            items = get_library_items(auth_key)
     except ProviderAPIError as error:
         if _retryable_provider_error(error):
             reason = "provider_unavailable"
@@ -506,6 +516,7 @@ def _load_library(session):
     except MediaImportError as error:
         reason = "provider_auth_or_configuration"
         raise TerminalPlaybackError(reason) from error
+    return user, items
 
 
 class TerminalPlaybackError(Exception):
@@ -550,7 +561,7 @@ def observe_session(session_id, *, now=None):
         return PlaybackDecision("schedule", session_id, countdown, reason=str(error))
 
     session["transient_failures"] = 0
-    entry_id = session["media_id"].split(":", 1)[0] if session["media_type"] == "series" else session["media_id"]
+    entry_id = _entry_id(session)
     entry = next((item for item in items if str(item.get("_id") or "") == entry_id), None)
     if entry is None:
         session["revision"] += 1

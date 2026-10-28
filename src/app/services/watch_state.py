@@ -163,7 +163,11 @@ def _derive_movie(user, item):
     """
     movie_model = apps.get_model(app_label="app", model_name=MediaTypes.MOVIE.value)
     rows = movie_model.objects.filter(user=user, item=item).prefetch_related("plays")
+    return _movie_state(rows)
 
+
+def _movie_state(rows):
+    """Merge the plays of one item's Movie rows (``plays`` prefetched)."""
     dates = []
     play_count = 0
     completed = False
@@ -217,8 +221,11 @@ def _derive_episode(user, item):
 def _derive_flat(user, item):
     """Derive state for a type where a repeat is a duplicate row."""
     model = apps.get_model(app_label="app", model_name=item.media_type)
-    rows = model.objects.filter(user=user, item=item)
+    return _flat_state(model.objects.filter(user=user, item=item))
 
+
+def _flat_state(rows):
+    """Count the Completed rows of one item."""
     completed_dates = []
     play_count = 0
     for row in rows:
@@ -352,6 +359,80 @@ def project_watch_state(
         ],
     )
     return state
+
+
+def project_watch_states_bulk(user, items):
+    """Project many items of one user with a handful of queries.
+
+    Same result as ``project_watch_state`` per item for the quiet (non-emitting)
+    case: movies and flat types are derived from one read per media type and the
+    missing ``WatchState`` rows are inserted together. Episodes, users with a
+    synchronizing connection (their projection must record changes), and rows
+    whose stored digest moved fall back to the per-item path.
+    """
+    if user is None or projection_suspended():
+        return
+    from app.models.watch_state import WatchStateOrigin
+
+    items = [item for item in items if item.media_type in PROJECTED_MEDIA_TYPES]
+    if not items:
+        return
+    if _should_emit_changes(user):
+        for item in items:
+            project_watch_state(user, item)
+        return
+
+    by_type = {}
+    for item in items:
+        by_type.setdefault(item.media_type, []).append(item)
+
+    derived = {}
+    for media_type, group in by_type.items():
+        if media_type == MediaTypes.EPISODE.value:
+            for item in group:
+                project_watch_state(user, item)
+            continue
+        model = apps.get_model(app_label="app", model_name=media_type)
+        rows = model.objects.filter(user=user, item__in=group)
+        if media_type == MediaTypes.MOVIE.value:
+            rows = rows.prefetch_related("plays")
+        rows_by_item = {}
+        for row in rows:
+            rows_by_item.setdefault(row.item_id, []).append(row)
+        calc = _movie_state if media_type == MediaTypes.MOVIE.value else _flat_state
+        for item in group:
+            derived[item.pk] = (item, calc(rows_by_item.get(item.pk, [])))
+
+    existing = {
+        state.item_id: state
+        for state in WatchState.objects.filter(user=user, item_id__in=list(derived))
+    }
+    to_create = []
+    for item_id, (item, state_value) in derived.items():
+        digest = calculate_state_digest(
+            state_value.watched,
+            state_value.play_count,
+            state_value.last_watched_at,
+        )
+        state = existing.get(item_id)
+        if state is None:
+            to_create.append(
+                WatchState(
+                    user=user,
+                    item=item,
+                    watched=state_value.watched,
+                    play_count=state_value.play_count,
+                    first_watched_at=state_value.first_watched_at,
+                    last_watched_at=state_value.last_watched_at,
+                    state_digest=digest,
+                    origin_kind=WatchStateOrigin.BACKFILL.value,
+                    origin_key="",
+                ),
+            )
+        elif state.state_digest != digest:
+            project_watch_state(user, item)
+    if to_create:
+        WatchState.objects.bulk_create(to_create, ignore_conflicts=True)
 
 
 def project_watch_state_for_change(user, item, **kwargs):

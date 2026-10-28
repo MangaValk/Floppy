@@ -5,6 +5,9 @@ Missing or partial saves fall back to ``default_profile``, which matches the
 shared card's current year line.
 """
 
+import contextlib
+from functools import cache
+
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
@@ -71,6 +74,7 @@ CARD_FIELDS = {
 }
 
 
+@cache
 def field_types(field_id):
     """Return the media types that can show ``field_id``.
 
@@ -193,7 +197,23 @@ def resolve_profile(user, media_type):
     """Return the saved profile for ``media_type``, or the default."""
     if media_type not in PROFILE_TYPES:
         media_type = MediaTypes.MOVIE.value
-    saved = _saved_types(user).get(media_type)
+    saved_types = _saved_types(user)
+    saved = saved_types.get(media_type)
+    # A page resolves the same profile for every card; parse it once per user
+    # instance (callers treat it as read-only). The identity check drops the memo when the saved map is replaced.
+    memo = getattr(user, "_card_profile_memo", None)
+    if memo is None or memo.get("saved_types") is not saved_types:
+        memo = {"saved_types": saved_types}
+        with contextlib.suppress(AttributeError):
+            user._card_profile_memo = memo
+    if media_type in memo:
+        return memo[media_type]
+    profile = _resolve_profile_uncached(user, media_type, saved)
+    memo[media_type] = profile
+    return profile
+
+
+def _resolve_profile_uncached(user, media_type, saved):
     if not isinstance(saved, dict):
         base = default_profile(media_type)
         if not _saved_types(user):

@@ -208,25 +208,23 @@ def delete_history_record(request, media_type, history_id):
 
 
 def _build_anniversary_history_days(user, month, day, logging_style=None):
-    day_keys = history_cache.build_history_index(
-        user, logging_style_override=logging_style
-    )
-    history_days = []
-    for day_key in day_keys:
+    day_keys = []
+    for day_key in history_cache_reader.get_history_index_day_keys(
+        user, logging_style
+    ):
         try:
             day_date = date.fromisoformat(day_key)
         except ValueError:
             continue
-        if day_date.month != month or day_date.day != day:
-            continue
-        day_payload = history_cache.build_history_day(
-            user,
-            day_date,
-            logging_style_override=logging_style,
+        if day_date.month == month and day_date.day == day:
+            day_keys.append(day_key)
+    return [
+        day_payload
+        for day_payload in history_cache_reader.get_cached_history_days(
+            user, day_keys, logging_style
         )
-        if day_payload and day_payload.get("entries"):
-            history_days.append(day_payload)
-    return history_days
+        if day_payload.get("entries")
+    ]
 
 
 def _build_release_history_days(
@@ -960,6 +958,9 @@ def _prepare_history_day_page(day, user, filters, offset=0):
     return annotated_day
 
 
+HISTORY_EAGER_MONTH_DAYS = 5
+
+
 def _history_day_fragment_query(request, offset):
     """Preserve the current history filters for the next day fragment."""
     query = request.GET.copy()
@@ -1288,6 +1289,17 @@ def history(request):
                     request,
                     day["next_entry_offset"],
                 )
+
+        if _can_use_cached_month_history("activity", filters, {}, None, None) and (
+            history_mode == "activity"
+        ):
+            # Days below the fold load as they scroll into view: a busy month is
+            # several MB of cards, and the day fragment renders the same markup
+            # (it takes the day from the request path, so date bounds and the
+            # anniversary pick need no handling there).
+            for day in history_days[HISTORY_EAGER_MONTH_DAYS:]:
+                day["lazy"] = True
+                day["lazy_query"] = _history_day_fragment_query(request, 0)
 
         context = {
             "user": request.user,
