@@ -14804,9 +14804,6 @@ msgstr[1] "giorni"
 msgid "Up Next requires the TV library."
 msgstr "Da guardare richiede la libreria delle serie TV."
 
-#: users/home_screen.py
-msgid "Invalid Up Next column count."
-msgstr "Numero di colonne non valido per Da guardare."
 
 #: users/home_screen.py
 msgid "All media supports library and Up Next rows."

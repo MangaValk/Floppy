@@ -177,6 +177,8 @@ for _status_choice in Status:
         _status_choice.value
     )
 
+# Sort key of the Up Next row's own queue order.
+UP_NEXT_SORT = "episode_feed"
 HOME_QUERY_DEFAULT_FILTERS = {
     "status": [Status.IN_PROGRESS.value],
     "progress": "all",
@@ -393,7 +395,7 @@ def resolve_home_row_direction(sort_by: str, direction: str | None = None) -> st
         return DirectionChoices.DESC
     if sort_by == HomeSortChoices.COMPLETION:
         return DirectionChoices.DESC
-    if sort_by == HomeSortChoices.EPISODES_LEFT:
+    if sort_by in {HomeSortChoices.EPISODES_LEFT, UP_NEXT_SORT}:
         return DirectionChoices.ASC
     if sort_by == HomeSortChoices.RANDOM:
         return DirectionChoices.DESC
@@ -435,6 +437,15 @@ def get_home_configurable_media_types(user) -> list[str]:
 
 def get_allowed_sort_choices(media_type: str, row_type: str) -> list[dict]:
     """Return sort options for a home row."""
+    if row_type == HomeScreenRowTypeChoices.UP_NEXT:
+        return [
+            {"value": UP_NEXT_SORT, "label": gettext("Up Next")},
+            {"value": MediaSortChoices.TITLE, "label": gettext("Title")},
+            {"value": MediaSortChoices.SCORE, "label": gettext("Rating")},
+            {"value": MediaSortChoices.DATE_ADDED, "label": gettext("Date Added")},
+            {"value": MediaSortChoices.END_DATE, "label": gettext("Last Watched")},
+            {"value": HomeSortChoices.RANDOM, "label": gettext("Random")},
+        ]
     if media_type == HOME_ALL_MEDIA_TYPE:
         return [
             {"value": HomeSortChoices.RECENT, "label": gettext("Recent")},
@@ -608,7 +619,6 @@ def _row_signature(
 
     return {
         "enabled": row.enabled,
-        "columns": row.columns,
         "row_type": row.row_type,
         "sort_by": row.sort_by,
         "direction": None if ignore_direction else row.direction,
@@ -1168,6 +1178,10 @@ def serialize_settings_sections(user) -> list[dict]:
                         media_type,
                         HomeScreenRowTypeChoices.CUSTOM_LIST,
                     ),
+                    HomeScreenRowTypeChoices.UP_NEXT: get_allowed_sort_choices(
+                        media_type,
+                        HomeScreenRowTypeChoices.UP_NEXT,
+                    ),
                 },
                 "filter_fields": [],
                 "rows": [
@@ -1363,7 +1377,6 @@ def _serialize_settings_row(user, row: HomeScreenRow, media_type: str) -> dict:
         "id": row.id,
         "client_id": f"row-{row.id}",
         "enabled": row.enabled,
-        "columns": row.columns,
         "row_type": row.row_type,
         "custom_list_id": row.custom_list_id,
         "custom_list_name": row.custom_list.name if row.custom_list_id else "",
@@ -1396,10 +1409,6 @@ def _row_payload_to_model(
     ):
         msg = gettext("Up Next requires the TV library.")
         raise HomeScreenValidationError(msg)
-    columns = row_payload.get("columns", 2)
-    if str(columns) not in {"2", "3", "4"}:
-        msg = gettext("Invalid Up Next column count.")
-        raise HomeScreenValidationError(msg)
     enabled = bool(row_payload.get("enabled", True))
     custom_list = None
     filters = {}
@@ -1417,7 +1426,7 @@ def _row_payload_to_model(
             raise HomeScreenValidationError(msg)
         sort_choices = get_allowed_sort_choices(media_type, row_type)
     elif row_type == HomeScreenRowTypeChoices.UP_NEXT:
-        sort_choices = []
+        sort_choices = get_allowed_sort_choices(media_type, row_type)
     elif row_type == HomeScreenRowTypeChoices.RECENTLY_UNRATED:
         sort_choices = []
         if media_type == MediaTypes.MUSIC.value:
@@ -1430,13 +1439,12 @@ def _row_payload_to_model(
 
     allowed_sort_values = {choice["value"] for choice in sort_choices}
     sort_by = str(row_payload.get("sort_by") or "").strip()
-    if row_type == HomeScreenRowTypeChoices.UP_NEXT:
-        sort_by = "episode_feed"
-        direction = DirectionChoices.ASC
-    elif row_type == HomeScreenRowTypeChoices.RECENTLY_UNRATED:
+    if row_type == HomeScreenRowTypeChoices.RECENTLY_UNRATED:
         sort_by = HomeSortChoices.RECENT
         direction = _default_recent_row_direction()
     else:
+        if row_type == HomeScreenRowTypeChoices.UP_NEXT and not sort_by:
+            sort_by = UP_NEXT_SORT
         if sort_by not in allowed_sort_values:
             msg = f"Unsupported sort for {media_type}."
             raise HomeScreenValidationError(msg)
@@ -1454,7 +1462,6 @@ def _row_payload_to_model(
         enabled=enabled,
         title=custom_title,
         row_type=row_type,
-        columns=int(columns),
         custom_list=custom_list,
         sort_by=sort_by,
         direction=direction,
@@ -3004,14 +3011,18 @@ def _episode_feed_sort_values(user, candidates, direction):
             last_date = target.get("last_air_date")
             value = (2, -last_date.timestamp()) if last_date else (3, 0)
         values[entry.item.pk] = value
-    return [values.get(candidate.item.pk, (3, 0)) for candidate in candidates]
+    missing = (3, 0)
+    ordered = [values.get(candidate.item.pk, missing) for candidate in candidates]
+    if direction == DirectionChoices.DESC:
+        return [(-group, -key) for group, key in ordered]
+    return ordered
 
 
 _MEDIA = frozenset({NEEDS_MEDIA})
 _MEDIA_AND_MAX = frozenset({NEEDS_MEDIA, NEEDS_MAX_PROGRESS})
 for _definition in (
     SortDef(
-        ("episode_feed",),
+        (UP_NEXT_SORT,),
         batch_values=_episode_feed_sort_values,
         direction_in_value=True,
         needs=_MEDIA_AND_MAX,
@@ -3374,7 +3385,9 @@ def _build_row_section(
     if seed is None:
         seed = home_row_seed(row)
     if row.row_type == HomeScreenRowTypeChoices.UP_NEXT:
-        section_entries, total = _episode_feed_row_window(user, row, batch_start, items_limit)
+        section_entries, total = _episode_feed_row_window(
+            user, row, batch_start, items_limit, seed,
+        )
     elif row.row_type == HomeScreenRowTypeChoices.RECENTLY_UNRATED:
         # Bounded by its time window, so it is built whole and sliced.
         entries = _recently_unrated_entries(user, row)
@@ -3420,7 +3433,6 @@ def _build_row_section(
     return {
         "row_id": row.id,
         "row_type": row.row_type,
-        "columns": row.columns,
         "title": row_title(row, user),
         "title_main": title_main,
         "title_detail": title_detail,
@@ -3476,7 +3488,7 @@ def _cached_row_section(
     return cached
 
 
-def _episode_feed_row_window(user, row, offset, limit):
+def _episode_feed_row_window(user, row, offset, limit, seed):
     """Use the standard Home row window and cache for the TV episode queue."""
     query = from_home_row_filters(
         user,
@@ -3484,6 +3496,7 @@ def _episode_feed_row_window(user, row, offset, limit):
         (MediaTypes.TV.value,),
         sort_key=row.sort_by,
         direction=row.direction,
+        seed=seed,
         mixed=True,
     )
     # Keep ended shows only while they have released episodes left. Use the
@@ -3508,7 +3521,7 @@ def _episode_feed_row_window(user, row, offset, limit):
         LibraryQueryExecutor(user, query),
         offset,
         limit,
-        seed=0,
+        seed=seed,
     )
     entries = _episode_feed_entries(_row_entries(user, items))
     return entries, total

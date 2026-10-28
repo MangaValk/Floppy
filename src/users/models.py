@@ -2518,10 +2518,6 @@ class HomeScreenRow(models.Model):
         blank=True,
         related_name="home_screen_rows",
     )
-    # Preserve existing Up Next settings; native Home rows use shared card sizing.
-    columns = models.PositiveSmallIntegerField(
-        default=2, choices=[(2, "2"), (3, "3"), (4, "4")],
-    )
     sort_by = models.CharField(max_length=32, default=MediaSortChoices.TITLE)
     direction = models.CharField(
         max_length=4,

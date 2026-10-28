@@ -14792,9 +14792,6 @@ msgstr[1] "días"
 msgid "Up Next requires the TV library."
 msgstr "«A continuación» requiere la biblioteca de series."
 
-#: users/home_screen.py
-msgid "Invalid Up Next column count."
-msgstr "Número de columnas no válido para «A continuación»."
 
 #: users/home_screen.py
 msgid "All media supports library and Up Next rows."

@@ -366,28 +366,37 @@ def image_url(value):
     return image_cache.rewrite_image_url(value)
 
 
-@register.filter
-def home_row_subtitle(entry):
-    """Localize the episode queue when rendering, after the Home row cache."""
-    target = getattr(entry, "next_episode", None)
-    if not target:
-        return entry.get("subtitle_override") if isinstance(entry, dict) else entry.subtitle_override
-    if target["released"]:
-        state = f"{entry.media.episodes_left} {_('Behind')}"
-    elif target.get("days_until") == 0:
-        state = _("Today")
-    elif target.get("days_until") is not None:
-        days = target["days_until"]
-        state = f"{days} {ngettext('day', 'days', days)}"
-    else:
-        state = _("Upcoming")
-    episode = ""
-    if target.get("season_number") is not None:
-        episode = f"S{target['season_number']:02d}E{target['episode_number']:02d}"
-        title = target.get("title")
-        if title and title != entry.item.title:
-            episode = f"{episode} {title}"
-    return f"{episode} · {state}" if episode else state
+@register.simple_tag
+def episode_queue_url(item, media):
+    """Return the episode page the Up Next chip opens."""
+    queue = media.next_episode_queue
+    if queue.get("season_number") is None:
+        return ""
+    is_anime = item.media_type == MediaTypes.ANIME.value
+    return reverse(
+        "anime_episode_details" if is_anime else "episode_details",
+        kwargs={
+            "source": queue["source"],
+            "media_id": queue["media_id"],
+            "title": slug(item.title) or slug(str(queue["media_id"])) or "item",
+            "season_number": queue["season_number"],
+            "episode_number": queue["episode_number"],
+        },
+    )
+
+
+@register.simple_tag
+def episode_queue_label(media):
+    """Localize the Up Next chip when rendering, after the Home row cache."""
+    queue = media.next_episode_queue
+    if queue["released"]:
+        return f"{media.episodes_left} {_('Behind')}"
+    days = queue.get("days_until")
+    if days is None:
+        return _("Upcoming")
+    if days == 0:
+        return _("Today")
+    return f"{days} {ngettext('day', 'days', days)}"
 
 
 @register.filter

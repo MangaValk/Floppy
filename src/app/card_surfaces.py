@@ -34,8 +34,12 @@ SURFACES = {
     "list_recommendations": CardSurface(),
     # Upcoming shelves lead with the next release instead of the status.
     "home": CardSurface(show_next_event_chip=True, show_next_event_subtitle=True),
-    # Queue identity and backlog/countdown are essential without hover, including touch.
-    "up_next": CardSurface(show_episode_queue=True),
+    # Home card with the Behind or countdown chip in the next-episode slot.
+    "up_next": CardSurface(
+        show_next_event_chip=True,
+        show_next_event_subtitle=True,
+        show_episode_queue=True,
+    ),
     # A list can hold single episodes; S01E02 says which one.
     "list": CardSurface(show_episode_identity=True),
     # A tile on a tier board: the board owns clicks and drags, so no hover
@@ -155,7 +159,6 @@ def card_context(page_context, surface, values):
 def _card_render_context(rendered_context):
     """Attach the subtitle profile for this card."""
     from users.card_metadata import (
-        DISPLAY_ALWAYS,
         DISPLAY_HOVER,
         card_lines,
         progress_bar_display,
@@ -178,8 +181,6 @@ def _card_render_context(rendered_context):
     # Per-line dormant classes own visibility once the line renderer is on.
     # A card-level always class would reveal the hover lines too.
     display = DISPLAY_HOVER if use_lines else subtitle_display(user, media_type)
-    if rendered_context.get("show_episode_queue"):
-        display = DISPLAY_ALWAYS
     profile = resolve_profile(user, media_type)
     return {
         "card_display": display,

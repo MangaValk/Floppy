@@ -231,7 +231,7 @@
                             </div>
                           </template>
 
-                          <template x-if="row.row_type !== 'recently_unrated' && row.row_type !== 'up_next'">
+                          <template x-if="row.row_type !== 'recently_unrated'">
                             <div class="relative filter-control" @click.outside="if (openMenu === 'sort') openMenu = null">
                               <button type="button"
                                       class="home-settings-chip flex items-center px-2 py-2 rounded-md text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
@@ -492,7 +492,6 @@
             ...row,
             enabled: true,
             custom_title: row.custom_title || '',
-            columns: row.columns || 2,
             editorOpen: row.row_type === 'custom_list' && !row.id,
             filters: { ...(row.filters || {}) },
             recent_show: row.recent_show || 'album',
@@ -675,7 +674,7 @@
           return choice ? choice.label : gettext('Sort');
         },
         defaultSortDirection(value) {
-          return ['author', 'popularity', 'runtime', 'start_date', 'title', 'time_left', 'time_to_beat'].includes(value) ? 'asc' : 'desc';
+          return ['author', 'popularity', 'runtime', 'start_date', 'title', 'time_left', 'time_to_beat', 'episode_feed'].includes(value) ? 'asc' : 'desc';
         },
         toggleRowSort(row, value) {
           row.direction = (row.sort_by === value) ? (row.direction === 'asc' ? 'desc' : 'asc') : this.defaultSortDirection(value);
@@ -729,6 +728,7 @@
         },
         defaultSortValue(section, rowType) {
           if (rowType === 'recently_unrated') return 'recent';
+          if (rowType === 'up_next') return 'episode_feed';
           const defaultSortChoices = rowType === 'custom_list'
             ? (section.sort_choices.custom_list || [])
             : (section.sort_choices.library_query || []);
@@ -814,6 +814,7 @@
         },
         sortChoices(section, row) {
           if (row.row_type === 'custom_list') return section.sort_choices.custom_list || [];
+          if (row.row_type === 'up_next') return section.sort_choices.up_next || [];
           return section.sort_choices.library_query || [];
         },
         addRow(section, rowType) {
@@ -920,7 +921,6 @@
               id: row.id,
               enabled: true,
               custom_title: row.custom_title || '',
-              columns: row.columns || 2,
               row_type: row.row_type,
               custom_list_id: row.custom_list_id,
               sort_by: row.sort_by,

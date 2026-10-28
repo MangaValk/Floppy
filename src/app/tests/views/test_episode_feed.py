@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import timedelta
 from unittest.mock import patch
 from uuid import uuid4
@@ -50,6 +51,23 @@ class EpisodeFeedTests(TestCase):
         self.metadata.start()
         self.addCleanup(self.metadata.stop)
         self.addCleanup(cache.clear)
+
+    @staticmethod
+    def _queue(card):
+        """Return the card's chip label and the season and episode it links to."""
+        chip = card.select_one('[data-episode-queue="true"]')
+        link = re.search(r"/season/(\d+)/episode/(\d+)", chip.get("href", ""))
+        label = " ".join(chip.stripped_strings)
+        if link is None:
+            return (label, None, None)
+        return (label, int(link.group(1)), int(link.group(2)))
+
+    def _chips(self, response):
+        soup = BeautifulSoup(response.content, "html.parser")
+        return [
+            self._queue(card)
+            for card in soup.select(f"#media-grid-row-{self.row.pk} .home-row-card")
+        ]
 
     def _feed(self, page=1):
         section = home_screen._build_row_section(
@@ -158,7 +176,6 @@ class EpisodeFeedTests(TestCase):
                 self.assertEqual(self.row.sort_by, "episode_feed")
                 self.assertEqual(self.row.direction, "asc")
                 settings = self.client.get(reverse("home_screen"))
-                self.assertNotContains(settings, 'x-model.number="row.columns"')
                 response = self.client.get(reverse("home"))
                 soup = BeautifulSoup(response.content, "html.parser")
                 self.assertIsNotNone(
@@ -166,11 +183,10 @@ class EpisodeFeedTests(TestCase):
                         "[data-home-row-wrapper] .home-row-card .media-card"
                     )
                 )
-                self.assertContains(response, "S01E02")
-                self.assertContains(response, "2 Behind")
+                self.assertEqual(self._chips(response), [("2 Behind", 1, 2)])
                 self.assertNotContains(response, "episode-feed-")
 
-    def test_up_next_information_stays_visible_without_hover(self):
+    def test_up_next_chip_replaces_next_episode_link_and_respects_card_settings(self):
         self._show("Backlog show", watched=1)
         self._show("Future show", future=True)
         self._show("Upcoming show", watched=3)
@@ -183,36 +199,70 @@ class EpisodeFeedTests(TestCase):
             "version": 1,
             "types": {"tv": {"display": "hover", "fields": []}},
         }
-        self.user.save(update_fields=["card_metadata"])
+        self.user.quick_season_update_mobile = "next_episode"
+        self.user.save(update_fields=["card_metadata", "quick_season_update_mobile"])
         response = self.client.get(reverse("home"))
         soup = BeautifulSoup(response.content, "html.parser")
         queue = soup.select_one(f"#media-grid-row-{self.row.pk}")
-        cards = queue.select(".media-card")
+        cards = queue.select(".home-row-card")
         self.assertEqual(len(cards), 3)
         for card in cards:
-            self.assertIn("media-card-subtitle-always", card["class"])
-            self.assertIsNotNone(card.select_one('[data-episode-queue="true"]'))
-        self.assertIn("S01E02", queue.get_text())
-        badges = [" ".join(badge.stripped_strings) for badge in queue.select('[data-episode-queue="true"]')]
-        self.assertEqual(badges, ["2 Behind", "1 day", "Upcoming"])
+            # The user's subtitle setting decides; Up Next adds none of its own.
+            self.assertIsNone(card.select_one(".media-card-subtitle-always"))
+            # One chip in the next-episode slot, linking the same way.
+            self.assertEqual(len(card.select('[data-episode-queue="true"]')), 1)
+            self.assertNotIn("Next ep", card.get_text())
+        # Shows with a known next episode link to it; an undated show has none.
+        self.assertEqual(len(queue.select('a[data-episode-queue="true"]')), 2)
+        self.assertEqual(
+            [label for label, *_ in self._chips(response)],
+            ["2 Behind", "1 day", "Upcoming"],
+        )
         ordinary = soup.select_one(f"#media-grid-row-{regular.pk}")
         self.assertIsNotNone(ordinary)
-        self.assertIsNone(ordinary.select_one(".media-card-subtitle-always"))
         self.assertIsNone(ordinary.select_one('[data-episode-queue="true"]'))
 
-    def test_existing_row_keeps_legacy_columns_without_a_separate_grid(self):
-        self._show("Existing NAS row")
-        self.row.columns = 4
-        self.row.save(update_fields=["columns"])
-        response = self.client.get(reverse("home"))
-        self.assertContains(response, "home-row-card")
-        self.assertNotContains(response, "repeat(4, minmax(0, 1fr))")
-        self.row.refresh_from_db()
-        self.assertEqual(self.row.columns, 4)
+    def test_up_next_sort_direction_reverses_the_queue(self):
+        self._show("One behind", watched=2)
+        self._show("Three behind", watched=0)
+        self._show("Future show", future=True)
+
+        def titles():
+            return [entry.item.title for entry in self._feed()["items"]]
+
+        self.assertEqual(titles(), ["One behind", "Three behind", "Future show"])
+        self.row.direction = "desc"
+        self.row.save(update_fields=["direction"])
+        cache.clear()
+        self.assertEqual(titles(), ["Future show", "Three behind", "One behind"])
+
+    def test_up_next_sort_and_direction_save_with_the_row(self):
+        self._show("Show", watched=1)
+        for sort_by, direction in (("episode_feed", "desc"), ("title", "asc")):
+            with self.subTest(sort_by=sort_by):
+                home_screen.save_home_screen_configuration(
+                    self.user,
+                    json.dumps(
+                        [
+                            {
+                                "media_type": "tv",
+                                "rows": [
+                                    {
+                                        "row_type": "up_next",
+                                        "sort_by": sort_by,
+                                        "direction": direction,
+                                    }
+                                ],
+                            },
+                        ]
+                    ),
+                )
+                row = HomeScreenRow.objects.get(user=self.user, row_type="up_next")
+                self.assertEqual((row.sort_by, row.direction), (sort_by, direction))
 
     def test_invalid_up_next_settings_do_not_replace_existing_rows(self):
-        for media_type, columns in (("movie", 2), ("all", 5), ("tv", "bad")):
-            with self.subTest(media_type=media_type, columns=columns):
+        for media_type, sort_by in (("movie", "episode_feed"), ("tv", "bogus")):
+            with self.subTest(media_type=media_type, sort_by=sort_by):
                 with self.assertRaises(home_screen.HomeScreenValidationError):
                     home_screen.save_home_screen_configuration(
                         self.user,
@@ -221,7 +271,7 @@ class EpisodeFeedTests(TestCase):
                                 {
                                     "media_type": media_type,
                                     "rows": [
-                                        {"row_type": "up_next", "columns": columns}
+                                        {"row_type": "up_next", "sort_by": sort_by}
                                     ],
                                 },
                             ]
@@ -415,8 +465,7 @@ class EpisodeFeedTests(TestCase):
         response = self.client.get(reverse("home"))
         self.assertContains(response, "My queued show")
         self.assertNotContains(response, "Other private show")
-        self.assertContains(response, "S01E01")
-        self.assertContains(response, "My queued show episode 1")
+        self.assertEqual(self._chips(response), [("3 Behind", 1, 1)])
         self.assertNotContains(response, "#all-episodes")
         self.assertNotContains(response, f"{reverse('discover')}?media_type=tv")
         self.assertContains(response, 'id="global-search"')
@@ -450,9 +499,7 @@ class EpisodeFeedTests(TestCase):
         )
         self.assertEqual(card.select_one("img")["alt"], "Poster show")
         self.assertIn("poster.jpg", card.select_one("img")["src"])
-        self.assertIn("S01E02", card.get_text())
-        self.assertIn("Poster show episode 2", card.get_text())
-        self.assertIn("2 Behind", card.get_text())
+        self.assertEqual(self._queue(card), ("2 Behind", 1, 2))
         self.assertEqual(
             self._response_row(response)["items"][0].media.episodes_left, 2
         )
@@ -493,9 +540,7 @@ class EpisodeFeedTests(TestCase):
                 self.assertEqual(
                     [card.img["alt"] for card in cards], ["Two behind", "New season"]
                 )
-                self.assertIn("S02E01", cards[1].get_text())
-                self.assertIn("New season episode 1", cards[1].get_text())
-                self.assertIn("4 Behind", " ".join(cards[1].stripped_strings))
+                self.assertEqual(self._queue(cards[1]), ("4 Behind", 2, 1))
                 self.assertNotIn("#all-episodes", str(cards[1]))
         self.assertFalse(
             Season.objects.filter(related_tv=tv, item__season_number=2).exists()
@@ -511,7 +556,8 @@ class EpisodeFeedTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(reverse("episode_save"), payload)
         self.assertEqual(response.status_code, 302)
-        self.assertContains(self.client.get(reverse("home")), "S02E02")
+        chips = self._chips(self.client.get(reverse("home")))
+        self.assertIn((2, 2), [chip[1:] for chip in chips])
         self.assertTrue(
             Season.objects.filter(related_tv=tv, item__season_number=2).exists()
         )
@@ -532,8 +578,7 @@ class EpisodeFeedTests(TestCase):
                 self.client.post(reverse("episode_save"), payload).status_code, 302
             )
         response = self.client.get(reverse("home"))
-        self.assertContains(response, "S01E03")
-        self.assertContains(response, "1 Behind")
+        self.assertEqual(self._chips(response), [("1 Behind", 1, 3)])
         with self.captureOnCommitCallbacks(execute=True):
             self.client.post(reverse("episode_save"), payload)
         self.assertEqual(
@@ -572,8 +617,7 @@ class EpisodeFeedTests(TestCase):
         self.assertEqual(
             self._response_row(response)["items"][0].next_episode["days_until"], 7
         )
-        self.assertIn("S02E01", card.get_text())
-        self.assertIn("7 days", card.get_text())
+        self.assertEqual(self._queue(card), ("7 days", 2, 1))
         self.assertIsNone(card.select_one("form"))
 
     def test_upcoming_without_date_excludes_finished_shows_before_pagination(self):
@@ -625,7 +669,7 @@ class EpisodeFeedTests(TestCase):
         target = self._response_row(response)["items"][0].next_episode
         self.assertEqual(target["days_until"], 2)
         self.assertEqual(target["title"], "Coming next")
-        self.assertContains(response, "S01E04")
+        self.assertEqual(self._chips(response), [("2 days", 1, 4)])
         self.assertNotContains(response, "Mark watched")
 
     def test_episode_releasing_later_today_has_today_badge(self):
@@ -687,6 +731,5 @@ class EpisodeFeedTests(TestCase):
         response = self.client.get(reverse("home_row_fragment", args=[self.row.pk]))
         self.assertContains(response, f'id="media-grid-row-{self.row.pk}"')
         self.assertContains(response, "home-row-card")
-        self.assertContains(response, "S01E03")
-        self.assertContains(response, "1 Behind")
+        self.assertEqual(self._chips(response), [("1 Behind", 1, 3)])
         self.assertNotContains(response, "episode-feed-")

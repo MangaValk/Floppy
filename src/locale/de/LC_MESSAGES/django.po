@@ -12240,9 +12240,6 @@ msgstr[1] "Tage"
 msgid "Up Next requires the TV library."
 msgstr "Für „Als Nächstes“ muss die Serienbibliothek aktiviert sein."
 
-#: users/home_screen.py
-msgid "Invalid Up Next column count."
-msgstr "Ungültige Spaltenanzahl für „Als Nächstes“."
 
 #: users/home_screen.py
 msgid "All media supports library and Up Next rows."
