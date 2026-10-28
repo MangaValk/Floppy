@@ -49,13 +49,11 @@ class SettingsPageTests(TestCase):
         self.assertIn("px-2 py-2", link)
         self.assertNotIn("pl-10", link)
 
-    def test_integrations_page_filters_by_media_type(self):
+    def test_integrations_page_keeps_only_its_jump_chips(self):
         response = self.client.get(reverse("integrations"))
 
-        self.assertContains(response, 'data-testid="media-tag-filter"')
-        self.assertContains(response, "Movies &amp; TV")
-        self.assertContains(response, "showIntegration('navidrome')")
-        self.assertNotContains(response, "Books &amp; Comics")
+        self.assertContains(response, "Jump to integration:")
+        self.assertNotContains(response, 'data-testid="media-tag-filter"')
 
     def test_metadata_page_filters_by_media_type(self):
         response = self.client.get(reverse("metadata_settings"))
