@@ -11,6 +11,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.translation import gettext
 from django.views.decorators.http import require_GET
 
 from app import (
@@ -140,6 +141,33 @@ def _enrich_comic_issues(issues, user, source):
         entry["item"] = item_by_media_id.get(media_id)
         enriched.append(entry)
     return enriched
+
+
+def _issue_extra_details(media_metadata, authors_linked):
+    """Return (label, text) rows for comic issue details the template lacks.
+
+    Covers what the Metadata editor can set: authors (when none are linked),
+    publisher, format, country, languages and genres. Values may be a string
+    or a list, so both are flattened to one comma-separated line.
+    """
+    if not isinstance(media_metadata, dict):
+        return []
+    details = media_metadata.get("details") or {}
+    candidates = [
+        (gettext("Author"), None if authors_linked else details.get("author")),
+        (gettext("Publisher"), details.get("publisher")),
+        (gettext("Format"), details.get("format")),
+        (gettext("Country"), details.get("country")),
+        (gettext("Languages"), details.get("languages")),
+        (gettext("Genres"), media_metadata.get("genres")),
+    ]
+    rows = []
+    for label, value in candidates:
+        values = value if isinstance(value, (list, tuple)) else [value]
+        text = ", ".join(str(v).strip() for v in values if v and str(v).strip())
+        if text:
+            rows.append((label, text))
+    return rows
 
 
 def _metadata_episode_count(media_metadata):
@@ -1989,6 +2017,11 @@ def media_details(
         "media_type": media_type,
         "match_item": detail_item,
         "authors_linked": authors_linked,
+        "issue_extra_details": (
+            _issue_extra_details(media_metadata, authors_linked)
+            if media_type == MediaTypes.COMIC_ISSUE.value
+            else []
+        ),
         "author_detail_keys": author_detail_keys,
         "studios_linked": studios_linked,
         "studio_detail_keys": studio_detail_keys,

@@ -88,6 +88,32 @@ def handle_error(error, user=None):
     raise services.ProviderAPIError(Sources.IGDB.value, error)
 
 
+def _retry_after_token_refresh(url, data, headers):
+    """Repeat a request once after a 401 refreshed the token.
+
+    A second failure must surface as a ProviderAPIError like any other IGDB
+    failure; a raw HTTPError escaped to the view as a 500.
+    """
+    try:
+        return services.api_request(
+            Sources.IGDB.value,
+            "POST",
+            url,
+            data=data,
+            headers=headers,
+        )
+    except requests.exceptions.HTTPError as error:
+        if error.response.status_code == requests.codes.unauthorized:
+            raise services.ProviderAPIError(
+                Sources.IGDB.value,
+                error,
+                "IGDB rejected the access token after a refresh; check the "
+                "Twitch client ID and secret.",
+            ) from None
+        handle_error(error)
+        raise
+
+
 def enabled(user=None):
     """Return whether IGDB is configured."""
     return credentials.is_configured("igdb", user)
@@ -191,13 +217,7 @@ def external_game(external_id, source=ExternalGameSource.STEAM):
             if error_resp and error_resp.get("retry"):
                 # Retry the request with the new access token
                 headers["Authorization"] = f"Bearer {get_access_token()}"
-                response = services.api_request(
-                    Sources.IGDB.value,
-                    "POST",
-                    url,
-                    data=query,
-                    headers=headers,
-                )
+                response = _retry_after_token_refresh(url, query, headers)
 
         # Return the IGDB game ID if found, None otherwise
         if response and len(response) > 0:
@@ -367,13 +387,7 @@ def _perform_search_request(url, headers, multiquery):
         error_resp = handle_error(error)
         if error_resp and error_resp.get("retry"):
             headers["Authorization"] = f"Bearer {get_access_token()}"
-            return services.api_request(
-                Sources.IGDB.value,
-                "POST",
-                url,
-                data=multiquery,
-                headers=headers,
-            )
+            return _retry_after_token_refresh(url, multiquery, headers)
 
 
 def _extract_igdb_error_details(error_json):
@@ -459,13 +473,7 @@ def game(media_id):
             if error_resp and error_resp.get("retry"):
                 # Retry the request with the new access token
                 headers["Authorization"] = f"Bearer {get_access_token()}"
-                response = services.api_request(
-                    Sources.IGDB.value,
-                    "POST",
-                    url,
-                    data=data,
-                    headers=headers,
-                )
+                response = _retry_after_token_refresh(url, data, headers)
 
         # Check if response is empty (no results found)
         if not response:
@@ -574,13 +582,7 @@ def company_profile(company_id):
             error_resp = handle_error(error)
             if error_resp and error_resp.get("retry"):
                 headers["Authorization"] = f"Bearer {get_access_token()}"
-                response = services.api_request(
-                    Sources.IGDB.value,
-                    "POST",
-                    url,
-                    data=query,
-                    headers=headers,
-                )
+                response = _retry_after_token_refresh(url, query, headers)
 
         if not response:
             return None
@@ -710,13 +712,7 @@ def _fetch_games_by_ids(game_ids, *, access_token=None):
             error_resp = handle_error(error)
             if error_resp and error_resp.get("retry"):
                 headers["Authorization"] = f"Bearer {get_access_token()}"
-                response = services.api_request(
-                    Sources.IGDB.value,
-                    "POST",
-                    url,
-                    data=query,
-                    headers=headers,
-                )
+                response = _retry_after_token_refresh(url, query, headers)
         if response:
             game_rows.extend(response)
 

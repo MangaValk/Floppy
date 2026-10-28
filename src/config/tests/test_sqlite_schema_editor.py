@@ -43,6 +43,15 @@ class IndexOnlySchemaEditorTests(SimpleTestCase):
         self.assertTrue(self.db.features.supports_foreign_keys)
         self.assertTrue(self.db.connection.execute("PRAGMA foreign_keys").fetchone()[0])
 
+    def test_migration_record_insert_keeps_scan_skipped(self):
+        def work(editor):
+            editor.execute('CREATE INDEX "t_v_idx" ON "t" ("v")')
+            with self.db.cursor() as cursor:
+                cursor.execute("CREATE TABLE django_migrations (id integer)")
+                cursor.execute("INSERT INTO django_migrations (id) VALUES (1)")
+
+        self.assertEqual(self._foreign_key_scans(work), 0)
+
     def test_table_change_keeps_foreign_key_scan(self):
         def work(editor):
             editor.execute('CREATE INDEX "t_v_idx" ON "t" ("v")')

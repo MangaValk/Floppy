@@ -562,6 +562,21 @@ else:
     )
     SQLITE_JOURNAL_MODE = config("SQLITE_JOURNAL_MODE", default="WAL")
     SQLITE_SYNCHRONOUS = config("SQLITE_SYNCHRONOUS", default="NORMAL")
+    # Read-side tuning. SQLite's own defaults (a 2 MiB page cache per connection,
+    # no memory map, spill files for sorts) make every big library query re-read
+    # the file from disk; on slow storage that is the cold-load cost. All three
+    # are upper bounds, not allocations: pages are cached only as they are read.
+    SQLITE_CACHE_SIZE_MIB = config(
+        "SQLITE_CACHE_SIZE_MIB",
+        default=by_tier(8, 24, 64),
+        cast=int,
+    )
+    SQLITE_MMAP_SIZE_MIB = config(
+        "SQLITE_MMAP_SIZE_MIB",
+        default=by_tier(0, 256, 1024),
+        cast=int,
+    )
+    SQLITE_TEMP_STORE = config("SQLITE_TEMP_STORE", default="MEMORY")
 
     DATABASES = {
         "default": {
@@ -605,6 +620,10 @@ else:
             cursor.execute(
                 f"PRAGMA busy_timeout={int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}",
             )
+            cursor.execute(f"PRAGMA cache_size={-1024 * int(SQLITE_CACHE_SIZE_MIB)}")
+            cursor.execute(f"PRAGMA mmap_size={(1 << 20) * int(SQLITE_MMAP_SIZE_MIB)}")
+            if SQLITE_TEMP_STORE.upper() in {"DEFAULT", "FILE", "MEMORY"}:
+                cursor.execute(f"PRAGMA temp_store={SQLITE_TEMP_STORE.upper()}")
             if actual_journal_mode.lower() != SQLITE_JOURNAL_MODE.lower():
                 # A connection stuck on a different journal mode than its
                 # siblings (e.g. WAL requested but filesystem doesn't support
@@ -1156,6 +1175,13 @@ DB_SNAPSHOT_ENABLED = config("DB_SNAPSHOT_ENABLED", default=True, cast=bool)
 # analysis_limit bounds each ANALYZE to a row sample, keeping the first run on a
 # multi-GB database short.
 DB_OPTIMIZE_ENABLED = config("DB_OPTIMIZE_ENABLED", default=True, cast=bool)
+# Sequential read of the SQLite file after start so cold page loads hit the OS
+# cache (app/tasks_db_warm.py). Budget is further capped at 25% of free memory.
+DB_WARM_ENABLED = config("DB_WARM_ENABLED", default=True, cast=bool)
+DB_WARM_MAX_MIB = config("DB_WARM_MAX_MIB", default=by_tier(0, 512, 2048), cast=int)
+DB_WARM_PAUSE_MS = config("DB_WARM_PAUSE_MS", default=20, cast=int)
+# Below this sequential read speed the warm logs a "slow_disk" warning.
+DB_SLOW_DISK_MIB_PER_SECOND = config("DB_SLOW_DISK_MIB_PER_SECOND", default=60, cast=int)
 DB_OPTIMIZE_ANALYSIS_LIMIT = config(
     "DB_OPTIMIZE_ANALYSIS_LIMIT",
     default=1000,
@@ -2056,6 +2082,10 @@ CELERY_BEAT_SCHEDULE = {
     "optimize_database_statistics": {
         "task": "Optimize database planner statistics",
         "schedule": 60 * 60 * 24,
+    },
+    "warm_database_page_cache": {
+        "task": "Warm database page cache",
+        "schedule": 60 * 60 * 6,
     },
     "write_database_snapshot": {
         "task": "Write database snapshot",

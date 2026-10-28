@@ -237,6 +237,7 @@ class RequestPerformanceLoggingMiddleware:
                     f", {name.removesuffix('_ms')};dur={value:.1f}"
                     for name, value in breakdown.items()
                 )
+                + f', queries;desc="{query_count["total"]}"'
             )
 
         if (

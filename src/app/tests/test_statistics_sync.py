@@ -647,6 +647,52 @@ class SyncTests(StatisticsSyncTestCase):
         enqueue.assert_called_once()
 
 
+class SlowHostContinuationTests(StatisticsSyncTestCase):
+    """Days found by the stale-score scan must not be rebuilt from scratch forever."""
+
+    def test_scan_found_days_make_progress_across_continuations(self):
+        self.full_sync()
+        StatisticsSyncState.objects.filter(user_id=self.user.id).update(
+            synced_day=self.day(5)
+        )
+        stale = {self.day(offset) for offset in (3, 4, 5, 6, 7, 8)}
+        built = []
+        from app.statistics_day_builder import build_stats_for_day as real_build
+
+        clock = {"now": 0.0}
+
+        def slow_build(user_id, day, **kwargs):
+            built.append(day)
+            clock["now"] += 4  # each day costs 4 s against a 10 s budget
+            return real_build(user_id, day, **kwargs)
+
+        with (
+            patch(
+                "app.statistics_cache._collect_stale_reading_score_days",
+                # Rebuilding does not always clear the flag (a score the day
+                # payload cannot show), so the scan keeps naming the same days.
+                return_value=stale,
+            ),
+            patch(
+                "app.statistics_day_builder.build_stats_for_day", side_effect=slow_build
+            ),
+            patch(
+                "app.statistics_sync.time.monotonic",
+                side_effect=lambda: clock["now"],
+            ),
+            patch("app.statistics_sync.ensure_sync"),
+        ):
+            statuses = [
+                statistics_sync.run_sync(self.user.id, budget_seconds=10)["status"]
+                for _ in range(6)
+            ]
+
+        self.assertEqual(statuses[0], "continued")
+        self.assertEqual(statuses[-1], "done")
+        stale_built = [day for day in built if day in stale]
+        self.assertEqual(len(stale_built), len(set(stale_built)))
+
+
 class SliceBoundTests(StatisticsSyncTestCase):
     """A sync gives way to webhooks and stops starting ranges it cannot finish."""
 

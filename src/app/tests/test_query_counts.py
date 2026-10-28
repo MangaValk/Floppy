@@ -81,7 +81,8 @@ ANIME_LIST_DEFAULT_SORT_MAX_QUERIES = (
     # one, each once per cold cache (an hour in production, every test here).
 )
 ANIME_LIST_GROUPED_MAX_QUERIES = (
-    26  # +1 bulk Item prefetch after compact Episode window selection;
+    27  # +1 id-first window sort (covering-index membership scan, d95bf59e9);
+    # +1 bulk Item prefetch after compact Episode window selection;
     # grouped (TV-backed) anime adds no per-show runtime queries;
     # +1 for the page COUNT: the list is paged by the library-query engine
     # instead of counting a fully loaded list (#1248);
@@ -100,7 +101,7 @@ GAME_LIST_START_DATE_SORT_MAX_QUERIES = (
 HOME_ROW_FRAGMENT_MAX_QUERIES = (
     123  # +2 from the Tags column Prefetch (#457); +1 from the provider-credential read
 )
-CUSTOM_LIST_DETAIL_MAX_QUERIES = 39  # +3 from prefilled release-year metadata;
+CUSTOM_LIST_DETAIL_MAX_QUERIES = 40  # +1 id-first window sort (d95bf59e9); +3 from prefilled release-year metadata;
 # +1 from the custom-list collaborators prefetch; +1 from the sidebar's
 # saved-views read (#413); +3 from the filter menu's options (member ids,
 # member metadata, tag names) on a full page render (#806); +1 from the

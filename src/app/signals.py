@@ -57,7 +57,6 @@ from app.models import (
     VideoPlay,
 )
 from lists.models import CustomList, CustomListItem
-from lists.smart_rules import sync_smart_lists_for_item
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +147,10 @@ _IMPORTER_REPLACING_ROWS: ContextVar[bool] = ContextVar(
     "importer_replacing_rows",
     default=False,
 )
+_ACCOUNT_BEING_DELETED: ContextVar[bool] = ContextVar(
+    "account_being_deleted",
+    default=False,
+)
 
 
 @contextmanager
@@ -188,6 +191,24 @@ def importer_replacing_rows():
         yield
     finally:
         _IMPORTER_REPLACING_ROWS.reset(token)
+
+
+@contextmanager
+def deleting_account():
+    """Mark deletes inside the block as a whole account being removed.
+
+    The cascade removes every tracked row with the user. A deletion tombstone
+    or statistics marker written for each one would point at the user
+    mid-delete and break the delete on its foreign key.
+    """
+    token = _ACCOUNT_BEING_DELETED.set(True)
+    try:
+        # Statistics, history and cache refresh signals would also write rows
+        # for the user that is being removed.
+        with suppress_media_cache_change_signals(), suppress_media_change_side_effects():
+            yield
+    finally:
+        _ACCOUNT_BEING_DELETED.reset(token)
 
 
 def media_change_side_effects_suppressed() -> bool:
@@ -311,25 +332,28 @@ def update_task_result_on_failure(
 
 
 def _sync_owner_smart_lists_for_items(owner, items):
-    """Sync smart-list membership for a deduped set of owner items."""
+    """Sync smart-list membership for a deduped set of owner items.
+
+    Evaluating a smart list's rules scans the owner's library (seconds on a
+    large one), so a request only checks whether the owner has smart lists and
+    queues the evaluation on the default queue once the write commits.
+    """
     if not owner:
         return
 
-    seen_item_ids = set()
-    for item in items:
-        if not item:
-            continue
-        if item.id in seen_item_ids:
-            continue
-        seen_item_ids.add(item.id)
-        try:
-            sync_smart_lists_for_item(owner=owner, item=item)
-        except Exception:
-            logger.exception(
-                "Failed incremental smart-list sync for owner_id=%s item_id=%s",
-                owner.id,
-                item.id,
-            )
+    if not CustomList.objects.filter(owner=owner, is_smart=True).exists():
+        return
+    item_ids = list({item.id for item in items if item and item.id})
+    if not item_ids:
+        return
+    from lists.tasks import sync_smart_lists_for_items_task
+
+    if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
+        sync_smart_lists_for_items_task.delay(owner.id, item_ids)
+    else:
+        transaction.on_commit(
+            lambda: sync_smart_lists_for_items_task.delay(owner.id, item_ids),
+        )
 
 
 @receiver([post_save, post_delete], sender=TV)
@@ -706,7 +730,11 @@ def clear_discover_feedback_on_media_save(sender, instance, **kwargs):
 @receiver(post_delete, sender=Podcast)
 def record_deleted_media_tombstone(sender, instance, **kwargs):
     """Remember that the user deleted this item so imports don't recreate it."""
-    if kwargs.get("raw") or _IMPORTER_REPLACING_ROWS.get():
+    if (
+        kwargs.get("raw")
+        or _IMPORTER_REPLACING_ROWS.get()
+        or _ACCOUNT_BEING_DELETED.get()
+    ):
         return
     user = getattr(instance, "user", None)
     item = getattr(instance, "item", None)

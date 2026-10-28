@@ -31,16 +31,6 @@
            this.activeModal = null;
          },
          activeMediaTag: 'all',
-         mediaTagLabels: {
-           all: gettext('All Sources'),
-           screen: gettext('Movies & TV'),
-           anime_manga: gettext('Anime & Manga'),
-           reading: gettext('Books & Comics'),
-           games: gettext('Games'),
-           podcasts: gettext('Podcasts'),
-           music: gettext('Music'),
-           backup: gettext('Backups')
-         },
          sourceSupports(tags) {
            return this.activeMediaTag === 'all' || tags.includes(this.activeMediaTag);
          },
@@ -335,70 +325,9 @@
            target="_blank"
            class="text-[var(--color-link)] hover:text-[var(--color-link-hover)] underline">{% translate "import configuration guide" %}</a>.
       </p>
-      <div class="bg-[var(--color-surface-strong)] rounded-lg p-4 mb-5">
-        <p class="text-sm text-[var(--color-text-secondary)] mb-3">{% translate "Browse by media type:" %}</p>
-        <div class="flex flex-wrap gap-2">
-          <button type="button"
-                  @click="activeMediaTag = 'all'"
-                  :aria-pressed="activeMediaTag === 'all'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'all' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "All Sources" %}
-          </button>
-          <button type="button"
-                  @click="activeMediaTag = 'screen'"
-                  :aria-pressed="activeMediaTag === 'screen'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'screen' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "Movies & TV" %}
-          </button>
-          <button type="button"
-                  @click="activeMediaTag = 'anime_manga'"
-                  :aria-pressed="activeMediaTag === 'anime_manga'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'anime_manga' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "Anime & Manga" %}
-          </button>
-          <button type="button"
-                  @click="activeMediaTag = 'reading'"
-                  :aria-pressed="activeMediaTag === 'reading'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'reading' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "Books & Comics" %}
-          </button>
-          <button type="button"
-                  @click="activeMediaTag = 'games'"
-                  :aria-pressed="activeMediaTag === 'games'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'games' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "Games" %}
-          </button>
-          <button type="button"
-                  @click="activeMediaTag = 'podcasts'"
-                  :aria-pressed="activeMediaTag === 'podcasts'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'podcasts' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "Podcasts" %}
-          </button>
-          <button type="button"
-                  @click="activeMediaTag = 'music'"
-                  :aria-pressed="activeMediaTag === 'music'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'music' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "Music" %}
-          </button>
-          <button type="button"
-                  @click="activeMediaTag = 'backup'"
-                  :aria-pressed="activeMediaTag === 'backup'"
-                  class="px-3 py-1.5 text-xs rounded-md border transition-colors cursor-pointer"
-                  :class="activeMediaTag === 'backup' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-indigo-500 hover:text-[var(--color-text)]'">
-            {% translate "Backups" %}
-          </button>
-        </div>
-        <p class="text-xs text-[var(--color-text-muted)] mt-3"
-           x-text="gettext('Showing ') + mediaTagLabels[activeMediaTag] + '.'">
-        </p>
-      </div>
+      {% media_tag_choices as media_tags %}
+      {% translate "All Sources" as all_sources_label %}
+      {% include "users/components/media_tag_filter.html" with tags=media_tags all_label=all_sources_label summary=True %}
 
       {# Import source tiles - click a tile to open its setup/import modal #}
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -791,6 +720,15 @@
                 class="bg-[var(--color-surface-strong)] hover:bg-[var(--color-surface-border)] transition-colors rounded-lg p-4 text-left cursor-pointer flex flex-col gap-2">
           <div class="flex items-center justify-between">{% source_display "storygraph" %}</div>
           <p class="text-xs text-[var(--color-text-muted)] line-clamp-2">{% translate "Import an export from StoryGraph." %}</p>
+        </button>
+
+        <button type="button"
+                @click="openModal('youtube')"
+                x-show="sourceSupports(['screen'])"
+                x-transition.opacity.duration.150ms
+                class="bg-[var(--color-surface-strong)] hover:bg-[var(--color-surface-border)] transition-colors rounded-lg p-4 text-left cursor-pointer flex flex-col gap-2">
+          <div class="flex items-center justify-between">{% source_display "youtube" %}</div>
+          <p class="text-xs text-[var(--color-text-muted)] line-clamp-2">{% translate "Import watch history from Google Takeout." %}</p>
         </button>
       </div>
 
@@ -3579,6 +3517,44 @@
           </div>
         </div>
 
+        {# YouTube #}
+        <div x-show="activeModal === 'youtube'"
+             x-cloak
+             @keydown.escape.window="closeModal()"
+             x-transition.opacity.duration.150ms
+             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+             @mousedown.self="closeModal()">
+          <div class="modal-max-height overflow-y-auto w-full"
+               style="width: min(96vw, 32rem);">
+            <button type="button"
+                    @click="closeModal()"
+                    class="block w-fit ml-auto mb-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer p-1 rounded-md hover:bg-[var(--color-surface-hover)] bg-[var(--color-surface)]">
+              {% include "app/icons/x.svg" with classes="w-4 h-4" %}
+            </button>
+        <div class="bg-[var(--color-surface-strong)] p-4 rounded-lg">
+          <div class="flex items-center mb-3">{% source_display "youtube" %}{% include "users/components/import_upload_badge.html" %}</div>
+          <p class="text-sm text-[var(--color-text-muted)] mb-3">{% translate "On takeout.google.com export only YouTube history, in JSON format. Upload watch-history.json or the zip." %}</p>
+          <form method="post"
+                action="{% url 'import_youtube_takeout' %}"
+                enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="hidden" name="mode" x-model="importMode">
+            <label class="flex items-center justify-center w-full px-4 py-2 text-sm rounded-md transition-colors"
+                   :class="!standardImportsDisabled() ? 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer' : 'bg-gray-600 text-gray-400 cursor-not-allowed'"
+                   :disabled="standardImportsDisabled()">
+              <input name="youtube_takeout"
+                     accept=".json,.zip"
+                     class="hidden"
+                     type="file"
+                     :disabled="standardImportsDisabled()"
+                     @change="!standardImportsDisabled() && $el.form.submit()">
+              {% translate "Select File" %}
+            </label>
+          </form>
+        </div>
+          </div>
+        </div>
+
         {# WeTrakr #}
         <div x-show="activeModal === 'wetrakr'"
              x-cloak
@@ -3681,8 +3657,9 @@
     <div id="import-activity-panel"
          class="space-y-6"
          hx-get="{% url 'import_data_activity' %}"
-         hx-trigger="load, every 5s"
+         hx-trigger="load, every 5s [!document.querySelector('#import-activity-panel [data-keep-open=true]')]"
          hx-sync="this:replace"
+         hx-on::before-swap="if (document.querySelector('#import-activity-panel [data-keep-open=true]')) { event.detail.shouldSwap = false; }"
          hx-swap="innerHTML">
       <div class="bg-[var(--color-surface)] rounded-lg p-6">
         <div class="flex items-center mb-4">

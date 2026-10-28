@@ -66,6 +66,7 @@ from lists import smart_rules
 from users.models import (
     MediaSortChoices,
     MediaStatusChoices,
+    relabel_author_sort_choice,
     relabel_end_date_sort_choice,
 )
 
@@ -215,7 +216,7 @@ def _build_game_groups(entries, group_by, *, sort_key, direction):
             activity = (
                 getattr(media, "aggregated_last_watched", None)
                 or getattr(media, "end_date", None)
-                or getattr(media, "progressed_at", None)
+                or helpers.progress_activity(media)
             )
             if activity and (
                 group["last_played"] is None or activity > group["last_played"]
@@ -1015,6 +1016,9 @@ AUTHOR_MEDIA_TYPES = (
     MediaTypes.COMIC.value,
     MediaTypes.COMIC_ISSUE.value,
 )
+# A video's channel is stored as its author, so videos filter, sort and show by
+# it too. Formats stay with the reading types.
+AUTHOR_FILTER_MEDIA_TYPES = (*AUTHOR_MEDIA_TYPES, MediaTypes.VIDEO.value)
 CRITIC_RATING_MEDIA_TYPES = {
     MediaTypes.TV.value,
     MediaTypes.SEASON.value,
@@ -1211,7 +1215,10 @@ def _resolve_media_list_preferences(request, route_media_type, comic_subview):
         sort_filter = "title"  # Default fallback
         request.user.update_preference(f"{route_media_type}_sort", "title")
         direction_param = None
-    elif sort_filter == "author" and effective_media_type not in AUTHOR_MEDIA_TYPES:
+    elif (
+        sort_filter == "author"
+        and effective_media_type not in AUTHOR_FILTER_MEDIA_TYPES
+    ):
         sort_filter = "title"  # Default fallback
         # Update the user's preference to the fallback
         request.user.update_preference(f"{route_media_type}_sort", "title")
@@ -1264,6 +1271,10 @@ def _resolve_media_list_preferences(request, route_media_type, comic_subview):
         if value not in _sort_type_guards or _sort_type_guards[value](media_type)
     ]
     sorted_media_sort_choices = relabel_end_date_sort_choice(
+        media_type,
+        sorted_media_sort_choices,
+    )
+    sorted_media_sort_choices = relabel_author_sort_choice(
         media_type,
         sorted_media_sort_choices,
     )
@@ -2428,7 +2439,8 @@ def media_list(request, media_type):
             filter_data["show_platforms"] = media_type == MediaTypes.GAME.value
             filter_data["show_origins"] = media_type == MediaTypes.MUSIC.value
             filter_data["show_formats"] = media_type in AUTHOR_MEDIA_TYPES
-            filter_data["show_authors"] = media_type in AUTHOR_MEDIA_TYPES
+            filter_data["show_authors"] = media_type in AUTHOR_FILTER_MEDIA_TYPES
+            filter_data["author_is_channel"] = media_type == MediaTypes.VIDEO.value
             filter_data["show_providers"] = media_type in provider_media_types and bool(
                 (watch_provider_region and watch_provider_region != "UNSET")
                 or request.user.pinned_watch_providers
@@ -2679,7 +2691,8 @@ def media_list(request, media_type):
             filter_data["show_platforms"] = media_type == MediaTypes.GAME.value
             filter_data["show_origins"] = media_type == MediaTypes.MUSIC.value
             filter_data["show_formats"] = media_type in AUTHOR_MEDIA_TYPES
-            filter_data["show_authors"] = media_type in AUTHOR_MEDIA_TYPES
+            filter_data["show_authors"] = media_type in AUTHOR_FILTER_MEDIA_TYPES
+            filter_data["author_is_channel"] = media_type == MediaTypes.VIDEO.value
             filter_data["show_providers"] = media_type in provider_media_types and bool(
                 (watch_provider_region and watch_provider_region != "UNSET")
                 or request.user.pinned_watch_providers
@@ -2711,8 +2724,9 @@ def media_list(request, media_type):
             media_list, collection_filter, request.user, media_type
         )
         media_list = apply_progress_filter(media_list, progress_filter, media_type)
-        if media_type in AUTHOR_MEDIA_TYPES:
+        if media_type in AUTHOR_FILTER_MEDIA_TYPES:
             media_list = apply_author_filter(media_list, author_filter)
+        if media_type in AUTHOR_MEDIA_TYPES:
             media_list = apply_format_filter(media_list, format_filter)
         if media_type in provider_media_types:
             media_list = apply_provider_filter(
@@ -2721,7 +2735,7 @@ def media_list(request, media_type):
                 watch_provider_region,
                 request.user.pinned_watch_providers,
             )
-        if sort_filter == "author" and media_type in AUTHOR_MEDIA_TYPES:
+        if sort_filter == "author" and media_type in AUTHOR_FILTER_MEDIA_TYPES:
             media_list = _sort_media_items_by_author(media_list, direction)
         if sort_filter == "runtime" and media_type in RUNTIME_MEDIA_TYPES:
             BasicMedia.objects.annotate_max_progress(
@@ -2827,7 +2841,7 @@ def media_list(request, media_type):
                         getattr(media, "aggregated_last_watched", None)
                         or getattr(media, "aggregated_end_date", None)
                         or getattr(media, "end_date", None)
-                        or getattr(media, "progressed_at", None)
+                        or helpers.progress_activity(media)
                     )
                     return (_sortable_dt(end_dt), title.lower())
                 if sort_filter == "next_episode_air_date":
@@ -2960,7 +2974,8 @@ def media_list(request, media_type):
         filter_data["show_platforms"] = media_type == MediaTypes.GAME.value
         filter_data["show_origins"] = media_type == MediaTypes.MUSIC.value
         filter_data["show_formats"] = media_type in AUTHOR_MEDIA_TYPES
-        filter_data["show_authors"] = media_type in AUTHOR_MEDIA_TYPES
+        filter_data["show_authors"] = media_type in AUTHOR_FILTER_MEDIA_TYPES
+        filter_data["author_is_channel"] = media_type == MediaTypes.VIDEO.value
         filter_data["show_providers"] = media_type in provider_media_types and bool(
             (watch_provider_region and watch_provider_region != "UNSET")
             or request.user.pinned_watch_providers
@@ -3113,7 +3128,7 @@ def media_list(request, media_type):
                 platform_filter,
             )
 
-    if media_type in AUTHOR_MEDIA_TYPES:
+    if media_type in AUTHOR_FILTER_MEDIA_TYPES:
         annotate_media_authors(media_page.object_list)
 
     if filter_data is not None:

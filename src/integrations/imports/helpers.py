@@ -25,7 +25,10 @@ from app.history_cache_utils import history_deferred_item_fields
 from app.models import Episode, MediaTypes, Status
 from app.models.tv import _UNSET_END_DATE
 from app.services.completion import normalize_completed_entries
-from app.services.watch_state import PROJECTED_MEDIA_TYPES, project_watch_state
+from app.services.watch_state import (
+    PROJECTED_MEDIA_TYPES,
+    project_watch_states_bulk,
+)
 from app.signals import importer_replacing_rows
 from integrations import import_progress
 from integrations.models import ImportRun
@@ -1002,6 +1005,123 @@ def bulk_create_media(bulk_media_list, user, *, backfill_completed=True, prepare
     return warnings
 
 
+def _item_key(spec):
+    return (
+        spec["media_id"],
+        spec["source"],
+        spec["media_type"],
+        spec["library_media_type"] or spec["media_type"],
+        spec["season_number"],
+        spec["episode_number"],
+    )
+
+
+def bulk_resolve_items(specs):
+    """Return ``{key: Item}`` for specs, creating the missing Items in bulk.
+
+    Replaces a ``get_or_create`` per row (a SELECT, a SAVEPOINT, an INSERT and
+    the Item post_save work) with one read plus one insert per chunk. Each spec
+    is a dict with ``media_id``, ``source``, ``media_type``,
+    ``library_media_type``, ``season_number``, ``episode_number``, ``title`` and
+    ``image``. Existing rows are never changed. The backfills the Item post_save
+    handler would queue for a new Item are queued together afterwards.
+    """
+    item_model = app.models.Item
+    by_key = {_item_key(spec): spec for spec in specs}
+    if not by_key:
+        return {}
+
+    def fetch(keys):
+        found = {}
+        media_ids = list({key[0] for key in keys})
+        for start in range(0, len(media_ids), PROJECTION_BATCH_SIZE):
+            for item in item_model.objects.filter(
+                media_id__in=media_ids[start : start + PROJECTION_BATCH_SIZE],
+            ).defer("watch_providers"):
+                key = (
+                    item.media_id,
+                    item.source,
+                    item.media_type,
+                    item.library_media_type,
+                    item.season_number,
+                    item.episode_number,
+                )
+                if key in keys:
+                    found[key] = item
+        return found
+
+    found = fetch(by_key.keys())
+    missing = [key for key in by_key if key not in found]
+    if missing:
+        item_model.objects.bulk_create(
+            [
+                item_model(
+                    media_id=key[0],
+                    source=key[1],
+                    media_type=key[2],
+                    library_media_type=key[3],
+                    season_number=key[4],
+                    episode_number=key[5],
+                    title=by_key[key]["title"],
+                    image=by_key[key]["image"],
+                )
+                for key in missing
+            ],
+            ignore_conflicts=True,
+        )
+        created = fetch(set(missing))
+        found.update(created)
+        _enqueue_new_item_backfills(list(created.values()))
+    return found
+
+
+def _enqueue_new_item_backfills(items):
+    """Queue what Item's post_save handler queues for a brand-new Item."""
+    from app import signals as app_signals
+    from app.tasks_credits import enqueue_credits_backfill_items
+    from app.tasks_genre import enqueue_genre_backfill_items
+    from app.tasks_runtime import enqueue_runtime_backfill_items
+
+    if settings.TESTING or app_signals.media_change_side_effects_suppressed():
+        return
+    sources = app_signals
+    runtime_ids, genre_ids, credit_ids = [], [], []
+    for item in items:
+        media_type = item.media_type
+        if (
+            item.source in sources.RUNTIME_BACKFILL_SOURCES
+            and media_type
+            in (MediaTypes.MOVIE.value, MediaTypes.TV.value, MediaTypes.ANIME.value)
+            and item.runtime_minutes in (None, 0)
+        ):
+            runtime_ids.append(item.id)
+        if (
+            item.source in sources.GENRE_BACKFILL_SOURCES
+            and media_type
+            in (
+                MediaTypes.MOVIE.value,
+                MediaTypes.TV.value,
+                MediaTypes.ANIME.value,
+                MediaTypes.GAME.value,
+                MediaTypes.BOARDGAME.value,
+            )
+            and not item.genres
+        ):
+            genre_ids.append(item.id)
+        if item.source == "tmdb" and media_type in (
+            MediaTypes.MOVIE.value,
+            MediaTypes.TV.value,
+            MediaTypes.SEASON.value,
+        ):
+            credit_ids.append(item.id)
+    if runtime_ids:
+        enqueue_runtime_backfill_items(runtime_ids)
+    if genre_ids:
+        enqueue_genre_backfill_items(genre_ids)
+    if credit_ids:
+        enqueue_credits_backfill_items(credit_ids)
+
+
 def project_imported_watch_state(user, item_ids):
     """Project canonical watched state for items an import bulk-created rows for.
 
@@ -1010,10 +1130,14 @@ def project_imported_watch_state(user, item_ids):
     """
     item_ids = sorted(item_ids)
     for start in range(0, len(item_ids), PROJECTION_BATCH_SIZE):
-        for item in app.models.Item.objects.filter(
-            id__in=item_ids[start : start + PROJECTION_BATCH_SIZE],
-        ):
-            project_watch_state(user, item)
+        project_watch_states_bulk(
+            user,
+            list(
+                app.models.Item.objects.filter(
+                    id__in=item_ids[start : start + PROJECTION_BATCH_SIZE],
+                ),
+            ),
+        )
 
 
 def _project_season_episodes(seasons):
@@ -1153,3 +1277,42 @@ def decrypt_or_raise(token):
         logger.exception("Failed to decrypt stored credential")
         msg = "Saved credentials can't be read. Reconnect this integration."
         raise MediaImportError(msg) from error
+
+
+def season_last_episode_number(season_metadata):
+    """Return the number of a season's final episode.
+
+    A season's ``max_progress`` is how many episodes it has. Anime seasons
+    that continue the numbering (51-100) end on a number larger than that
+    count, so completion checks compare against this instead.
+    """
+    last = season_metadata.get("last_episode_number")
+    if last:
+        return last
+    numbers = [
+        episode["episode_number"]
+        for episode in season_metadata.get("episodes") or []
+        if isinstance(episode, dict) and episode.get("episode_number") is not None
+    ]
+    if numbers:
+        return max(numbers)
+    return season_metadata.get("max_progress")
+
+
+def season_episode_numbers(season_metadata):
+    """Return the episode numbers that make up a season's ``max_progress``.
+
+    Episodes past the provider's count (a future episode it lists but does not
+    count yet) are left out, as they were when this was ``range(1, count + 1)``.
+    """
+    count = int(season_metadata.get("max_progress") or 0)
+    numbers = sorted(
+        {
+            int(episode["episode_number"])
+            for episode in season_metadata.get("episodes") or []
+            if isinstance(episode, dict) and episode.get("episode_number") is not None
+        },
+    )
+    if numbers and count:
+        return set(numbers[:count])
+    return set(range(1, count + 1))

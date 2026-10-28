@@ -3252,7 +3252,7 @@ class PlexHistoryImporter:
         tv_metadata: dict,
     ):
         """Update completion status for season and TV show if applicable."""
-        if episode_number == season_metadata.get("max_progress"):
+        if episode_number == helpers.season_last_episode_number(season_metadata):
             season_obj.status = Status.COMPLETED.value
 
             last_season = tv_metadata.get("last_episode_season")

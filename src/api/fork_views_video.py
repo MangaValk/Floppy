@@ -2,24 +2,24 @@
 
 import datetime
 from http import HTTPStatus as HTTP  # noqa: N814
-from urllib.parse import urlparse
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
+from drf_spectacular.utils import OpenApiTypes, extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from app import history_cache
 from app.helpers import has_real_image
-from app.image_cache import is_approved_url
 from app.models import Item, MediaTypes, Status, Video, VideoPlay
+from app.video_helpers import approved_thumbnail_url, set_channel_as_author
 
 from .helpers import check_source_type
 
 # Largest value a PositiveIntegerField column stores.
 MAX_SECONDS = 2_147_483_647
 MAX_EXTERNAL_ID_LENGTH = 255
-MAX_THUMBNAIL_URL_LENGTH = 2048
 MAX_DESCRIPTION_LENGTH = 5000
 
 
@@ -34,31 +34,6 @@ def _end_date_from_external_id(external_id):
     if not parsed:
         return timezone.now()
     return timezone.make_aware(datetime.datetime.combine(parsed, datetime.time(12, 0)))
-
-
-def _approved_thumbnail_url(data, media_id):
-    """Return a thumbnail URL Floppy may store, or empty.
-
-    Only https URLs on the artwork allowlist that point at this video are kept.
-    Anything else is dropped, so this endpoint never fetches a caller-supplied
-    URL and one video cannot be given another video's poster.
-
-    @param data - Request body.
-    @param media_id - YouTube video id from the request path.
-    @returns Approved URL, or "".
-    """
-    raw = data.get("thumbnailUrl") or data.get("thumbnail_url") or ""
-    url = str(raw).strip()
-    if not url or len(url) > MAX_THUMBNAIL_URL_LENGTH:
-        return ""
-    # An http:// poster would be blocked as mixed content on an https install.
-    if not url.lower().startswith("https://") or not is_approved_url(url):
-        return ""
-    # YouTube thumbnails live at /vi/<videoId>/<name>.jpg.
-    parts = urlparse(url).path.strip("/").split("/")
-    if len(parts) < 2 or parts[0] not in ("vi", "vi_webp") or parts[1] != media_id:  # noqa: PLR2004
-        return ""
-    return url
 
 
 def _invalidate_history_for_other_viewers(item, user):
@@ -83,9 +58,45 @@ def _invalidate_history_for_other_viewers(item, user):
         )
 
 
-class VideoPlayView(APIView):
-    """POST /api/v1/videos/<source>/<media_id>/plays/."""
+def _tracked_video(request, source, media_id):
+    """Return the caller's video for this source and id, or None."""
+    return (
+        Video.objects.filter(
+            user=request.user,
+            item__media_type=MediaTypes.VIDEO.value,
+            item__source=source,
+            item__media_id=media_id,
+        )
+        .select_related("item")
+        .first()
+    )
 
+
+class VideoPlayView(APIView):
+    """GET and POST /api/v1/videos/<source>/<media_id>/plays/."""
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request, source, media_id):
+        """List the caller's plays of this video, newest first."""
+        video = _tracked_video(request, source, media_id)
+        if video is None:
+            return Response({"detail": "Video not found"}, status=HTTP.NOT_FOUND)
+        plays = video.plays.order_by("-end_date", "-id")
+        return Response(
+            {
+                "count": len(plays),
+                "results": [
+                    {
+                        "external_id": play.external_id,
+                        "progress_seconds": play.progress,
+                        "end_date": play.end_date,
+                    }
+                    for play in plays
+                ],
+            },
+        )
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
     def post(self, request, source, media_id):
         """Create the video if needed and upsert the play by external id."""
         if not check_source_type(MediaTypes.VIDEO.value, source):
@@ -94,7 +105,9 @@ class VideoPlayView(APIView):
                 status=HTTP.BAD_REQUEST,
             )
 
-        external_id = str(request.data.get("externalId") or request.data.get("external_id") or "").strip()
+        external_id = str(
+            request.data.get("externalId") or request.data.get("external_id") or ""
+        ).strip()
         title = str(request.data.get("title") or "").strip()
         if not external_id or not title:
             return Response(
@@ -107,10 +120,20 @@ class VideoPlayView(APIView):
                 status=HTTP.BAD_REQUEST,
             )
         try:
-            progress_seconds = int(request.data.get("progressSeconds") or request.data.get("progress_seconds") or 0)
-            length_seconds = int(request.data.get("lengthSeconds") or request.data.get("length_seconds") or 0)
+            progress_seconds = int(
+                request.data.get("progressSeconds")
+                or request.data.get("progress_seconds")
+                or 0
+            )
+            length_seconds = int(
+                request.data.get("lengthSeconds")
+                or request.data.get("length_seconds")
+                or 0
+            )
         except (TypeError, ValueError):
-            return Response({"detail": "seconds must be integers"}, status=HTTP.BAD_REQUEST)
+            return Response(
+                {"detail": "seconds must be integers"}, status=HTTP.BAD_REQUEST
+            )
         # Negative seconds count as zero and huge ones as the column maximum,
         # so a bad value never reaches the database.
         progress_seconds = min(max(progress_seconds, 0), MAX_SECONDS)
@@ -132,11 +155,17 @@ class VideoPlayView(APIView):
 
         # History reads item.image. Set it once, from an allowlisted host,
         # and never replace a poster that is already there.
-        thumbnail_url = _approved_thumbnail_url(request.data, media_id)
+        thumbnail_url = approved_thumbnail_url(
+            request.data.get("thumbnailUrl") or request.data.get("thumbnail_url"),
+            media_id,
+        )
         if thumbnail_url and not has_real_image(item.image):
             item.image = thumbnail_url
             item.save(update_fields=["image"])
             _invalidate_history_for_other_viewers(item, request.user)
+
+        # The channel is the video's author for filters, sorts and lists.
+        set_channel_as_author(item, channel)
 
         # The description shows on the details page. It is set once, like the
         # poster, because the item is shared.
@@ -148,7 +177,11 @@ class VideoPlayView(APIView):
         # The upload date puts the video on the Calendar. It is set once, so a
         # later report never moves the event.
         published_at = parse_datetime(
-            str(request.data.get("publishedAt") or request.data.get("published_at") or ""),
+            str(
+                request.data.get("publishedAt")
+                or request.data.get("published_at")
+                or ""
+            ),
         )
         if published_at and not item.release_datetime:
             if timezone.is_naive(published_at):
@@ -184,3 +217,33 @@ class VideoPlayView(APIView):
             {"status": video.status, "external_id": play.external_id},
             status=HTTP.CREATED if created else HTTP.OK,
         )
+
+
+class VideoPlayDetailView(APIView):
+    """DELETE /api/v1/videos/<source>/<media_id>/plays/<external_id>/."""
+
+    @extend_schema(request=None, responses={204: None})
+    def delete(self, request, source, media_id, external_id):
+        """Remove one play. The video stays tracked with its status and score.
+
+        The video's last watched date follows the plays that remain, and clears
+        when none are left.
+        """
+        video = _tracked_video(request, source, media_id)
+        if video is None:
+            return Response({"detail": "Video not found"}, status=HTTP.NOT_FOUND)
+        with transaction.atomic():
+            Video.objects.select_for_update().filter(pk=video.pk).first()
+            deleted, _ = VideoPlay.objects.filter(
+                video=video, external_id=external_id
+            ).delete()
+            if not deleted:
+                return Response({"detail": "Play not found"}, status=HTTP.NOT_FOUND)
+            latest = (
+                video.plays.order_by("-end_date")
+                .values_list("end_date", flat=True)
+                .first()
+            )
+            video.end_date = latest
+            video.save(update_fields=["end_date"])
+        return Response(status=HTTP.NO_CONTENT)

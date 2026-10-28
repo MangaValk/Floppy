@@ -32,7 +32,7 @@ from integrations import exports
 from lists import smart_rules
 from lists import tasks as list_tasks
 from lists.forms import CustomListForm
-from lists.models import CustomList
+from lists.models import CustomList, CustomListItem
 from lists.tiers import MAX_TIERS, TIER_BOARD_LIMIT
 from lists.views_helpers import (
     _adapt_list_items_for_table,
@@ -231,7 +231,8 @@ def list_detail(request, list_reference):
     is_tiers = layout == ListDetailLayoutChoices.TIERS
     # Build and filter base queryset
     items = custom_list.items.all()
-    total_items_count = items.count()
+    # Count memberships directly; counting ``items`` joins app_item for nothing.
+    total_items_count = CustomListItem.objects.filter(custom_list=custom_list).count()
     media_type_breakdown = _build_media_type_breakdown(custom_list)
 
     # Compute completion percentage (titles completed / total titles)
@@ -272,6 +273,7 @@ def list_detail(request, list_reference):
         custom_list=custom_list,
         media_user=media_user,
         candidates=items.values("pk"),
+        media_types=filtered_media_types,
         filters=list_filters,
         # The Tiers view lists every tier on one board, in tier order.
         sort_by=ListDetailSortChoices.TIER if is_tiers else params["sort_by"],

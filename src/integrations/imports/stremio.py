@@ -151,8 +151,16 @@ def get_user(auth_key):
     return _api_call("getUser", auth_key=auth_key)
 
 
-def get_library_items(auth_key):
-    """Return every library item with watch state."""
+def get_library_items(auth_key, ids=None):
+    """Return library items with watch state: only `ids` when given, else all."""
+    if ids is not None:
+        return _api_call(
+            "datastoreGet",
+            auth_key=auth_key,
+            collection="libraryItem",
+            ids=list(ids),
+            all=False,
+        )
     return _api_call(
         "datastoreGet",
         auth_key=auth_key,
@@ -990,6 +998,7 @@ class StremioImporter:
                 )
 
             max_progress = int(season_metadata.get("max_progress") or 0)
+            season_episode_numbers = helpers.season_episode_numbers(season_metadata)
             watched_episode_numbers = {
                 int(number)
                 for number in episode_numbers
@@ -997,7 +1006,7 @@ class StremioImporter:
             }
             season_complete = (
                 max_progress > 0
-                and set(range(1, max_progress + 1)).issubset(
+                and season_episode_numbers.issubset(
                     watched_episode_numbers,
                 )
             )

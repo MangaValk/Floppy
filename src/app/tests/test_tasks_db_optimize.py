@@ -58,7 +58,11 @@ class OptimizeStatisticsTests(TestCase):
         self.assertGreater(result["stat_rows_after"], result["stat_rows_before"])
         after = _plan(SEASON_BY_ITEM, [self.user.id])
         self.assertNotIn("app_season_user_id", after)
-        self.assertIn("app_item_media_lookup_idx", after)
+        # app_item_type_lookup_idx (0213) covers the same lookup and wins when present.
+        self.assertTrue(
+            "app_item_media_lookup_idx" in after or "app_item_type_lookup_idx" in after,
+            after,
+        )
 
     def test_second_run_is_a_no_op_on_row_count(self):
         optimize_database_statistics()

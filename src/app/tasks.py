@@ -176,6 +176,7 @@ from app.tasks_credits import (  # noqa: E402
 )
 from app.tasks_db_backup import write_database_snapshot  # noqa: E402
 from app.tasks_db_optimize import optimize_database_statistics  # noqa: E402
+from app.tasks_db_warm import warm_database_page_cache  # noqa: E402
 from app.tasks_discover import (  # noqa: E402
     purge_expired_discover_caches,
     refresh_discover_profiles,
@@ -370,6 +371,9 @@ DISCOVER_METADATA_REFRESH_DEBOUNCE_SECONDS = 60 * 10
 DISCOVER_METADATA_REFRESH_COUNTDOWN_SECONDS = 60
 BACKGROUND_TASK_PRIORITY = getattr(settings, "CELERY_TASK_PRIORITY_BACKGROUND", 9)
 HISTORY_COVERAGE_REPAIR_REQUEUE_SECONDS = 15
+# A batch that built nothing yielded to an interactive user; retrying in 15 s
+# only repeats the missing-day scan, so wait for them to go idle.
+HISTORY_COVERAGE_REPAIR_STALLED_REQUEUE_SECONDS = 120
 
 
 def _release_items_queryset():
@@ -949,7 +953,11 @@ def repair_history_day_cache_coverage_task(
                 "logging_style": logging_style,
                 "batch_size": batch_size,
             },
-            countdown=HISTORY_COVERAGE_REPAIR_REQUEUE_SECONDS,
+            countdown=(
+                HISTORY_COVERAGE_REPAIR_STALLED_REQUEUE_SECONDS
+                if result.get("rebuilt", 1) == 0
+                else HISTORY_COVERAGE_REPAIR_REQUEUE_SECONDS
+            ),
             priority=BACKGROUND_TASK_PRIORITY,
         )
     else:
@@ -1467,6 +1475,7 @@ __all__ = [
     "refresh_discover_rows",
     "repair_duplicated_anime_libraries_task",
     "sync_mal_ratings_from_api",
+    "warm_database_page_cache",
     "warm_discover_api_cache",
     "warm_discover_startup_tabs",
     "warm_history_day_cache_coverage",
