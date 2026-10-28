@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase
@@ -151,6 +152,7 @@ class OpenSessionTests(TestCase):
     def setUp(self):
         self.account = Mock(
             plex_token="owner-token",
+            plex_account_id=None,
             sections=[{"machine_identifier": "srv", "uri": "http://plex.local"}],
         )
 
@@ -160,6 +162,15 @@ class OpenSessionTests(TestCase):
         self.assertEqual([u.uuid for u in users], ["owner", "kid", "locked"])
         self.assertTrue(users[0].is_owner)
         self.assertEqual([s.machine_identifier for s in servers], ["srv"])
+
+    def test_owner_is_the_connected_account_not_the_home_admin(self, *_mocks):
+        self.account.plex_account_id = "2"
+        home = [{**user, "id": index} for index, user in enumerate(HOME_USERS, 1)]
+
+        with patch("integrations.plex.list_home_users", return_value=home):
+            users, _servers = plex_watched_push.list_targets(self.account)
+
+        self.assertEqual([u.uuid for u in users if u.is_owner], ["kid"])
 
     @patch("integrations.plex.switch_home_user")
     def test_owner_uses_own_token_without_switching(self, mock_switch, *_mocks):
@@ -403,7 +414,21 @@ class BuildPlanTests(TestCase):
         )
         self.library[("2", 4)] = [_episode("e1", "s1", 1, 13)]
 
-        self.assertEqual(self._plan().writes[0].item_id, episode.id)
+        write = self._plan().writes[0]
+        self.assertEqual(write.item_id, episode.id)
+        # Labelled with Plex's numbering, which is what the user checks in Plex.
+        self.assertEqual(write.plex_title, "Show S01E13")
+
+    def test_episode_reference_without_a_target_keeps_the_show_decision(self):
+        self._watched("1399", "episode", season_number=1, episode_number=1)
+        self._reference("e1", "episode", review_status="needs_review")
+        self._reference("s1", "tv", review_status="ignored")
+        self.library[("2", 4)] = [_episode("e1", "s1", 1, 1)]
+
+        plan = self._plan()
+
+        self.assertEqual(plan.writes, [])
+        self.assertEqual(plan.ignored, 1)
 
     def test_unreadable_library_is_reported_and_others_continue(self):
         self._watched("1399", "episode", season_number=1, episode_number=1)
@@ -586,10 +611,10 @@ class SendTests(TestCase):
         )
         self.remote[rating_key] = {**self.remote[rating_key], "viewCount": 1}
 
-    def _send(self, plan, selected, mark=None):
+    def _send(self, plan, selected, mark=None, fetch=None):
         with (
             patch("integrations.plex_watched_push.build_plan", return_value=plan),
-            patch("integrations.plex.fetch_metadata", side_effect=self._fetch),
+            patch("integrations.plex.fetch_metadata", side_effect=fetch or self._fetch),
             patch("integrations.plex.mark_watched", side_effect=mark or self._mark) as m,
             patch("integrations.plex_watched_push.time.sleep"),
         ):
@@ -622,6 +647,47 @@ class SendTests(TestCase):
         mark.assert_called_once()
         self.assertEqual(result.sent, ["Title m1"])
         self.assertEqual(PlexWatchedPush.objects.count(), 1)
+
+    def test_time_limit_before_the_recheck_keeps_what_was_sent(self):
+        self.remote = {
+            "m1": {"type": "movie", "viewCount": 0},
+            "m2": {"type": "movie", "viewCount": 1},
+        }
+        with (
+            patch("integrations.plex_watched_push.build_plan",
+                  return_value=_plan_with(self._write("m1"), self._write("m2"))),
+            patch("integrations.plex.fetch_metadata", side_effect=self._fetch),
+            patch("integrations.plex.mark_watched", side_effect=self._mark),
+            patch("integrations.plex_watched_push.time.sleep",
+                  side_effect=SoftTimeLimitExceeded),
+        ):
+            result = plex_watched_push.send(
+                self.user, self.account, self.session,
+                {("m1", self.item.id), ("m2", self.item.id)},
+            )
+
+        self.assertEqual(result.sent, ["Title m1"])
+        self.assertIn("ran out of time", result.stopped)
+        self.assertEqual(result.skipped, [("Title m2", "Not checked again: the send stopped")])
+
+    def test_time_limit_after_a_write_reports_it_as_sent(self):
+        self.remote = {"m1": {"type": "movie", "viewCount": 0}}
+        answers = [{"type": "movie", "viewCount": 0}]
+
+        def fetch(*_args, **_kwargs):
+            if answers:
+                return answers.pop()
+            raise SoftTimeLimitExceeded
+
+        result, mark = self._send(_plan_with(self._write("m1")), {("m1", self.item.id)},
+                                  fetch=fetch)
+
+        mark.assert_called_once()
+        self.assertEqual(
+            result.skipped,
+            [("Title m1", "Sent, but not read back: the send ran out of time")],
+        )
+        self.assertIn("ran out of time", result.stopped)
 
     def test_an_item_still_watched_on_recheck_is_skipped(self):
         self.remote = {"m1": {"type": "movie", "viewCount": 1}}
@@ -749,7 +815,9 @@ class SendViewTests(TestCase):
         self.assertEqual(len(send.call_args.args[3]), 5000)
         # The PIN reaches the task through the cache, never its stored arguments.
         self.assertEqual(delay.call_args.args[:3], (self.user.pk, "kid", "srv"))
-        self.assertEqual(len(delay.call_args.args), 4)
+        # The fifth argument is the lock token, not a credential.
+        self.assertEqual(len(delay.call_args.args), 5)
+        self.assertNotEqual(delay.call_args.args[4], "1234")
         self.assertEqual(delay.call_args.kwargs, {})
         self.assertEqual(open_session.call_args_list[-1].args[3], "1234")
         self.assertIsNone(cache.get(plex_watched_push.pin_key(self.user.pk)))
@@ -757,15 +825,64 @@ class SendViewTests(TestCase):
         self.assertContains(response, "1 item marked watched in Plex for Kid.")
 
     def test_status_shows_progress_while_running(self):
+        cache.set(plex_watched_push.lock_key(self.user.pk), "token")
         cache.set(
             plex_watched_push.status_key(self.user.pk),
-            {"done": False, "current": 3, "total": 10},
+            {"done": False, "current": 3, "total": 10, "lock_token": "token"},
         )
 
         response = self.client.get(reverse("plex_push_status"))
 
         self.assertContains(response, "3 of 10 done")
         self.assertContains(response, 'hx-trigger="every 2s"')
+
+    def test_status_stops_polling_once_the_send_lost_its_lock(self):
+        # Killed, or still queued when the lock lapsed; a preview may hold it now.
+        cache.set(plex_watched_push.lock_key(self.user.pk), 1)
+        cache.set(
+            plex_watched_push.status_key(self.user.pk),
+            {"done": False, "current": 0, "total": 3, "lock_token": "token"},
+        )
+
+        response = self.client.get(reverse("plex_push_status"))
+
+        self.assertContains(response, "The send stopped without finishing")
+        self.assertNotContains(response, "every 2s")
+
+    def test_a_send_that_outwaited_its_lock_does_nothing(self):
+        cache.set(plex_watched_push.lock_key(self.user.pk), "newer")
+        cache.set(plex_watched_push.pin_key(self.user.pk), "9999")
+
+        with patch("integrations.plex_watched_push.open_session") as open_session:
+            push_task.send_plex_watched_push(self.user.pk, "kid", "srv", [["m1", 5]], "old")
+
+        open_session.assert_not_called()
+        # The newer send's lock and PIN are left alone.
+        self.assertEqual(cache.get(plex_watched_push.lock_key(self.user.pk)), "newer")
+        self.assertEqual(cache.get(plex_watched_push.pin_key(self.user.pk)), "9999")
+
+    def test_any_failure_to_queue_releases_the_lock(self):
+        session = plex_watched_push.PushSession(
+            target=plex_watched_push.PushTarget("kid", "Kid", False, False),
+            server=plex_watched_push.PushServer("srv", "Home"),
+            uri="http://plex.local",
+            token="kid-srv",
+        )
+        with (
+            patch("integrations.plex_watched_push.open_session", return_value=session),
+            patch(
+                "integrations.tasks._plex_push.send_plex_watched_push.delay",
+                side_effect=RuntimeError("redis down"),
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            self.client.post(
+                reverse("plex_push_send"),
+                {"user_uuid": "kid", "machine_identifier": "srv", "writes": "m1:5"},
+            )
+
+        self.assertIsNone(cache.get(plex_watched_push.lock_key(self.user.pk)))
+        self.assertIsNone(cache.get(plex_watched_push.status_key(self.user.pk)))
 
     def test_wrong_pin_is_refused_before_queueing(self):
         with (
@@ -828,6 +945,27 @@ class SendViewTests(TestCase):
         self.assertEqual(send.call_args.args[3], {("m1", 5), ("m:2", 7)})
         self.assertContains(response, "1 item marked watched in Plex for Kid.")
         self.assertContains(response, "1 ticked item changed since the check")
+        self.assertNotContains(response, "Could not read")
+
+    def test_ticked_items_in_an_unreadable_library_are_explained(self):
+        session = plex_watched_push.PushSession(
+            target=plex_watched_push.PushTarget("kid", "Kid", False, False),
+            server=plex_watched_push.PushServer("srv", "Home"),
+            uri="http://plex.local",
+            token="kid-srv",
+        )
+        result = plex_watched_push.PushResult(stale=2, failed_libraries=["Movies"])
+        with (
+            patch("integrations.plex_watched_push.open_session", return_value=session),
+            patch("integrations.plex_watched_push.send", return_value=result),
+        ):
+            response = self.client.post(
+                reverse("plex_push_send"),
+                {"user_uuid": "kid", "machine_identifier": "srv", "writes": "m1:5,m2:6"},
+            )
+
+        self.assertContains(response, "or are in a library that could not be read")
+        self.assertContains(response, "Could not read: Movies")
 
     def test_demo_account_cannot_send(self):
         self.user.is_demo = True

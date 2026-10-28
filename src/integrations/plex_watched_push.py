@@ -49,6 +49,7 @@ class PinRequiredError(PlexPushError):
 
 # A send runs in a background task that shares these cache keys with the views.
 # The lock covers the wait in the queue; a running send renews it after every item.
+# A send still queued when it lapses does not run, and the popup says it stopped.
 LOCK_SECONDS = 30 * 60
 # The result stays readable for a while after the popup stops polling.
 STATUS_SECONDS = 60 * 60
@@ -113,11 +114,16 @@ def list_targets(account):
     with are out of scope. Servers are only the ones the account owns, so a
     push can never write into someone else's server.
     """
+    # The saved token is the owner's, so match its account id when it is known;
+    # the Home admin is only a fallback, and may not be the connected account.
+    owner_id = str(account.plex_account_id or "")
     users = [
         PushTarget(
             uuid=str(user.get("uuid")),
             title=user.get("title") or user.get("username") or "",
-            is_owner=bool(user.get("admin")),
+            is_owner=(
+                str(user.get("id")) == owner_id if owner_id else bool(user.get("admin"))
+            ),
             protected=bool(user.get("protected")),
         )
         for user in plex_api.list_home_users(account.plex_token)
@@ -218,6 +224,8 @@ class PushResult:
     skipped: list[tuple[str, str]] = field(default_factory=list)
     #: Selected items a fresh plan no longer contains.
     stale: int = 0
+    #: Libraries the fresh plan could not read; their ticked items count as stale.
+    failed_libraries: list[str] = field(default_factory=list)
     #: Set when a Plex error stopped the send; what was sent before it stays.
     stopped: str = ""
 
@@ -238,7 +246,10 @@ def send(user, account, session, selected, progress=None):
     planned = [
         write for write in plan.writes if (write.rating_key, write.item_id) in selected
     ]
-    result = PushResult(stale=len(selected) - len(planned))
+    result = PushResult(
+        stale=len(selected) - len(planned),
+        failed_libraries=plan.failed_libraries,
+    )
     recheck = []
 
     def attempt(write, *, last_try):
@@ -268,7 +279,17 @@ def send(user, account, session, selected, progress=None):
         )
         plex_api.mark_watched(session.token, session.uri, write.rating_key)
 
-        readback = plex_api.fetch_metadata(session.token, session.uri, write.rating_key)
+        try:
+            readback = plex_api.fetch_metadata(
+                session.token,
+                session.uri,
+                write.rating_key,
+            )
+        except SoftTimeLimitExceeded:
+            result.skipped.append(
+                (write.plex_title, "Sent, but not read back: the send ran out of time"),
+            )
+            raise
         if readback is None or not _is_watched(readback):
             result.skipped.append(
                 (write.plex_title, "Sent, but Plex does not show it as watched"),
@@ -295,7 +316,11 @@ def send(user, account, session, selected, progress=None):
 
     run(planned, last_try=False)
     if recheck and not result.stopped:
-        time.sleep(RECHECK_DELAY_SECONDS)
+        try:
+            time.sleep(RECHECK_DELAY_SECONDS)
+        except SoftTimeLimitExceeded:
+            result.stopped = "The send ran out of time. Check again to send the rest."
+    if recheck and not result.stopped:
         run(recheck, last_try=True)
     elif recheck:
         result.skipped.extend(
@@ -491,16 +516,14 @@ def _plan_episodes(plan, session, section, library, watched, references):
             (rating_key, MediaTypes.EPISODE.value),
         ) or references.get((rating_key, MediaTypes.TV.value))
         show_key = str(entry.get("grandparentRatingKey") or "")
-        show_reference = (
-            None if reference else references.get((show_key, MediaTypes.TV.value))
-        )
+        show_reference = references.get((show_key, MediaTypes.TV.value))
         if _is_ignored(reference) or _is_ignored(show_reference):
             plan.ignored += 1
             continue
 
         try:
-            season = int(entry.get("parentIndex"))
-            number = int(entry.get("index"))
+            plex_season = int(entry.get("parentIndex"))
+            plex_number = int(entry.get("index"))
         except (TypeError, ValueError):
             continue
 
@@ -510,10 +533,12 @@ def _plan_episodes(plan, session, section, library, watched, references):
             item = watched.target(target)
             candidates = [item] if item else []
         else:
+            # An episode reference without a target decides nothing, so the
+            # show's correction and episode mapping still apply.
             season, number = external_references.map_episode_coordinates(
-                reference or show_reference,
-                season,
-                number,
+                reference if target else show_reference or reference,
+                plex_season,
+                plex_number,
             )
             show_target = target or external_references.reference_target(
                 show_reference,
@@ -539,7 +564,10 @@ def _plan_episodes(plan, session, section, library, watched, references):
         item = candidates[0]
         show_title = entry.get("grandparentTitle") or ""
         episode_title = entry.get("title") or ""
-        plex_title = f"{show_title} S{season:02d}E{number:02d} {episode_title}".strip()
+        # Plex's own numbers: this is the row the user checks in Plex.
+        plex_title = (
+            f"{show_title} S{plex_season:02d}E{plex_number:02d} {episode_title}".strip()
+        )
         if not exact and (
             item.library_media_type == MediaTypes.ANIME.value or item.episode_order_id
         ):

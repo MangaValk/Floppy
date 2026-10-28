@@ -5,6 +5,8 @@ from the plan and nothing about it is stored. Only the send writes, in a
 background task the popup polls.
 """
 
+from uuid import uuid4
+
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.shortcuts import render
@@ -113,7 +115,10 @@ def plex_push_send(request):
 
     user_id = request.user.pk
     lock = plex_watched_push.lock_key(user_id)
-    if not cache.add(lock, 1, timeout=plex_watched_push.LOCK_SECONDS):
+    # The task runs only while this token is still the lock, so a send that
+    # waited out the lock in the queue cannot run beside a newer one.
+    lock_token = uuid4().hex
+    if not cache.add(lock, lock_token, timeout=plex_watched_push.LOCK_SECONDS):
         error = "A check or send is already running. Wait for it to finish."
         return render(request, RESULT_TEMPLATE, {"error": error})
     from integrations.tasks._plex_push import send_plex_watched_push
@@ -137,22 +142,30 @@ def plex_push_send(request):
 
     cache.set(
         plex_watched_push.status_key(user_id),
-        {"done": False, "current": 0, "total": len(selected)},
+        {"done": False, "current": 0, "total": len(selected), "lock_token": lock_token},
         plex_watched_push.STATUS_SECONDS,
     )
     if pin:
         cache.set(plex_watched_push.pin_key(user_id), pin, plex_watched_push.LOCK_SECONDS)
+    queued = False
     try:
         send_plex_watched_push.delay(
             user_id,
             session.target.uuid,
             session.server.machine_identifier,
             sorted(selected),
+            lock_token,
         )
+        queued = True
     except BrokerOperationalError:
-        cache.delete_many(
-            [lock, plex_watched_push.pin_key(user_id), plex_watched_push.status_key(user_id)],
-        )
+        pass
+    finally:
+        # Any failure to queue, not only a broker outage, must free the lock.
+        if not queued:
+            cache.delete_many(
+                [lock, plex_watched_push.pin_key(user_id), plex_watched_push.status_key(user_id)],
+            )
+    if not queued:
         error = "The send could not be started. Try again."
         return render(request, RESULT_TEMPLATE, {"error": error})
     return _render_status(request)
@@ -166,7 +179,14 @@ def plex_push_status(request):
 
 
 def _render_status(request):
-    status = cache.get(plex_watched_push.status_key(request.user.pk))
+    user_id = request.user.pk
+    status = cache.get(plex_watched_push.status_key(user_id))
     if status is None:
         return render(request, RESULT_TEMPLATE, {"error": "No send is running."})
+    lock = cache.get(plex_watched_push.lock_key(user_id))
+    if not status.get("done") and lock != status.get("lock_token"):
+        # A running send keeps its lock and writes its result before releasing
+        # it; without it this send was killed or never left the queue.
+        error = "The send stopped without finishing. Check again to see what is left."
+        return render(request, RESULT_TEMPLATE, {"error": error})
     return render(request, RESULT_TEMPLATE, status)

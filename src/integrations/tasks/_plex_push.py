@@ -28,8 +28,14 @@ from integrations.safe_fetch import UnsafeUrlError
 
 
 @shared_task(name="Send watched to Plex", queue="celery")
-def send_plex_watched_push(user_id, user_uuid, machine_identifier, selected):
+def send_plex_watched_push(user_id, user_uuid, machine_identifier, selected, lock_token):
     """Mark the selected ``[rating_key, item_id]`` pairs watched in Plex."""
+    if cache.get(lock_key(user_id)) != lock_token:
+        # The lock lapsed while this waited in the queue, so the popup already
+        # said it stopped, and a newer check or send may hold the lock now.
+        # Its PIN, status and lock are not this task's to touch.
+        return
+    cache.touch(lock_key(user_id), LOCK_SECONDS)
     pin = cache.get(pin_key(user_id))
     cache.delete(pin_key(user_id))
     status = {"done": True, "user_title": "", "result": None, "error": ""}
@@ -50,7 +56,12 @@ def send_plex_watched_push(user_id, user_uuid, machine_identifier, selected):
         def progress(done, total):
             cache.set(
                 status_key(user_id),
-                {"done": False, "current": done, "total": total},
+                {
+                    "done": False,
+                    "current": done,
+                    "total": total,
+                    "lock_token": lock_token,
+                },
                 STATUS_SECONDS,
             )
             cache.touch(lock_key(user_id), LOCK_SECONDS)
@@ -75,4 +86,5 @@ def send_plex_watched_push(user_id, user_uuid, machine_identifier, selected):
         if status["result"] is None and not status["error"]:
             status["error"] = "The send failed. Check again to see what is left."
         cache.set(status_key(user_id), status, STATUS_SECONDS)
-        cache.delete(lock_key(user_id))
+        if cache.get(lock_key(user_id)) == lock_token:
+            cache.delete(lock_key(user_id))

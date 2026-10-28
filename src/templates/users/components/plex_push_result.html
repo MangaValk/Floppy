@@ -23,8 +23,17 @@
     {% endif %}
     {% if result.stale %}
       <p class="text-sm text-[var(--color-text-muted)]">
-        {% blocktranslate count counter=result.stale %}{{ counter }} ticked item changed since the check and was not sent.{% plural %}{{ counter }} ticked items changed since the check and were not sent.{% endblocktranslate %}
+        {% if result.failed_libraries %}
+          {% blocktranslate count counter=result.stale %}{{ counter }} ticked item changed since the check, or is in a library that could not be read, and was not sent.{% plural %}{{ counter }} ticked items changed since the check, or are in a library that could not be read, and were not sent.{% endblocktranslate %}
+        {% else %}
+          {% blocktranslate count counter=result.stale %}{{ counter }} ticked item changed since the check and was not sent.{% plural %}{{ counter }} ticked items changed since the check and were not sent.{% endblocktranslate %}
+        {% endif %}
       </p>
+    {% endif %}
+    {% if result.stale and result.failed_libraries %}
+      <div class="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-[var(--color-warning-text)]">
+        {% translate "Could not read:" %} {{ result.failed_libraries|join:", " }}
+      </div>
     {% endif %}
     {% if result.sent %}
       <details class="text-sm">
