@@ -53,6 +53,12 @@ class StartupReconcileClaimTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
         self.config = AppConfig("app", import_module("app"))
+        # The game-groups scheduler also reopens failed rows, which needs the
+        # database. This is a SimpleTestCase, so keep that step out of the way;
+        # a module-level patch is visible to the pool threads too.
+        reopen = patch("app.tasks_game_groups.reopen_unconfigured_game_groups")
+        reopen.start()
+        self.addCleanup(reopen.stop)
 
     def tearDown(self):
         cache.clear()
