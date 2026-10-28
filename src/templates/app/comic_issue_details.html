@@ -240,6 +240,12 @@
         <p class="text-sm text-[var(--color-text-secondary)]">{{ media.details.cover_date }}</p>
       </div>
     {% endif %}
+    {% for label, text in issue_extra_details %}
+      <div class="mb-4">
+        <h3 class="text-sm font-semibold text-[var(--color-text-muted)] tracking-wide uppercase">{{ label }}</h3>
+        <p class="text-sm text-[var(--color-text-secondary)]">{{ text }}</p>
+      </div>
+    {% endfor %}
     </div>
     {% if authors_linked %}
       <div class="mb-4" {% detail_section_attrs user "comic_issue" "sidebar" "authors" %}>
