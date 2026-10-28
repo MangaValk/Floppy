@@ -729,43 +729,6 @@ def progress_unit_label(media_type, count):
 
 
 @register.filter
-def is_caught_up(media):
-    """Return whether an In progress show or season has watched every released episode.
-
-    Display only (rule R5 in docs/architecture/status-rules.md). Reads the
-    numbers the library list already annotates, so a card without them is
-    simply not labelled. A show uses the library's Caught Up filter rule.
-    """
-    if getattr(media, "status", None) != Status.IN_PROGRESS.value:
-        return False
-    media_type = getattr(getattr(media, "item", None), "media_type", None)
-    if media_type == MediaTypes.SEASON.value:
-        return _season_is_caught_up(media)
-    if media_type != MediaTypes.TV.value:
-        return False
-    return helpers.is_caught_up_media(media)
-
-
-def _season_is_caught_up(season):
-    """Return whether every released episode is watched and the season is not over.
-
-    A season list annotates the provider's full episode count, so "watched
-    everything" alone would also describe a finished season. Comparing the
-    watched numbers with the released ones tells the two apart.
-    """
-    try:
-        total = int(getattr(season, "max_progress", None))
-    except (TypeError, ValueError):
-        return False
-    released = set(season.available_episode_numbers())
-    return (
-        bool(released)
-        and len(released) < total
-        and released <= season.completed_episode_numbers
-    )
-
-
-@register.filter
 def safe_attr(obj, attr):
     """Safely get an attribute from an object, returning None if it doesn't exist."""
     if obj is None:

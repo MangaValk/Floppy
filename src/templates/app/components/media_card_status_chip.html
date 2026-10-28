@@ -44,9 +44,6 @@
                     {% include "app/icons/states/dropped.svg" with classes="w-full h-full" %}
                   {% endif %}
                 </div>
-                {% if media|is_caught_up %}
-                  <span class="media-status-chip__caught-up text-xs font-medium text-white drop-shadow-sm truncate min-w-0">{% translate "Caught Up" %}</span>
-                {% endif %}
               {% endwith %}
             {% else %}
               {% with status_value=media.status %}
@@ -63,9 +60,6 @@
                     {% include "app/icons/states/dropped.svg" with classes="w-full h-full" %}
                   {% endif %}
                 </div>
-                {% if media|is_caught_up %}
-                  <span class="media-status-chip__caught-up text-xs font-medium text-white drop-shadow-sm truncate min-w-0">{% translate "Caught Up" %}</span>
-                {% endif %}
               {% endwith %}
             {% endif %}
           </div>

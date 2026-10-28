@@ -1,6 +1,5 @@
 import json
 from datetime import timedelta
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -19,8 +18,6 @@ from app.services.progress_breakdown import (
     build_progress_breakdown,
     format_minutes,
 )
-from app.templatetags.app_tags import is_caught_up
-from events.models import Event
 
 PAST = "2020-01-01"
 FUTURE = (timezone.now() + timedelta(days=90)).strftime("%Y-%m-%d")
@@ -518,61 +515,6 @@ class CaughtUpTests(BreakdownTestCase):
         self.assertIn("caughtUp: true", caught_up)
         self.assertIn("Caught Up", caught_up)
         self.assertIn("caughtUp: false", finished)
-
-
-class CaughtUpFilterTests(BreakdownTestCase):
-    """The card chip label reuses the library's caught-up rule."""
-
-    @staticmethod
-    def _row(status=Status.IN_PROGRESS.value, progress=2, media_type="tv"):
-        return SimpleNamespace(
-            status=status,
-            progress=progress,
-            max_progress=2,
-            item=SimpleNamespace(media_type=media_type),
-        )
-
-    def _season_with_events(self, *, aired, future, watched):
-        """Return an In progress season with released and upcoming calendar events."""
-        season = self.season(1)
-        now = timezone.now()
-        for number in range(1, aired + future + 1):
-            Event.objects.create(
-                item=season.item,
-                content_number=number,
-                datetime=now - timedelta(days=30 - number)
-                if number <= aired
-                else now + timedelta(days=number),
-            )
-        self.watch(season, *range(1, watched + 1))
-        season.max_progress = aired + future
-        return season
-
-    def test_label_needs_an_in_progress_show_that_is_caught_up(self):
-        self.assertTrue(is_caught_up(self._row()))
-        self.assertFalse(is_caught_up(self._row(progress=1)))
-        self.assertFalse(is_caught_up(self._row(status=Status.COMPLETED.value)))
-        self.assertFalse(is_caught_up(self._row(status=Status.PLANNING.value)))
-        self.assertFalse(is_caught_up(self._row(media_type="movie")))
-
-    def test_season_is_caught_up_when_released_episodes_are_watched_and_more_is_coming(self):
-        self.assertTrue(is_caught_up(self._season_with_events(aired=3, future=2, watched=3)))
-
-    def test_finished_season_is_not_caught_up(self):
-        """Every episode watched and none to come: that is Completed, not Caught Up."""
-        self.assertFalse(is_caught_up(self._season_with_events(aired=3, future=0, watched=3)))
-
-    def test_season_with_an_unwatched_released_episode_is_not_caught_up(self):
-        self.assertFalse(is_caught_up(self._season_with_events(aired=3, future=2, watched=2)))
-
-    def test_season_without_calendar_events_is_not_labelled(self):
-        season = self.season(1)
-        season.max_progress = 5
-        self.assertFalse(is_caught_up(season))
-
-    def test_label_ignores_missing_rows_and_unannotated_rows(self):
-        self.assertFalse(is_caught_up(None))
-        self.assertFalse(is_caught_up(self.tv))
 
 
 class ProgressBreakdownViewTests(BreakdownTestCase):
