@@ -265,6 +265,10 @@ SOURCES_CONFIG = {
         "name": "StoryGraph",
         "logo": static("img/storygraph-logo.svg"),
     },
+    "youtube": {
+        "name": "YouTube",
+        "logo": static("img/youtube-logo.svg"),
+    },
     "tvtime": {
         "name": "TV Time",
         "logo": static("img/tvtime-logo.png"),
