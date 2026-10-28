@@ -207,6 +207,11 @@ urlpatterns = [
         name="api_video_play",
     ),
     re_path(
+        r"^videos/(?P<source>[^/]+)/(?P<media_id>[^/]+)/plays/(?P<external_id>.+?)/?$",
+        fork_views_video.VideoPlayDetailView.as_view(),
+        name="api_video_play_detail",
+    ),
+    re_path(
         r"^podcasts/episodes/plays/?$",
         fork_views_podcast.PodcastEpisodePlayView.as_view(),
         name="api_podcast_episode_play",
