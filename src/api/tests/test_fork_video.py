@@ -377,6 +377,24 @@ class VideoPlayManageApiTests(FloppyApiTestCase):
         self._delete("youtube:vid1:2026-10-02")
         self.assertIsNone(build_history_day(self.user1, day))
 
+    def test_a_play_with_slashes_in_its_external_id_can_be_deleted(self):
+        """Any id the create endpoint accepts can be addressed to delete it."""
+        external_id = "client/app:vid1:2026-10-02"
+        response = self.client.post(
+            self._plays_url(),
+            {
+                "title": "A Video",
+                "lengthSeconds": 1000,
+                "progressSeconds": 100,
+                "externalId": external_id,
+            },
+            format="json",
+            **self.auth_headers,
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self._delete(external_id).status_code, 204)
+        self.assertEqual(VideoPlay.objects.count(), 0)
+
     def test_deleting_an_unknown_play_or_video_is_not_found(self):
         """Neither is an error beyond 404."""
         self._post("2026-10-02")
