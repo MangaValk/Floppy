@@ -359,6 +359,9 @@
   .top-0 {
     top: calc(var(--spacing) * 0);
   }
+  .top-1 {
+    top: calc(var(--spacing) * 1);
+  }
   .top-1\/2 {
     top: calc(1/2 * 100%);
   }
@@ -388,6 +391,9 @@
   }
   .right-0 {
     right: calc(var(--spacing) * 0);
+  }
+  .right-1 {
+    right: calc(var(--spacing) * 1);
   }
   .right-1\/2 {
     right: calc(1/2 * 100%);
@@ -3552,6 +3558,9 @@
   .ring-\(--color-accent\) {
     --tw-ring-color: var(--color-accent);
   }
+  .ring-\[var\(--color-accent\)\] {
+    --tw-ring-color: var(--color-accent);
+  }
   .ring-\[var\(--color-accent\)\]\/30 {
     --tw-ring-color: var(--color-accent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -3575,6 +3584,9 @@
   }
   .ring-indigo-700 {
     --tw-ring-color: var(--color-indigo-700);
+  }
+  .ring-transparent {
+    --tw-ring-color: transparent;
   }
   .outline {
     outline-style: var(--tw-outline-style);
