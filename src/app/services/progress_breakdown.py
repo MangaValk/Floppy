@@ -229,6 +229,13 @@ class ProgressBreakdown:
         """
         if self.catalogue_unavailable:
             return False
+        # A season the provider left out may hold unwatched aired episodes, so
+        # a partial response cannot prove the user is caught up.
+        if any(
+            season.catalogue_missing and not season.is_specials and not season.dropped
+            for season in self.seasons
+        ):
+            return False
         scope = self.overall
         aired = [ep for row in scope for ep in row.episodes if ep["state"] != UPCOMING]
         if not aired or any(ep["state"] == UNWATCHED for ep in aired):

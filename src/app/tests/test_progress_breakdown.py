@@ -484,6 +484,21 @@ class CaughtUpTests(BreakdownTestCase):
         self.assertFalse(self.breakdown(fake, season=season_one).caught_up)
         self.assertTrue(self.breakdown(fake, tv=self.tv).caught_up)
 
+    def test_a_tracked_season_missing_from_the_catalogue_is_not_caught_up(self):
+        """A partial provider answer cannot prove an omitted season is watched."""
+        season_one = self.season(1, status=Status.COMPLETED.value)
+        self.season(2, status=Status.IN_PROGRESS.value)
+        self.watch(season_one, 1, 2)
+
+        result = self.breakdown(
+            _catalogue(
+                s1=[_episode(1), _episode(2)],
+                s3=[_episode(1, air_date=FUTURE)],
+            ),
+        )
+
+        self.assertFalse(result.caught_up)
+
     def test_unavailable_catalogue_is_not_caught_up(self):
         self.watch(self.season(1), 1)
 
