@@ -2605,16 +2605,15 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             .exclude(Exists(existing_event))
             .filter(released_q("release_datetime", current_datetime))
             .values("media_id", "source", "season_number")
-            .annotate(max_episode=models.Max("episode_number"))
+            .annotate(released_count=models.Count("episode_number", distinct=True))
         )
 
         for row in episode_rows:
             key = (row["media_id"], row["source"])
             season_number = row["season_number"]
-            max_episode = row["max_episode"] or 0
-            released_by_show[key][season_number] = max(
-                released_by_show[key].get(season_number, 0),
-                max_episode,
+            released_count = row["released_count"] or 0
+            released_by_show[key][season_number] = (
+                released_by_show[key].get(season_number, 0) + released_count
             )
 
         released_events = (
@@ -2632,16 +2631,15 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 "item__source",
                 "item__season_number",
             )
-            .annotate(max_episode=models.Max("content_number"))
+            .annotate(released_count=models.Count("content_number", distinct=True))
         )
 
         for row in released_events:
             key = (row["item__media_id"], row["item__source"])
             season_number = row["item__season_number"]
-            max_episode = row["max_episode"] or 0
-            released_by_show[key][season_number] = max(
-                released_by_show[key].get(season_number, 0),
-                max_episode,
+            released_count = row["released_count"] or 0
+            released_by_show[key][season_number] = (
+                released_by_show[key].get(season_number, 0) + released_count
             )
 
         for tv in tv_list:
@@ -2795,13 +2793,13 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             .exclude(Exists(existing_event))
             .filter(released_q("release_datetime", current_datetime))
             .values("media_id", "source", "season_number")
-            .annotate(max_episode=models.Max("episode_number"))
+            .annotate(released_count=models.Count("episode_number", distinct=True))
         )
 
         for row in episode_rows:
             key = (row["media_id"], row["source"], row["season_number"])
-            max_episode = row["max_episode"] or 0
-            released_by_season[key] = max(released_by_season.get(key, 0), max_episode)
+            released_count = row["released_count"] or 0
+            released_by_season[key] = released_by_season.get(key, 0) + released_count
 
         released_events = (
             events.models.Event.objects.filter(
@@ -2818,7 +2816,7 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 "item__source",
                 "item__season_number",
             )
-            .annotate(max_episode=models.Max("content_number"))
+            .annotate(released_count=models.Count("content_number", distinct=True))
         )
 
         for row in released_events:
@@ -2827,8 +2825,8 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                 row["item__source"],
                 row["item__season_number"],
             )
-            max_episode = row["max_episode"] or 0
-            released_by_season[key] = max(released_by_season.get(key, 0), max_episode)
+            released_count = row["released_count"] or 0
+            released_by_season[key] = released_by_season.get(key, 0) + released_count
 
         for season in season_list:
             key = (season.item.media_id, season.item.source, season.item.season_number)

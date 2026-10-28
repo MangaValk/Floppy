@@ -1277,3 +1277,42 @@ def decrypt_or_raise(token):
         logger.exception("Failed to decrypt stored credential")
         msg = "Saved credentials can't be read. Reconnect this integration."
         raise MediaImportError(msg) from error
+
+
+def season_last_episode_number(season_metadata):
+    """Return the number of a season's final episode.
+
+    A season's ``max_progress`` is how many episodes it has. Anime seasons
+    that continue the numbering (51-100) end on a number larger than that
+    count, so completion checks compare against this instead.
+    """
+    last = season_metadata.get("last_episode_number")
+    if last:
+        return last
+    numbers = [
+        episode["episode_number"]
+        for episode in season_metadata.get("episodes") or []
+        if isinstance(episode, dict) and episode.get("episode_number") is not None
+    ]
+    if numbers:
+        return max(numbers)
+    return season_metadata.get("max_progress")
+
+
+def season_episode_numbers(season_metadata):
+    """Return the episode numbers that make up a season's ``max_progress``.
+
+    Episodes past the provider's count (a future episode it lists but does not
+    count yet) are left out, as they were when this was ``range(1, count + 1)``.
+    """
+    count = int(season_metadata.get("max_progress") or 0)
+    numbers = sorted(
+        {
+            int(episode["episode_number"])
+            for episode in season_metadata.get("episodes") or []
+            if isinstance(episode, dict) and episode.get("episode_number") is not None
+        },
+    )
+    if numbers and count:
+        return set(numbers[:count])
+    return set(range(1, count + 1))

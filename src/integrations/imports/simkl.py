@@ -515,7 +515,9 @@ class SimklImporter:
                         },
                     )
 
-                if episodes[-1]["number"] == season_metadata["max_progress"]:
+                if episodes[-1]["number"] == helpers.season_last_episode_number(
+                    season_metadata,
+                ):
                     season_status = Status.COMPLETED.value
                 else:
                     season_status = tv_instance.status
