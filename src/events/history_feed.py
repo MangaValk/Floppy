@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from django.apps import apps
 from django.utils import timezone
 
 from app.models import (
@@ -21,6 +22,7 @@ from app.models import (
     Podcast,
     Status,
     Video,
+    VideoPlay,
 )
 
 # How far back the link reaches. A calendar app polls the link, and a decade of
@@ -44,6 +46,8 @@ HISTORY_VERBS = {
 }
 
 # Types whose plays are one entry per finished record, dated by its end date.
+# Music and podcasts keep every listen in their history table, and videos keep
+# a row per viewing, so those are read separately below.
 _ENTRY_MODELS = {
     MediaTypes.ANIME.value: Anime,
     MediaTypes.MANGA.value: Manga,
@@ -52,9 +56,11 @@ _ENTRY_MODELS = {
     MediaTypes.COMIC.value: Comic,
     MediaTypes.COMIC_ISSUE.value: ComicIssue,
     MediaTypes.BOARDGAME.value: BoardGame,
+}
+
+_LISTEN_MODELS = {
     MediaTypes.MUSIC.value: Music,
     MediaTypes.PODCAST.value: Podcast,
-    MediaTypes.VIDEO.value: Video,
 }
 
 # Plays that come in bulk (every song, every podcast episode) start switched
@@ -179,6 +185,7 @@ def _movie_plays(user, since):
             user=user,
             end_date__isnull=False,
             end_date__gte=since,
+            status=Status.COMPLETED.value,
             plays__isnull=True,
         )
         .select_related("item")
@@ -212,6 +219,79 @@ def _entry_plays(user, media_type, since):
         )
 
 
+def _listen_plays(user, media_type, since):
+    """Every listen of a song or podcast, not just the latest one.
+
+    Playing a track again moves the entry's own end date and keeps the earlier
+    listens as rows in its history table, so those rows are the plays. Saving
+    an entry for another reason (a new score) repeats a row with the same end
+    date, which is one listen, not two.
+    """
+    model = _LISTEN_MODELS[media_type]
+    historical = apps.get_model("app", f"Historical{model.__name__}")
+    titles = {
+        entry.id: entry.item
+        for entry in model.objects.filter(user=user)
+        .select_related("item")
+        .only("id", *_item_fields("item"))
+    }
+    rows = (
+        historical.objects.filter(
+            id__in=list(titles),
+            end_date__isnull=False,
+            end_date__gte=since,
+        )
+        .order_by("history_id")
+        .values_list("history_id", "id", "end_date")
+    )
+    seen = set()
+    for history_id, entry_id, end_date in rows:
+        if (entry_id, end_date) in seen:
+            continue
+        seen.add((entry_id, end_date))
+        yield HistoryPlay(
+            uid=f"{media_type}-{history_id}",
+            summary=_summary(media_type, titles[entry_id]),
+            played_at=end_date,
+        )
+
+
+def _video_plays(user, since):
+    plays = (
+        VideoPlay.objects.filter(
+            video__user=user,
+            end_date__gte=since,
+        )
+        .select_related("video__item")
+        .only("id", "end_date", *_item_fields("video__item"))
+    )
+    for play in plays:
+        yield HistoryPlay(
+            uid=f"videoplay-{play.id}",
+            summary=_summary(MediaTypes.VIDEO.value, play.video.item),
+            played_at=play.end_date,
+        )
+
+    # A video from before viewings were recorded only has its own end date.
+    videos = (
+        Video.objects.filter(
+            user=user,
+            end_date__isnull=False,
+            end_date__gte=since,
+            status=Status.COMPLETED.value,
+            plays__isnull=True,
+        )
+        .select_related("item")
+        .only("id", "end_date", *_item_fields("item"))
+    )
+    for video in videos:
+        yield HistoryPlay(
+            uid=f"video-{video.id}",
+            summary=_summary(MediaTypes.VIDEO.value, video.item),
+            played_at=video.end_date,
+        )
+
+
 def get_history_plays(user, media_types, now=None):
     """Return the user's finished plays for the link, newest first."""
     since = (now or timezone.now()) - timedelta(days=HISTORY_FEED_DAYS)
@@ -221,6 +301,10 @@ def get_history_plays(user, media_types, now=None):
             plays.extend(_episode_plays(user, since))
         elif media_type == MediaTypes.MOVIE.value:
             plays.extend(_movie_plays(user, since))
+        elif media_type == MediaTypes.VIDEO.value:
+            plays.extend(_video_plays(user, since))
+        elif media_type in _LISTEN_MODELS:
+            plays.extend(_listen_plays(user, media_type, since))
         elif media_type in _ENTRY_MODELS:
             plays.extend(_entry_plays(user, media_type, since))
     plays.sort(key=lambda play: (play.played_at, play.uid), reverse=True)

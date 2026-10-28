@@ -15,9 +15,12 @@ from app.models import (
     Movie,
     MoviePlay,
     Music,
+    Podcast,
     Season,
     Sources,
     Status,
+    Video,
+    VideoPlay,
 )
 
 
@@ -232,6 +235,91 @@ class HistoryCalendarFeedTests(TestCase):
         self.assertNotIn("Kind of Blue", default_body)
         self.assertIn("Listened to: Kind of Blue", music_body)
         self.assertNotIn("A Book", music_body)
+
+    def test_unfinished_movie_without_plays_is_left_out(self):
+        """The no-play-rows fallback also needs a completed movie."""
+        for status in (
+            Status.DROPPED.value,
+            Status.IN_PROGRESS.value,
+            Status.PLANNING.value,
+        ):
+            movie = self._movie(f"Unfinished {status}", self.when, status=status)
+            MoviePlay.objects.filter(movie=movie).delete()
+
+        self.assertNotIn("Unfinished", self._feed())
+
+    def test_song_played_again_keeps_every_listen(self):
+        """Each listen is its own entry, and saving for another reason adds none."""
+        music = Music.objects.create(
+            item=self._item(MediaTypes.MUSIC.value, "So What"),
+            user=self.user,
+            status=Status.COMPLETED.value,
+            end_date=self.when - timedelta(days=2),
+        )
+        music.end_date = self.when
+        music.save()
+        music.score = 9
+        music.save()
+
+        body = self._feed(media_types=["music"])
+
+        self.assertEqual(body.count("SUMMARY:Listened to: So What"), 2)
+        uids = [line for line in body.splitlines() if line.startswith("UID:")]
+        self.assertEqual(len(set(uids)), 2)
+
+    def test_podcast_listens_are_included_when_asked_for(self):
+        """Podcasts read their listens the same way."""
+        Podcast.objects.create(
+            item=self._item(MediaTypes.PODCAST.value, "Hardcore History"),
+            user=self.user,
+            status=Status.COMPLETED.value,
+            end_date=self.when,
+        )
+
+        self.assertNotIn("Hardcore History", self._feed())
+        self.assertIn(
+            "Listened to: Hardcore History",
+            self._feed(media_types=["podcast"]),
+        )
+
+    def test_video_watched_on_two_days_has_two_entries(self):
+        """Each viewing of a video is its own entry."""
+        video = Video.objects.create(
+            item=self._item(MediaTypes.VIDEO.value, "Lecture"),
+            user=self.user,
+            status=Status.COMPLETED.value,
+            end_date=self.when,
+        )
+        VideoPlay.objects.filter(video=video).delete()
+        VideoPlay.objects.create(video=video, external_id="a", end_date=self.when)
+        VideoPlay.objects.create(
+            video=video,
+            external_id="b",
+            end_date=self.when - timedelta(days=5),
+        )
+
+        body = self._feed(media_types=["video"])
+
+        self.assertEqual(body.count("SUMMARY:Watched: Lecture"), 2)
+
+    def test_video_without_plays_needs_to_be_completed(self):
+        """A video with no viewing rows falls back to its own date if finished."""
+        for title, status in (
+            ("Done Video", Status.COMPLETED.value),
+            ("Half Video", Status.IN_PROGRESS.value),
+        ):
+            video = Video.objects.create(
+                item=self._item(MediaTypes.VIDEO.value, title),
+                user=self.user,
+                status=status,
+                end_date=self.when,
+            )
+            VideoPlay.objects.filter(video=video).delete()
+
+        body = self._feed(media_types=["video"])
+
+        self.assertIn("Watched: Done Video", body)
+        self.assertNotIn("Half Video", body)
 
     def test_media_types_narrow_the_feed(self):
         """Choosing a type leaves the others out."""
