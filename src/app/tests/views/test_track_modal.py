@@ -1476,8 +1476,10 @@ class TrackModalViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         manual_item.refresh_from_db()
         self.assertEqual(manual_item.title, "Collected Issue #2")
-        self.assertEqual(manual_item.synopsis, "Found in a long box.")
-        self.assertEqual(manual_item.publishers, ["Nova Press"])
+        self.assertEqual(
+            manual_item.manual_metadata["synopsis"], "Found in a long box."
+        )
+        self.assertEqual(manual_item.publishers, "Nova Press")
 
     def test_update_manual_item_metadata_rejects_item_not_in_library(self):
         """Neither tracking nor collecting means no edits."""
