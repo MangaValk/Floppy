@@ -1360,7 +1360,7 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
         Keep watch-order policy in TV.next_episode_target and release data in
         the existing calendar/catalogue. Untracked seasons need no tracker row.
         """
-        from events.models import SentinelDatetime
+        from events.models import SentinelDatetime, is_released_datetime
 
         now = timezone.now()
         today = timezone.localdate(now)
@@ -1417,7 +1417,7 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             last_dates = []
             for coordinate, record in episodes.items():
                 date = record["air_date"]
-                if date and date <= now:
+                if is_released_datetime(date, now):
                     released_numbers[coordinate[0]].append(coordinate[1])
                     last_dates.append(date)
                 season = seasons.get(coordinate[0])
@@ -1430,8 +1430,7 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
             released = [
                 coordinate
                 for coordinate in eligible
-                if episodes[coordinate]["air_date"]
-                and episodes[coordinate]["air_date"] <= now
+                if is_released_datetime(episodes[coordinate]["air_date"], now)
             ]
             # Preserve the model's paused/planning-season policy when it found
             # a tracked target; an earlier untracked season still takes priority.
@@ -1445,7 +1444,8 @@ class MediaManager(models.Manager.from_queryset(ImportScopedQuerySet)):
                     (
                         c
                         for c in eligible
-                        if episodes[c]["air_date"] and episodes[c]["air_date"] > now
+                        if episodes[c]["air_date"]
+                        and not is_released_datetime(episodes[c]["air_date"], now)
                     ),
                     key=lambda c: (episodes[c]["air_date"], c),
                     default=None,

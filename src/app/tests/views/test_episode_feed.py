@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -317,6 +317,26 @@ class EpisodeFeedTests(TestCase):
                 self.assertContains(response, day)
                 self.assertContains(response, upcoming)
                 self.assertNotContains(response, "released episodes not watched")
+
+    def test_date_only_release_today_counts_down_instead_of_behind(self):
+        tv, season = self._show("Date only", watched=3)
+        # A date-only release keeps its sentinel time. It is not out until the
+        # local date has ended, whatever the clock says.
+        today = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time(0, 59, 59, 999999)),
+        )
+        Item.objects.create(
+            title="Date only episode 4",
+            media_id=tv.item.media_id,
+            source=Sources.TMDB.value,
+            media_type=MediaTypes.EPISODE.value,
+            season_number=1,
+            episode_number=4,
+            release_datetime=today,
+        )
+        Event.objects.create(item=season.item, content_number=4, datetime=today)
+        response = self.client.get(reverse("home"))
+        self.assertEqual(self._chips(response), [("Today", 1, 4)])
 
     def test_feed_uses_released_next_targets_and_backlog_order(self):
         self._show("Newer", days_ago=2, watched=1)
