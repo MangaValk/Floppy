@@ -254,6 +254,7 @@ class ImportDataViewTests(TestCase):
             "import_goodreads",
             "import_hardcover",
             "import_storygraph",
+            "import_youtube_takeout",
             "import_wetrakr",
             "import_tvtime",
         )

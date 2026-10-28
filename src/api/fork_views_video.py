@@ -2,7 +2,6 @@
 
 import datetime
 from http import HTTPStatus as HTTP  # noqa: N814
-from urllib.parse import urlparse
 
 from django.db import transaction
 from django.utils import timezone
@@ -13,15 +12,14 @@ from rest_framework.views import APIView
 
 from app import history_cache
 from app.helpers import has_real_image
-from app.image_cache import is_approved_url
 from app.models import Item, MediaTypes, Status, Video, VideoPlay
+from app.video_helpers import approved_thumbnail_url
 
 from .helpers import check_source_type
 
 # Largest value a PositiveIntegerField column stores.
 MAX_SECONDS = 2_147_483_647
 MAX_EXTERNAL_ID_LENGTH = 255
-MAX_THUMBNAIL_URL_LENGTH = 2048
 MAX_DESCRIPTION_LENGTH = 5000
 
 
@@ -36,31 +34,6 @@ def _end_date_from_external_id(external_id):
     if not parsed:
         return timezone.now()
     return timezone.make_aware(datetime.datetime.combine(parsed, datetime.time(12, 0)))
-
-
-def _approved_thumbnail_url(data, media_id):
-    """Return a thumbnail URL Floppy may store, or empty.
-
-    Only https URLs on the artwork allowlist that point at this video are kept.
-    Anything else is dropped, so this endpoint never fetches a caller-supplied
-    URL and one video cannot be given another video's poster.
-
-    @param data - Request body.
-    @param media_id - YouTube video id from the request path.
-    @returns Approved URL, or "".
-    """
-    raw = data.get("thumbnailUrl") or data.get("thumbnail_url") or ""
-    url = str(raw).strip()
-    if not url or len(url) > MAX_THUMBNAIL_URL_LENGTH:
-        return ""
-    # An http:// poster would be blocked as mixed content on an https install.
-    if not url.lower().startswith("https://") or not is_approved_url(url):
-        return ""
-    # YouTube thumbnails live at /vi/<videoId>/<name>.jpg.
-    parts = urlparse(url).path.strip("/").split("/")
-    if len(parts) < 2 or parts[0] not in ("vi", "vi_webp") or parts[1] != media_id:  # noqa: PLR2004
-        return ""
-    return url
 
 
 def _invalidate_history_for_other_viewers(item, user):
@@ -182,7 +155,10 @@ class VideoPlayView(APIView):
 
         # History reads item.image. Set it once, from an allowlisted host,
         # and never replace a poster that is already there.
-        thumbnail_url = _approved_thumbnail_url(request.data, media_id)
+        thumbnail_url = approved_thumbnail_url(
+            request.data.get("thumbnailUrl") or request.data.get("thumbnail_url"),
+            media_id,
+        )
         if thumbnail_url and not has_real_image(item.image):
             item.image = thumbnail_url
             item.save(update_fields=["image"])
