@@ -11,6 +11,7 @@ import re
 from datetime import timedelta
 
 import requests
+from django.db.models import Q
 from django.utils import timezone
 
 from app.models import Item, MediaTypes, Sources, VideoGameTag
@@ -166,3 +167,34 @@ def lookup_due(item):
     if tag.status == VideoGameTag.Status.NOT_FOUND:
         return age >= NOT_FOUND_RECHECK
     return tag.failures < MAX_FAILURES and age >= UNAVAILABLE_BACKOFF
+
+
+def backfill_due_items(limit=20):
+    """Look up a bounded batch of videos that have no tag yet or are due a recheck.
+
+    Run on a schedule so videos reported before this existed fill in gradually
+    without a burst of requests to YouTube.
+    @returns How many items were looked up.
+    """
+    now = timezone.now()
+    base = Item.objects.filter(
+        source=Sources.YOUTUBE.value, media_type=MediaTypes.VIDEO.value
+    )
+    ids = list(
+        base.filter(video_game_tag__isnull=True).values_list("pk", flat=True)[:limit]
+    )
+    if len(ids) < limit:
+        due = Q(
+            video_game_tag__status=VideoGameTag.Status.NOT_FOUND,
+            video_game_tag__checked_at__lte=now - NOT_FOUND_RECHECK,
+        ) | Q(
+            video_game_tag__status=VideoGameTag.Status.UNAVAILABLE,
+            video_game_tag__failures__lt=MAX_FAILURES,
+            video_game_tag__checked_at__lte=now - UNAVAILABLE_BACKOFF,
+        )
+        ids += list(
+            base.filter(due).values_list("pk", flat=True)[: limit - len(ids)]
+        )
+    for pk in ids:
+        refresh_game_tag(pk)
+    return len(ids)

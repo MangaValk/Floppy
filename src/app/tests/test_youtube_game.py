@@ -167,3 +167,87 @@ class LiveWatchPageTests(TestCase):
             youtube_game.extract_games(youtube_game.fetch_initial_data("dQw4w9WgXcQ")),
             [],
         )
+
+
+class WatchedForGameTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        self.user = get_user_model().objects.create_user("watcher", password="x")
+        self.other = get_user_model().objects.create_user("other", password="x")
+        self.game = Item.objects.create(
+            media_id="1",
+            source=Sources.IGDB.value,
+            media_type=MediaTypes.GAME.value,
+            title="The Legend of Zelda: Tears of the Kingdom",
+            release_datetime=timezone.now().replace(year=2023),
+        )
+
+    def _video(self, user, vid, title, year, progress, length, status="found"):
+        from app.models import Status, Video
+
+        item, _ = Item.objects.get_or_create(
+            media_id=vid,
+            source=Sources.YOUTUBE.value,
+            media_type=MediaTypes.VIDEO.value,
+            defaults={"title": vid},
+        )
+        VideoGameTag.objects.get_or_create(
+            item=item,
+            defaults={
+                "status": status,
+                "game_title": title,
+                "release_year": year,
+                "checked_at": timezone.now(),
+            },
+        )
+        return Video.objects.create(
+            item=item,
+            user=user,
+            progress=progress,
+            length_seconds=length,
+            status=Status.IN_PROGRESS.value,
+        )
+
+    def test_sums_matching_videos_for_one_user_and_caps_at_runtime(self):
+        from app.services import youtube_game_watch as watch
+
+        self._video(self.user, "v1", self.game.title, "2023", 600, 1000)
+        self._video(self.user, "v2", self.game.title, "2023", 5000, 1000)
+        self._video(self.user, "v3", "Minecraft", "2009", 900, 900)
+        self._video(self.other, "v4", self.game.title, "2023", 900, 900)
+        self.assertEqual(
+            watch.watched_for_game(self.user, self.game),
+            {"videos": 2, "seconds": 1600, "hours_label": "26m", "estimated": True},
+        )
+
+    def test_wrong_year_and_missing_tags_do_not_match(self):
+        from app.services import youtube_game_watch as watch
+
+        self._video(self.user, "v1", self.game.title, "2017", 600, 1000)
+        self._video(self.user, "v2", self.game.title, "", 600, 1000, "not_found")
+        self.assertIsNone(watch.watched_for_game(self.user, self.game))
+
+    def test_punctuation_and_accents_are_folded(self):
+        from app.services import youtube_game_watch as watch
+
+        self.assertEqual(
+            watch.normalize_title("Pokémon: Legends Z-A"),
+            watch.normalize_title("pokemon legends z a"),
+        )
+
+
+class BackfillTests(TestCase):
+    def test_looks_up_untagged_videos_within_the_limit(self):
+        for n in range(3):
+            Item.objects.create(
+                media_id=f"vid{n:08d}",
+                source=Sources.YOUTUBE.value,
+                media_type=MediaTypes.VIDEO.value,
+                title=f"v{n}",
+            )
+        target = "app.services.youtube_game.fetch_initial_data"
+        with patch(target, return_value=_page(MINECRAFT)):
+            self.assertEqual(youtube_game.backfill_due_items(limit=2), 2)
+            self.assertEqual(youtube_game.backfill_due_items(limit=2), 1)
+            self.assertEqual(youtube_game.backfill_due_items(limit=2), 0)

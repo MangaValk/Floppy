@@ -240,7 +240,6 @@ from app.tasks_interactive import (  # noqa: E402
     statistics_sync_task,  # noqa: F401
 )
 from app.tasks_mal import sync_mal_ratings_from_api  # noqa: E402
-from app.tasks_youtube_game import lookup_youtube_game_tag  # noqa: E402,F401
 from app.tasks_metadata_cache import (  # noqa: E402
     _clear_item_metadata_cache,
     _exception_with_details,
@@ -320,6 +319,10 @@ from app.tasks_watch_state import (  # noqa: E402
     backfill_user_watch_state,
     backfill_watch_state,
     ensure_watch_state_repair,
+)
+from app.tasks_youtube_game import (  # noqa: E402,F401
+    backfill_youtube_game_tags,
+    lookup_youtube_game_tag,
 )
 
 RELEASE_BACKFILL_SOURCES = (

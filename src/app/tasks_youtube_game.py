@@ -14,3 +14,11 @@ def lookup_youtube_game_tag(item_id):
     from app.services import youtube_game
 
     return youtube_game.refresh_game_tag(item_id)
+
+
+@shared_task(name="Backfill YouTube game tags")
+def backfill_youtube_game_tags():
+    """Look up a small batch of videos whose game tag is missing or due a recheck."""
+    from app.services import youtube_game
+
+    return {"looked_up": youtube_game.backfill_due_items()}

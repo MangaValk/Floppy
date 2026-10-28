@@ -116,7 +116,6 @@ from app.models.watch_state import (
 )
 
 __all__ = [
-    "VideoGameTag",
     "CREDITS_BACKFILL_VERSION",
     "DISCOVER_MOVIE_METADATA_BACKFILL_VERSION",
     "PERSON_PROFILE_BACKFILL_VERSION",
@@ -198,6 +197,7 @@ __all__ = [
     "Track",
     "UserProviderCredential",
     "Video",
+    "VideoGameTag",
     "VideoPlay",
     "WatchState",
     "WatchStateChange",

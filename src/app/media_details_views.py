@@ -72,7 +72,7 @@ from app.models import (
 )
 from app.models.episode_runtimes import build_season_runtime_index
 from app.providers import services, tmdb
-from app.services import metadata_resolution, opencritic_scores
+from app.services import metadata_resolution, opencritic_scores, youtube_game_watch
 from app.services.metadata_fallback import stored_metadata_fallback
 from app.tag_views import (
     _build_detail_tag_sections,
@@ -2006,6 +2006,15 @@ def media_details(
         "mal_score": mal_score,
         "opencritic_score": opencritic_score,
         "game_lengths": game_lengths,
+        "youtube_watch": (
+            youtube_game_watch.watched_for_game(request.user, detail_item)
+            if render_secondary_only
+            and media_type == MediaTypes.GAME.value
+            and detail_item
+            and request.user.is_authenticated
+            and not public_view
+            else None
+        ),
         "game_lengths_pending": game_lengths_refresh_pending
         and not (game_lengths and game_lengths.get("available")),
         "notes_entry": notes_entry,
