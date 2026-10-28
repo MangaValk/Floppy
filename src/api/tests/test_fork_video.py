@@ -361,6 +361,15 @@ class VideoChannelTests(FloppyApiTestCase):
         ]
         self.assertEqual(titles[0], "Video vidC")
 
+    def test_the_table_has_a_channel_column(self):
+        """The table layout shows each video's channel."""
+        response = self.client.get("/medialist/video", {"layout": "table"})
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(response.content.decode(), r"<th[^>]*>\s*Channel")
+        self.assertRegex(
+            response.content.decode(), r"<td[^>]*>\s*<span[^>]*>\s*Beyond Babish"
+        )
+
     def test_other_media_types_keep_the_author_wording(self):
         """Books still say Author and still offer Format."""
         response = self.client.get("/medialist/book")
