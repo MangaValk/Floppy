@@ -5572,6 +5572,36 @@ def import_storygraph(request):
 
 
 @require_POST
+def import_youtube_takeout(request):
+    """View for importing YouTube watch history from a Google Takeout file."""
+    file = request.FILES.get("youtube_takeout")
+
+    if not file:
+        messages.error(request, "A YouTube watch history file is required.")
+        return _integration_redirect(request)
+
+    staged_file = _stage_upload_or_message(request, file, "YouTube watch history")
+    if staged_file is None:
+        return _integration_redirect(request)
+
+    mode = request.POST["mode"]
+    if _queue_staged_task_or_message(
+        request,
+        tasks.import_youtube_takeout,
+        user_id=request.user.id,
+        file=staged_file,
+        mode=mode,
+        staged_paths=(staged_file,),
+    ) is False:
+        return _integration_redirect(request)
+    messages.info(
+        request,
+        "The task to import your YouTube watch history has been queued.",
+    )
+    return _integration_redirect(request)
+
+
+@require_POST
 def import_tvtime(request):
     """View for importing watch history from TV Time's GDPR export CSVs."""
     shows_file = request.FILES.get("tvtime_shows_csv")
