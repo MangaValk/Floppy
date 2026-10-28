@@ -212,6 +212,9 @@ class EpisodeFeedTests(TestCase):
             # One chip in the next-episode slot, linking the same way.
             self.assertEqual(len(card.select('[data-episode-queue="true"]')), 1)
             self.assertNotIn("Next ep", card.get_text())
+            # The status chip steps aside on phones so the two never overlap.
+            status = card.select_one(".media-status-chip")
+            self.assertEqual(status["data-mobile-hide-on-mobile"], "true")
         # Shows with a known next episode link to it; an undated show has none.
         self.assertEqual(len(queue.select('a[data-episode-queue="true"]')), 2)
         self.assertEqual(
