@@ -105,6 +105,10 @@ _IMPORTER_REPLACING_ROWS: ContextVar[bool] = ContextVar(
     "importer_replacing_rows",
     default=False,
 )
+_ACCOUNT_BEING_DELETED: ContextVar[bool] = ContextVar(
+    "account_being_deleted",
+    default=False,
+)
 
 
 @contextmanager
@@ -145,6 +149,24 @@ def importer_replacing_rows():
         yield
     finally:
         _IMPORTER_REPLACING_ROWS.reset(token)
+
+
+@contextmanager
+def deleting_account():
+    """Mark deletes inside the block as a whole account being removed.
+
+    The cascade removes every tracked row with the user. A deletion tombstone
+    or statistics marker written for each one would point at the user
+    mid-delete and break the delete on its foreign key.
+    """
+    token = _ACCOUNT_BEING_DELETED.set(True)
+    try:
+        # Statistics, history and cache refresh signals would also write rows
+        # for the user that is being removed.
+        with suppress_media_cache_change_signals(), suppress_media_change_side_effects():
+            yield
+    finally:
+        _ACCOUNT_BEING_DELETED.reset(token)
 
 
 def media_change_side_effects_suppressed() -> bool:
@@ -669,7 +691,11 @@ def clear_discover_feedback_on_media_save(sender, instance, **kwargs):
 @receiver(post_delete, sender=Podcast)
 def record_deleted_media_tombstone(sender, instance, **kwargs):
     """Remember that the user deleted this item so imports don't recreate it."""
-    if kwargs.get("raw") or _IMPORTER_REPLACING_ROWS.get():
+    if (
+        kwargs.get("raw")
+        or _IMPORTER_REPLACING_ROWS.get()
+        or _ACCOUNT_BEING_DELETED.get()
+    ):
         return
     user = getattr(instance, "user", None)
     item = getattr(instance, "item", None)

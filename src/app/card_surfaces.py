@@ -19,6 +19,7 @@ class CardSurface:
     show_next_event_chip: bool = False
     show_next_event_subtitle: bool = False
     show_episode_identity: bool = False
+    show_episode_queue: bool = False
     hover_action_mode: str = "standard"
     is_recommend_mode: bool = False
     rating_read_only: bool = False
@@ -33,6 +34,12 @@ SURFACES = {
     "list_recommendations": CardSurface(),
     # Upcoming shelves lead with the next release instead of the status.
     "home": CardSurface(show_next_event_chip=True, show_next_event_subtitle=True),
+    # Home card with the Behind or countdown chip in the next-episode slot.
+    "up_next": CardSurface(
+        show_next_event_chip=True,
+        show_next_event_subtitle=True,
+        show_episode_queue=True,
+    ),
     # A list can hold single episodes; S01E02 says which one.
     "list": CardSurface(show_episode_identity=True),
     # A tile on a tier board: the board owns clicks and drags, so no hover

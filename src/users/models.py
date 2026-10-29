@@ -142,6 +142,16 @@ def relabel_end_date_sort_choice(media_type, choices):
     ]
 
 
+def relabel_author_sort_choice(media_type, choices):
+    """Call a video's author sort Channel, since its channel is stored as the author."""
+    if media_type != MediaTypes.VIDEO.value:
+        return choices
+    return [
+        (value, _("Channel")) if value == MediaSortChoices.AUTHOR else (value, label)
+        for value, label in choices
+    ]
+
+
 class MediaStatusChoices(models.TextChoices):
     """Choices for media list status options."""
 
@@ -444,6 +454,7 @@ class PlannedHomeDisplayChoices(models.TextChoices):
 class HomeScreenRowTypeChoices(models.TextChoices):
     """Supported row sources for the configurable home screen."""
 
+    UP_NEXT = "up_next", _("Up Next")
     LIBRARY_QUERY = "library_query", _("Library Row")
     CUSTOM_LIST = "custom_list", _("List / Smart List")
     RECENTLY_UNRATED = "recently_unrated", _("Recently Played - Not Rated")

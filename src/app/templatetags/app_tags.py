@@ -14,6 +14,7 @@ from django.utils.html import format_html
 from django.utils.translation import (
     get_language,
     get_language_info,
+    ngettext,
     npgettext,
     pgettext,
 )
@@ -118,9 +119,7 @@ def detail_promoted_facts(media_type, details):
                 and key == "status"
                 and details.get("format")
             ):
-                label = _("%(format)s series status") % {
-                    "format": _(details["format"])
-                }
+                label = _("%(format)s series status") % {"format": _(details["format"])}
         fields.append({"key": key, "label": label, "value": value})
     return {"fields": fields, "suppressed_keys": suppressed_keys}
 
@@ -363,6 +362,39 @@ def no_underscore(arg1):
 def image_url(value):
     """Return a safe Floppy image proxy URL when external caching is enabled."""
     return image_cache.rewrite_image_url(value)
+
+
+@register.simple_tag
+def episode_queue_url(item, media):
+    """Return the episode page the Up Next chip opens."""
+    queue = media.next_episode_queue
+    if queue.get("season_number") is None:
+        return ""
+    is_anime = item.media_type == MediaTypes.ANIME.value
+    return reverse(
+        "anime_episode_details" if is_anime else "episode_details",
+        kwargs={
+            "source": queue["source"],
+            "media_id": queue["media_id"],
+            "title": slug(item.title) or slug(str(queue["media_id"])) or "item",
+            "season_number": queue["season_number"],
+            "episode_number": queue["episode_number"],
+        },
+    )
+
+
+@register.simple_tag
+def episode_queue_label(media):
+    """Localize the Up Next chip when rendering, after the Home row cache."""
+    queue = media.next_episode_queue
+    if queue["released"]:
+        return f"{media.episodes_left} {_('Behind')}"
+    days = queue.get("days_until")
+    if days is None:
+        return _("Upcoming")
+    if days == 0:
+        return _("Today")
+    return f"{days} {ngettext('day', 'days', days)}"
 
 
 @register.filter
@@ -1636,6 +1668,35 @@ def media_view_url(view_name, media):
         kwargs.pop("season_number", None)
 
     return reverse(view_name, kwargs=kwargs)
+
+
+@register.simple_tag
+def item_slot_id(prefix, item):
+    """Return an id for a card slot that a save or score response swaps in place.
+
+    Built from the item's own identity (source, type, ids), so it is the same
+    on a card for something not tracked yet and in the response after saving.
+    Unlike component_id it ignores route_media_type, which is only set on
+    some cards (e.g. grouped anime in search), and it includes the source,
+    since two providers can share a media id.
+    """
+    is_dict = isinstance(item, dict)
+    if not is_dict and not hasattr(item, "media_type"):
+        return ""
+
+    def get(name):
+        return item.get(name) if is_dict else getattr(item, name, None)
+
+    parts = [
+        prefix,
+        get("source"),
+        get("media_type"),
+        get("media_id"),
+        get("season_number"),
+        get("episode_number"),
+    ]
+    slot_id = "-".join(str(part) for part in parts if part not in (None, ""))
+    return re.sub(r"[^A-Za-z0-9_-]", "-", slot_id)
 
 
 @register.simple_tag

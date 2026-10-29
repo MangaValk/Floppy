@@ -13,6 +13,7 @@ from app import config, preflight
 from app.models import MediaTypes, Sources
 from app.providers import credentials
 from app.services import metadata_resolution
+from users.media_tags import media_tag_for_type
 from users.models import AnimeLibraryModeChoices
 
 MASK_VISIBLE_CHARS = 4
@@ -88,6 +89,8 @@ def _provider_summary(user):
         summary.append(
             {
                 "media_type": media_type,
+                "media_tag": media_tag_for_type(media_type),
+                "media_tag_keys": [t for t in [media_tag_for_type(media_type)] if t],
                 "current_provider": current,
                 "current_label": metadata_resolution.metadata_provider_label(current),
                 "choices": [
@@ -170,6 +173,7 @@ def _provider_view(spec, user):
         "locked": all(field["locked"] for field in fields),
         "has_instance_value": any(field["has_instance_value"] for field in fields),
         "settable_media_types": _settable_media_types(spec.slug),
+        "media_tags": list(spec.media_tags),
     }
 
 
@@ -210,6 +214,9 @@ def metadata_settings(request):
                     "label": gettext(credentials.GROUP_LABELS[group]),
                     "description": gettext(credentials.GROUP_DESCRIPTIONS[group]),
                     "providers": providers,
+                    "media_tags": sorted(
+                        {tag for provider in providers for tag in provider["media_tags"]},
+                    ),
                 },
             )
 
@@ -219,10 +226,17 @@ def metadata_settings(request):
 
         duplicate_anime_count = duplicate_pair_count(user_id=user.id)
 
+    provider_summary = _provider_summary(user)
+    present_tags = {entry["media_tag"] for entry in provider_summary}
+    for group in groups:
+        for provider in group["providers"]:
+            present_tags.update(provider["media_tags"])
+
     context = {
         "credential_groups": groups,
+        "media_tag_keys": " ".join(sorted(present_tags - {""})),
         "can_edit_instance": can_edit_instance,
-        "provider_summary": _provider_summary(user),
+        "provider_summary": provider_summary,
         "anime_library_mode_choices": AnimeLibraryModeChoices.choices,
         "duplicate_anime_count": duplicate_anime_count,
     }

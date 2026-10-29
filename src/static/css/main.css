@@ -2022,6 +2022,12 @@
       border-color: color-mix(in oklab, var(--color-red-700) 50%, transparent);
     }
   }
+  .border-red-700\/60 {
+    border-color: color-mix(in srgb, oklch(50.5% 0.213 27.518) 60%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-red-700) 60%, transparent);
+    }
+  }
   .border-red-900\/40 {
     border-color: color-mix(in srgb, oklch(39.6% 0.141 25.723) 40%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
