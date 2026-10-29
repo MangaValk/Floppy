@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from urllib.parse import parse_qs, urlparse
 
-from bs4 import BeautifulSoup
 from django.db import transaction
 from django.utils import timezone
 
@@ -151,6 +150,8 @@ def load_records(file):
 
 def _records_from_html(content):
     """Convert Google My Activity cards to the JSON record shape."""
+    from bs4 import BeautifulSoup
+
     soup = BeautifulSoup(content, "html.parser")
     cards = soup.select(".outer-cell")
     if not cards:

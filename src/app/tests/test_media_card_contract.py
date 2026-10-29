@@ -6,6 +6,7 @@ declare the surface in app.card_surfaces rather than special-casing the card.
 
 import re
 from pathlib import Path
+from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -104,7 +105,8 @@ class MediaCardSurfaceContractTest(TestCase):
                 self.assertNotIn("data-src=", content)
                 self.assertNotIn("lazyload", content)
 
-    def test_video_cards_use_landscape_only_on_dedicated_surfaces(self):
+    @patch("app.image_cache.is_enabled", return_value=False)
+    def test_video_cards_use_landscape_only_on_dedicated_surfaces(self, _is_enabled):
         self.item.media_type = MediaTypes.VIDEO.value
         self.item.image = "https://i.ytimg.com/vi/vidAAAAAAAA/hqdefault.jpg"
         template = "{% media_card surface item=item card_media_type='video' video_landscape=wide %}"
@@ -126,7 +128,8 @@ class MediaCardSurfaceContractTest(TestCase):
                     content,
                 )
 
-    def test_history_places_video_in_its_own_landscape_row(self):
+    @patch("app.image_cache.is_enabled", return_value=False)
+    def test_history_places_video_in_its_own_landscape_row(self, _is_enabled):
         from django.utils import timezone
 
         video = Item.objects.create(
