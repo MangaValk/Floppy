@@ -105,7 +105,7 @@ class MediaCardSurfaceContractTest(TestCase):
                 )
                 self.assertIn("video-card", content)
                 self.assertEqual("video-card-landscape" in content, landscape)
-                self.assertIn("/mqdefault.jpg", content)
+                self.assertIn("/maxresdefault.jpg", content)
                 self.assertIn(
                     'data-image-fallback="https://i.ytimg.com/vi/vidAAAAAAAA/hqdefault.jpg"',
                     content,
@@ -155,12 +155,18 @@ class MediaCardSurfaceContractTest(TestCase):
         self.assertEqual(content.count('data-media-type="video"'), 1)
         self.assertEqual(content.count("video-card-landscape"), 1)
         self.assertIn("media-grid media-grid-video", content)
-        self.assertIn("/mqdefault.jpg", content)
+        self.assertIn("/maxresdefault.jpg", content)
         self.assertIn("/hqdefault.jpg", content)
 
     def test_video_thumbnail_does_not_rewrite_custom_artwork(self):
         from app.templatetags.app_tags import youtube_landscape_thumbnail
 
+        self.assertEqual(
+            youtube_landscape_thumbnail(
+                "https://i.ytimg.com/vi/vidAAAAAAAA/mqdefault.jpg"
+            ),
+            "https://i.ytimg.com/vi/vidAAAAAAAA/maxresdefault.jpg",
+        )
         custom = "https://example.com/cover.jpg"
         self.assertEqual(youtube_landscape_thumbnail(custom), custom)
         self.assertEqual(

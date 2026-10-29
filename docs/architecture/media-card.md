@@ -44,8 +44,10 @@ rather than cropping video artwork. History groups video plays in a separate
 cards than posters and the comfortable phone card size even in compact mode.
 All three use the existing card interactions and lazy artwork loading.
 
-For standard YouTube `hqdefault.jpg` artwork, these cards display YouTube's
-16:9 `mqdefault.jpg` variant and fall back to the stored image if it fails. The
+For standard YouTube `hqdefault.jpg`, `mqdefault.jpg`, or `sddefault.jpg`
+artwork, these cards display YouTube's
+high-resolution `maxresdefault.jpg` variant and fall back to the stored image
+if the high-resolution thumbnail is missing. The
 stored image is unchanged, including client-supplied or user-selected artwork.
 Thumbnail dimensions do not classify a video as a Short.
 

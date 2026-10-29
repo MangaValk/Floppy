@@ -367,12 +367,12 @@ def image_url(value):
 
 @register.filter
 def youtube_landscape_thumbnail(value):
-    """Use YouTube's 16:9 medium thumbnail for standard imported artwork."""
+    """Prefer YouTube's high-resolution thumbnail for standard artwork."""
     if not isinstance(value, str):
         return value
     return re.sub(
-        r"^(https://(?:i\.ytimg\.com|img\.youtube\.com)/vi/[A-Za-z0-9_-]{11}/)hqdefault\.jpg$",
-        r"\1mqdefault.jpg",
+        r"^(https://(?:i\.ytimg\.com|img\.youtube\.com)/vi/[A-Za-z0-9_-]{11}/)(?:hqdefault|mqdefault|sddefault)\.jpg$",
+        r"\1maxresdefault.jpg",
         value,
     )
 

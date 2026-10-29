@@ -25,11 +25,27 @@
     if (img && img.tagName === "IMG") applyFallback(img);
   }, true);
 
+  // YouTube sometimes returns a 120px placeholder with HTTP 200 for a
+  // missing max-resolution image. Only inspect images with an explicit backup.
+  function checkSmallFallback(img) {
+    if (img.dataset.imageFallbackOnSmall && !img.dataset.imageFallbackTried &&
+        img.naturalWidth === 120 && img.dataset.imageFallback &&
+        img.getAttribute("src") !== img.dataset.imageFallback) {
+      applyFallback(img);
+    }
+  }
+  document.addEventListener("load", function (event) {
+    var img = event.target;
+    if (img && img.tagName === "IMG") checkSmallFallback(img);
+  }, true);
+
   // Catch an image that failed before the listener was installed.
   function sweep() {
     document.querySelectorAll("img").forEach(function (img) {
       if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) {
         applyFallback(img);
+      } else if (img.complete) {
+        checkSmallFallback(img);
       }
     });
   }

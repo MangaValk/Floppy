@@ -8054,16 +8054,16 @@ html.light .theme-toggle-icon-moon {
     height: 375px;
     min-height: 0;
   }
-  .detail-carousel-grid:has(.detail-carousel-overview-logo) {
+  .detail-carousel-grid:is(:has(.detail-carousel-overview-logo), :has(.video-channel-avatar)) {
     isolation: isolate;
   }
-  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):has(.detail-carousel-overview-logo) {
+  .detail-carousel-grid:has(#detail-carousel-wrap:not(:empty)):is(:has(.detail-carousel-overview-logo), :has(.video-channel-avatar):has(.detail-carousel-preview--overview)) {
     grid-template-areas: "poster preview" "strip strip" "chips chips" "synopsis synopsis";
   }
   main:has(.detail-carousel-overview-extension) {
     overflow-x: clip;
   }
-  .detail-carousel-grid:has(.detail-carousel-overview-logo) .detail-carousel-grid__poster {
+  .detail-carousel-grid:is(:has(.detail-carousel-overview-logo), :has(.video-channel-avatar)) .detail-carousel-grid__poster {
     position: relative;
     z-index: 2;
   }
@@ -8084,10 +8084,10 @@ html.light .theme-toggle-icon-moon {
     flex: none;
     width: 100%;
   }
-  .detail-carousel-grid:has(.detail-carousel-preview--overview) .detail-carousel-grid__header > .min-w-0 > :not([id^="detail-activity-subtitle-slot"], #detail-carousel-logo-slot) {
+  .detail-carousel-grid:has(.detail-carousel-overview-logo):has(.detail-carousel-preview--overview) .detail-carousel-grid__header > .min-w-0 > :not([id^="detail-activity-subtitle-slot"], #detail-carousel-logo-slot) {
     display: none;
   }
-  .detail-carousel-grid:has(.detail-carousel-preview--overview) #detail-carousel-logo-slot {
+  .detail-carousel-grid:has(.detail-carousel-overview-logo):has(.detail-carousel-preview--overview) #detail-carousel-logo-slot {
     display: block;
     margin-bottom: 0.75rem;
   }
@@ -9750,6 +9750,22 @@ button.tier-label:hover .tier-label-edit, button.tier-label:focus-visible .tier-
   }
   [data-mobile-grid] .home-row-card.home-row-card-video {
     width: min(calc((100% - 1rem) / 2), 10.5rem) !important;
+  }
+}
+.video-channel-avatar {
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 4rem;
+}
+@media (min-width: 768px) {
+  .detail-carousel-grid:has(.video-channel-avatar):has(.detail-carousel-preview--overview) .detail-carousel-grid__title {
+    color: white;
+    text-shadow: 0 1px 4px rgb(0 0 0 / 80%);
   }
 }
 @property --tw-translate-x {

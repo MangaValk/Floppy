@@ -20,7 +20,7 @@
       <img loading="lazy" decoding="sync" alt="{{ preferred_entry_title|default:entry.display_title|default:entry.title }}"
            class="media-card-poster w-full {% if card_class == 'search-result-card-square' %}aspect-[1/1]{% else %}aspect-[2/3]{% endif %} {% if entry.poster != IMG_NONE %}object-cover{% endif %}"
            src="{% if entry.media_type == MediaTypes.VIDEO.value %}{{ entry.poster|youtube_landscape_thumbnail|image_url }}{% else %}{{ entry.poster|image_url }}{% endif %}"
-           {% if entry.media_type == MediaTypes.VIDEO.value %}data-image-fallback="{{ entry.poster|image_url }}"{% endif %}>
+           {% if entry.media_type == MediaTypes.VIDEO.value %}data-image-fallback="{{ entry.poster|image_url }}" data-image-fallback-on-small="true"{% endif %}>
     </a>
     {% endwith %}
 
