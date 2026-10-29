@@ -2237,6 +2237,8 @@ class PlexWebhookTests(TestCase):
             ).exists(),
         )
 
+    @patch("app.providers.tvdb.tv", return_value={})
+    @patch("app.providers.tmdb.search")
     @patch("app.providers.tmdb.set_tvdb_id_override")
     @patch("app.providers.tmdb.tv")
     @patch("app.providers.tvdb.series_tmdb_id", return_value="11235")
@@ -2259,10 +2261,13 @@ class PlexWebhookTests(TestCase):
         _mock_series_tmdb_id,
         mock_tv,
         mock_set_tvdb_override,
+        mock_tmdb_search,
+        _mock_tvdb_tv,
     ):
         """A modern-agent episode tvdb:// id is an episode, even when TMDB's
-        find returns the series that shares the number (Medabots S3E25 is
-        TVDB episode 220181, the series id of Norwegian Cozy).
+        find returns the series that shares the number. TVDB episode 220181 is
+        Medabots S3E25 in TVDB order and also the series id of Norwegian Cozy;
+        the fixture keeps TMDB's S2E25 so the TVDB-order remap stays out of it.
         """
         mock_tv_with_seasons.return_value = {
             "title": "Medabots",
@@ -2303,6 +2308,16 @@ class PlexWebhookTests(TestCase):
             ).exists(),
         )
         mock_set_tvdb_override.assert_not_called()
+        mock_tmdb_search.assert_not_called()
+
+        # Ratings, live playback and the importer resolve through the same
+        # extracted ids, so the shared lookup must refuse the series hit too.
+        ids = PlexWebhookProcessor()._extract_external_ids(payload)
+        self.assertTrue(ids["tvdb_is_episode"])
+        self.assertEqual(
+            PlexWebhookProcessor()._find_tv_media_id(ids)[0],
+            "11235",
+        )
 
     @patch("app.providers.tmdb.tv")
     @patch("app.providers.tvdb.enabled", return_value=False)
@@ -4188,6 +4203,7 @@ class PlexWebhookTests(TestCase):
             "tvdb_id": "98765",
             "plex_guid": None,
             "anidb_id": None,
+            "tvdb_is_episode": False,
         }
 
         self.assertEqual(result, expected)
@@ -4213,6 +4229,7 @@ class PlexWebhookTests(TestCase):
             "tvdb_id": "11969114",
             "plex_guid": None,
             "anidb_id": None,
+            "tvdb_is_episode": False,
         }
         self.assertEqual(result, expected)
 
@@ -4235,6 +4252,7 @@ class PlexWebhookTests(TestCase):
             "tvdb_id": None,
             "plex_guid": None,
             "anidb_id": "12345",
+            "tvdb_is_episode": False,
         }
 
         self.assertEqual(result, expected)
@@ -4251,6 +4269,7 @@ class PlexWebhookTests(TestCase):
             "tvdb_id": None,
             "plex_guid": None,
             "anidb_id": None,
+            "tvdb_is_episode": False,
         }
         self.assertEqual(result, expected)
 
@@ -4274,6 +4293,7 @@ class PlexWebhookTests(TestCase):
             "tvdb_id": "98765",
             "plex_guid": None,
             "anidb_id": None,
+            "tvdb_is_episode": False,
         }
         self.assertEqual(result, expected)
 
