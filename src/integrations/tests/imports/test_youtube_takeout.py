@@ -9,6 +9,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from app.models import Item, MediaTypes, Sources, Status, Video, VideoPlay
+from integrations import import_progress
 from integrations.imports import youtube_takeout
 from integrations.imports.helpers import MediaImportError
 
@@ -105,6 +106,19 @@ class YouTubeTakeoutImportTests(TestCase):
     def run_import(self, records):
         """Import the records for the user."""
         return youtube_takeout.importer(as_file(records), self.user, "new")
+
+    def test_reports_reading_before_loading_history(self):
+        def load(_file):
+            progress = import_progress.get_progress("youtube-task")
+            self.assertEqual(progress["current"], 0)
+            self.assertIsNone(progress["total"])
+            self.assertEqual(progress["label"], "Reading YouTube history")
+            return []
+
+        with import_progress.tracking("youtube-task"), patch.object(
+            youtube_takeout, "load_records", side_effect=load
+        ):
+            self.run_import([])
 
     def test_creates_completed_videos_and_plays(self):
         """Each video is Completed with a channel, URL and poster, one play per day."""

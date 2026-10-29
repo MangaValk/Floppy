@@ -158,7 +158,10 @@ def _records_from_html(content):
         msg = "This isn't a YouTube watch history HTML file."
         raise MediaImportError(msg)
     records = []
-    for card in cards:
+    for index, card in enumerate(cards, start=1):
+        if index % 5000 == 0:
+            logger.info("YouTube Takeout: reading HTML card %s of %s", index, len(cards))
+            import_progress.report(index, len(cards), "Reading YouTube history")
         header = card.select_one(".header-cell")
         cell = card.select_one(
             ".content-cell.mdl-typography--body-1:not(.mdl-typography--text-right)"
@@ -228,10 +231,17 @@ class YouTubeTakeoutImporter:
 
     def import_data(self):
         """Import every watch and return the counts."""
+        logger.info("YouTube Takeout import for user %s: reading history", self.user.id)
+        import_progress.report(0, None, "Reading YouTube history")
         records = load_records(self.file)
+        logger.info("YouTube Takeout: read %s history records; preparing videos", len(records))
+        import_progress.report(0, len(records), "Preparing YouTube history")
         watches = defaultdict(list)
         titles = {}
-        for record in records:
+        for index, record in enumerate(records, start=1):
+            if index % 5000 == 0:
+                logger.info("YouTube Takeout: prepared %s of %s records", index, len(records))
+                import_progress.report(index, len(records), "Preparing YouTube history")
             entry = entry_from_record(record)
             if entry is None:
                 self.skipped += 1
@@ -241,6 +251,7 @@ class YouTubeTakeoutImporter:
             titles.setdefault(entry["id"], entry)
 
         total = len(watches)
+        logger.info("YouTube Takeout: importing %s videos", total)
         created_videos = 0
         updated_videos = 0
         created_plays = 0
