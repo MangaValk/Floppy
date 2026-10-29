@@ -1007,6 +1007,7 @@ class HomeScreenViewTests(TestCase):
             [entry.item.title for entry in groups[0]["rows"][0]["items"]],
             ["Home Video"],
         )
+        self.assertTrue(groups[0]["rows"][0]["video_landscape"])
 
     def test_empty_library_query_rows_build_quickly_on_cold_cache(self):
         """Regression test for #621: empty rows must not stall the home page.

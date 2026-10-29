@@ -3377,6 +3377,7 @@ def _build_row_section(
         "show_played_chip": row.row_type == HomeScreenRowTypeChoices.RECENTLY_UNRATED,
         "show_media_type_chip": _show_media_type_chip(user, row, media_type),
         "card_width_class": "w-44",
+        "video_landscape": media_type == "video",
         "grid_class": "media-grid media-grid-square"
         if media_type in SQUARE_HOME_MEDIA_TYPES
         else "media-grid",

@@ -7,33 +7,30 @@
   var placeholder = document.documentElement.dataset.imgNone;
   if (!placeholder) return;
 
-  // Image load errors do not bubble, so this has to listen in the capture phase
-  // to see them at the document level.
-  document.addEventListener(
-    "error",
-    function (event) {
-      var img = event.target;
-      if (!img || img.tagName !== "IMG") return;
-      // Guard against a placeholder that itself fails, which would loop.
-      if (img.dataset.imageFallbackApplied) return;
-      if (img.getAttribute("src") === placeholder) return;
-      img.dataset.imageFallbackApplied = "1";
-      img.src = placeholder;
-    },
-    true,
-  );
+  function applyFallback(img) {
+    if (img.dataset.imageFallbackApplied || img.getAttribute("src") === placeholder) return;
+    var fallback = img.dataset.imageFallback;
+    if (fallback && !img.dataset.imageFallbackTried && fallback !== img.getAttribute("src")) {
+      img.dataset.imageFallbackTried = "1";
+      img.src = fallback;
+      return;
+    }
+    img.dataset.imageFallbackApplied = "1";
+    img.src = placeholder;
+  }
 
-  // The listener is attached after parsing, so an eagerly-loaded image that
-  // already failed never fires an event this can see. A broken image reports
-  // complete with a zero natural width, which is what finds those.
+  // Image load errors do not bubble; capture them for both initial and HTMX images.
+  document.addEventListener("error", function (event) {
+    var img = event.target;
+    if (img && img.tagName === "IMG") applyFallback(img);
+  }, true);
+
+  // Catch an image that failed before the listener was installed.
   function sweep() {
     document.querySelectorAll("img").forEach(function (img) {
-      if (img.dataset.imageFallbackApplied) return;
-      if (!img.complete || img.naturalWidth !== 0) return;
-      if (img.getAttribute("src") === placeholder) return;
-      if (!img.getAttribute("src")) return;
-      img.dataset.imageFallbackApplied = "1";
-      img.src = placeholder;
+      if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) {
+        applyFallback(img);
+      }
     });
   }
 
