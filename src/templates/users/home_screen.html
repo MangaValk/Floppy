@@ -382,6 +382,13 @@
                       {% translate "Library Row" %}
                     </button>
                     <button type="button"
+                            x-show="section.media_type === 'tv' || (section.media_type === 'all' && section.available_media_types.includes('tv'))"
+                            class="flex w-full items-center border-t border-[var(--color-surface-alt)] px-3 py-2 text-left text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-strong)] cursor-pointer"
+                            @click="addRow(section, 'up_next'); section.addRowMenuOpen = false">
+                      {% include "app/icons/play.svg" with classes="mr-2 h-4 w-4" %}
+                      {% translate "Up Next" %}
+                    </button>
+                    <button type="button"
                             x-show="section.media_type !== 'all'"
                             class="flex w-full items-center border-t border-[var(--color-surface-alt)] px-3 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-strong)] hover:text-[var(--color-text)] cursor-pointer"
                             @click="addRow(section, 'recently_unrated'); section.addRowMenuOpen = false"
@@ -530,11 +537,13 @@
           return choice ? choice.label : gettext('Album');
         },
         rowTypeLabel(type) {
+          if (type === 'up_next') return gettext('Up Next');
           if (type === 'library_query') return gettext('Library Row');
           if (type === 'custom_list') return gettext('List / Smart List');
           return gettext('Recently Played');
         },
         rowAutoTitle(section, row) {
+          if (row.row_type === 'up_next') return gettext('Up Next');
           if (row.row_type === 'custom_list') {
             return row.custom_list_name || gettext('List / Smart List');
           }
@@ -665,7 +674,7 @@
           return choice ? choice.label : gettext('Sort');
         },
         defaultSortDirection(value) {
-          return ['author', 'popularity', 'runtime', 'start_date', 'title', 'time_left', 'time_to_beat'].includes(value) ? 'asc' : 'desc';
+          return ['author', 'popularity', 'runtime', 'start_date', 'title', 'time_left', 'time_to_beat', 'episode_feed'].includes(value) ? 'asc' : 'desc';
         },
         toggleRowSort(row, value) {
           row.direction = (row.sort_by === value) ? (row.direction === 'asc' ? 'desc' : 'asc') : this.defaultSortDirection(value);
@@ -719,6 +728,7 @@
         },
         defaultSortValue(section, rowType) {
           if (rowType === 'recently_unrated') return 'recent';
+          if (rowType === 'up_next') return 'episode_feed';
           const defaultSortChoices = rowType === 'custom_list'
             ? (section.sort_choices.custom_list || [])
             : (section.sort_choices.library_query || []);
@@ -804,6 +814,7 @@
         },
         sortChoices(section, row) {
           if (row.row_type === 'custom_list') return section.sort_choices.custom_list || [];
+          if (row.row_type === 'up_next') return section.sort_choices.up_next || [];
           return section.sort_choices.library_query || [];
         },
         addRow(section, rowType) {

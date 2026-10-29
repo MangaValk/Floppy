@@ -19,6 +19,7 @@ from django.core.signing import BadSignature, Signer
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound
 from django.urls import reverse
 
+from app import local_covers
 from app.models.application_settings import ApplicationSettings
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,8 @@ APPROVED_IMAGE_HOSTS = frozenset(
         # each redirect hop is checked against this list.
         "i.ytimg.com",
         "img.youtube.com",
+        "yt3.ggpht.com",
+        "yt3.googleusercontent.com",
         # CLZ Comics covers: its catalogue, and the user's own uploads.
         "clzcomics.r.sizr.io",
         "comic-clzimages.s3.amazonaws.com",
@@ -213,6 +216,8 @@ def _requires_proxy(url):
 
 def rewrite_image_url(url, request=None):
     """Rewrite an approved image URL to Floppy when caching is enabled."""
+    if local_covers.is_local(url):
+        return request.build_absolute_uri(url) if request is not None else url
     if not is_approved_url(url) or not (is_enabled() or _requires_proxy(url)):
         return url
     path = reverse("image_cache", kwargs={"token": _token_for_url(url)})
@@ -398,6 +403,11 @@ def cover_bytes(url, *, fetch=True):
     image is downloaded into memory only: nothing is written to the cache, so
     the instance's image caching setting keeps meaning what it says.
     """
+    if local_covers.is_local(url):
+        path = local_covers.path_for(url.removeprefix(local_covers.COVER_URL_PREFIX))
+        with suppress(OSError):
+            return path.read_bytes() if path else None
+        return None
     if not is_approved_url(url):
         return None
     data_path, metadata_path = _paths(url)

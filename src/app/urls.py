@@ -1,6 +1,14 @@
 from django.urls import path, register_converter
 
-from app import checkin_views, converters, episode_order_views, progress_views, views
+from app import (
+    checkin_views,
+    converters,
+    cover_views,
+    episode_order_views,
+    media_details_views,
+    progress_views,
+    views,
+)
 from app.discover import feeds as discover_feeds
 
 register_converter(converters.MediaTypeChecker, "media_type")
@@ -8,6 +16,7 @@ register_converter(converters.SourceChecker, "source")
 
 
 urlpatterns = [
+    path("youtube-player", media_details_views.youtube_player, name="youtube_player"),
     path("progress/cancel-rewatch/", progress_views.cancel_progress_rewatch, name="cancel_progress_rewatch"),
     path(
         "tv/<int:tv_id>/episode-ordering/",
@@ -28,6 +37,11 @@ urlpatterns = [
         "image-cache/<str:token>",
         views.serve_image_cache,
         name="image_cache",
+    ),
+    path(
+        "covers/<str:name>",
+        cover_views.serve_local_cover,
+        name="local_cover",
     ),
     path("", views.home, name="home"),
     path("discover", views.discover_page, name="discover"),
@@ -178,6 +192,16 @@ urlpatterns = [
         "details/image/<int:item_id>",
         views.update_item_image,
         name="update_item_image",
+    ),
+    path(
+        "details/cover/<int:item_id>",
+        cover_views.update_item_cover,
+        name="update_item_cover",
+    ),
+    path(
+        "details/cover/<int:item_id>/candidates",
+        cover_views.item_cover_candidates,
+        name="item_cover_candidates",
     ),
     path(
         "details/metadata/<int:item_id>",

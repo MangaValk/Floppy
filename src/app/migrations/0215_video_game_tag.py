@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("app", "0213_item_type_lookup_index"),
+        ("app", "0214_video_channel_as_author"),
     ]
 
     operations = [
