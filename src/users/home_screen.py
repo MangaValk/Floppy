@@ -3172,6 +3172,9 @@ def _row_entries(
     """Decorate one window of a shelf as Home cards."""
     with boundary("home_cards"):
         media_lookup = _media_lookup_for_items(user, items)
+    from app.media_list_filters import attach_card_collection_platforms
+
+    attach_card_collection_platforms(user, items)
     entries = []
     for item in items:
         media = media_lookup.get(item.pk)
