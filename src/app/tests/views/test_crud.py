@@ -836,7 +836,11 @@ class CreateMedia(TestCase):
             count=2,
             html=False,
         )
-        self.assertContains(response, '-list" hx-swap-oob="true"', html=False)
+        # An additional data attribute now separates the id and OOB marker.
+        self.assertRegex(
+            response.content.decode(),
+            r'id="episode-track-button-\d+-list"[^>]*\bhx-swap-oob="true"',
+        )
         latest_episode = Episode.objects.filter(
             item__media_id="1668",
             related_season__user=self.user,

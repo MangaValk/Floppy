@@ -967,7 +967,8 @@ def media_list_entries_for_items(user, items) -> list[MediaListEntry]:
         for item in items
         for media in [media_by_item_id.get(item.pk)]
     ]
-    attach_card_collection_platforms(user, [entry.item for entry in entries])
+    # HTML cards attach collected platforms from their own page context.
+    # Generic/API hydration must not add CollectionEntry queries (#1004).
     return entries
 
 

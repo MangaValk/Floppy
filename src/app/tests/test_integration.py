@@ -651,7 +651,8 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
 
     def test_tv_manual(self):
         """Test the manual creation of a TV show."""
-        # Create TV show
+        # Custom now lives under the collapsible Explore section.
+        self.page.get_by_role("button", name="Explore").click()
         self.page.get_by_role("link", name="Custom", exact=True).click()
         self.page.get_by_placeholder("Enter title").click()
         self.page.get_by_placeholder("Enter title").fill("Friends")
