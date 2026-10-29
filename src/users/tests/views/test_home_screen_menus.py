@@ -64,6 +64,18 @@ class HomeScreenMenuTests(SerialStaticLiveServerTestCase):
         self.section = self.page.locator('[data-section-media-type="movie"]')
         self.section.locator("h3").click()
 
+    def test_row_title_can_be_clicked_and_saved(self):
+        self.page.wait_for_function("window.homeScreenSettingsInstance.sortables.length > 0")
+        title = self.section.locator("article").first.get_by_label("Row name")
+        title.click()
+        expect(title).to_be_focused()
+        title.fill("My movies")
+        self.page.get_by_role("button", name="Save Home Screen").click()
+        self.section.locator("h3").click()
+        expect(self.section.locator("article").first.get_by_label("Row name")).to_have_value(
+            "My movies"
+        )
+
     def test_sort_menu_receives_clicks_and_escape_restores_focus(self):
         for width in (1280, 768, 390):
             with self.subTest(width=width):

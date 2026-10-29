@@ -955,7 +955,7 @@
                 draggable: 'article',
                 handle: '.home-settings-row',
                 filter: 'input, textarea, select, a, .home-settings-row-controls',
-                preventOnFilter: true,
+                preventOnFilter: false,
                 onEnd: event => {
                   const orderedIds = Array.from(container.querySelectorAll('[data-row-client-id]')).map(node => node.dataset.rowClientId);
                   restoreDraggedNode(event);
