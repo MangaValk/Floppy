@@ -449,7 +449,7 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
                     episode_results = find_results.get("tv_episode_results") or []
                     if episode_results:
                         tmdb_id = episode_results[0].get("show_id")
-                    else:
+                    elif not (source == "tvdb_id" and self.TV_IDS_ARE_EPISODE_LEVEL):
                         tv_results = find_results.get("tv_results") or []
                         if tv_results:
                             tmdb_id = tv_results[0].get("id")
@@ -1761,6 +1761,11 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
             "plex_guid": None,
             "anidb_id": None,
         }
+        # The modern Plex agent gives an episode its own tvdb:// id, which can
+        # equal an unrelated series' TVDB id (Medabots S3E25 is TVDB episode
+        # 220181, the series id of Norwegian Cozy). The legacy agent's
+        # com.plexapp.agents.thetvdb://<series>/<season>/<episode> names the show.
+        self.TV_IDS_ARE_EPISODE_LEVEL = False
 
         logger.debug("Extracting external IDs from %d GUIDs", len(guids))
 
@@ -1835,6 +1840,9 @@ class PlexWebhookProcessor(BaseWebhookProcessor):
                 tvdb_id = self._extract_numeric_guid_id(guid_value)
                 if tvdb_id:
                     ids["tvdb_id"] = tvdb_id
+                    self.TV_IDS_ARE_EPISODE_LEVEL = metadata.get(
+                        "type"
+                    ) == "episode" and guid_lower.startswith("tvdb://")
                     logger.debug("Found TVDB ID in Plex GUIDs")
 
             if all(
