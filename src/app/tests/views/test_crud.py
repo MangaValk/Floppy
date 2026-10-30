@@ -854,7 +854,7 @@ class CreateMedia(TestCase):
         )
         self.assertContains(response, 'id="episode-history-', html=False)
         self.assertContains(response, 'hx-swap-oob="true"', html=False)
-        self.assertContains(response, "Watched 2 times")
+        self.assertContains(response, "2\u00d7 watched")
         self.assertContains(response, "season-progress-mobile-", html=False)
         self.assertContains(response, "season-progress-desktop-", html=False)
         trigger = json.loads(response["HX-Trigger"])

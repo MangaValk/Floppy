@@ -511,6 +511,7 @@ class RewatchRatingVisibility(TestCase):
             "item": self.episode_item,
             "history": history,
             "all_history": all_history,
+            "unwatched_score": None,
         }
 
     def _render(self, episode_payload):

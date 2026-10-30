@@ -49,7 +49,10 @@ class HomeScreenMenuTests(SerialStaticLiveServerTestCase):
             ),
         )
         self.client.force_login(user)
-        self.page = self.browser.new_page(viewport={"width": 1280, "height": 900})
+        # Service-worker requests can bypass the route used to inject filter options.
+        self.page = self.browser.new_page(
+            viewport={"width": 1280, "height": 900}, service_workers="block"
+        )
         self.addCleanup(self.page.close)
         self.page.context.add_cookies(
             [

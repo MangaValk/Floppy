@@ -351,6 +351,8 @@ class IntegrationTest(SerialStaticLiveServerTestCase):
 
         for theme in ("glass", "custom"):
             with self.subTest(theme=theme):
+                # Finish browser reads before writing to the shared SQLite database.
+                self.page.wait_for_load_state("networkidle")
                 self.user.theme = theme
                 self.user.save(update_fields=["theme"])
                 self.page.goto(f"{self.live_server_url}/medialist/movie?layout=grid")
