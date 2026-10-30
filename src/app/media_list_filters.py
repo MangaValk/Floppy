@@ -958,8 +958,9 @@ def media_list_entries_for_items(user, items) -> list[MediaListEntry]:
         for media in sorted(rows, key=lambda row: (row.created_at, row.pk)):
             media_by_item_id[media.item_id] = media
     # A tracked entry keeps its row's own item: the prefetches (events, tags)
-    # hang off that instance.
-    entries = [
+    # hang off that instance. Generic/API hydration must not query CollectionEntry
+    # for card decoration; HTML surfaces attach platforms from page context (#1004).
+    return [
         MediaListEntry(
             item=media.item if media is not None else item,
             media=media,
@@ -967,8 +968,6 @@ def media_list_entries_for_items(user, items) -> list[MediaListEntry]:
         for item in items
         for media in [media_by_item_id.get(item.pk)]
     ]
-    attach_card_collection_platforms(user, [entry.item for entry in entries])
-    return entries
 
 
 def get_media_list_entries(user, media_type, filters: MediaListFilters, *, limit=None, offset=None):
