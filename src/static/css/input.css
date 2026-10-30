@@ -1759,6 +1759,11 @@ html.light .theme-toggle-icon-moon {
     z-index: 3;
   }
 
+  /* An open season menu must escape the title's lower stacking layer. */
+  .detail-carousel-grid:has(.detail-mobile-hero) .detail-carousel-grid__title:has([aria-haspopup="listbox"][aria-expanded="true"]) {
+    z-index: 4;
+  }
+
   /* Hero metadata uses one wrapping line at every phone width. */
   .detail-carousel-grid:has(.detail-mobile-hero) [id^="detail-activity-subtitle-slot"] button {
     flex-direction: row;
@@ -4423,6 +4428,12 @@ html.light .theme-toggle-icon-moon {
   transition: opacity 150ms ease-in-out;
 }
 
+/* Follow the tracking fragment as HTMX updates an episode in place. */
+.episode-card-actions:has([data-episode-has-data="true"]) {
+  grid-column: 2;
+  justify-self: end;
+}
+
 .media-card-rate-empty .media-card-rate-star svg {
   fill: none;
 }
@@ -4432,7 +4443,8 @@ html.light .theme-toggle-icon-moon {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .media-card:hover .media-card-rate-empty {
+  .media-card:hover .media-card-rate-empty,
+  .episode-card:hover .media-card-rate-empty {
     opacity: 1;
   }
 }

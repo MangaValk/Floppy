@@ -907,6 +907,24 @@ def media_list_media_types(filters: MediaListFilters, media_type) -> tuple[str, 
     )
 
 
+def attach_card_collection_platforms(user, items):
+    """Attach the owner's collected platforms to a bounded set of game items."""
+    from app.models import CollectionEntry
+
+    games = [item for item in items if item.media_type == MediaTypes.GAME.value and item.pk]
+    if not games:
+        return
+    platforms = {}
+    for item_id, value in CollectionEntry.objects.filter(
+        user=user, item_id__in=[item.pk for item in games]
+    ).values_list("item_id", "resolution"):
+        platform = value.strip()
+        if platform:
+            platforms.setdefault(item_id, set()).add(platform)
+    for item in games:
+        item.card_collection_platforms = sorted(platforms.get(item.pk, ()), key=str.lower)
+
+
 def media_list_entries_for_items(user, items) -> list[MediaListEntry]:
     """Attach each item's tracker row for a page of items.
 
@@ -940,7 +958,8 @@ def media_list_entries_for_items(user, items) -> list[MediaListEntry]:
         for media in sorted(rows, key=lambda row: (row.created_at, row.pk)):
             media_by_item_id[media.item_id] = media
     # A tracked entry keeps its row's own item: the prefetches (events, tags)
-    # hang off that instance.
+    # hang off that instance. Generic/API hydration must not query CollectionEntry
+    # for card decoration; HTML surfaces attach platforms from page context (#1004).
     return [
         MediaListEntry(
             item=media.item if media is not None else item,
